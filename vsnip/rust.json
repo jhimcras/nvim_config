@@ -1,0 +1,19 @@
+{
+    "Function": {
+        "prefix": "fn",
+        "body": [
+            "fn $1($2) $3{",
+            "    $0",
+            "}"
+        ]
+    },
+
+    "For loop": {
+        "prefix": "for",
+        "body": [
+            "for $1 in $2 {",
+            "    $0",
+            "}"
+        ]
+    }
+}

@@ -1,0 +1,15 @@
+{
+    "Project Root": {
+        "prefix": "prjroot",
+        "body": [
+            "${1:launcher_name} = {",
+            "    cmd = '${2:filename}';",
+            "    args = {$3};",
+            "    cwd = '$4';",
+            "    env = {$5};",
+            "    key = '$6';",
+            "    highlight = {$7};",
+            "};"
+        ]
+    }
+}

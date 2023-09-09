@@ -1,0 +1,20 @@
+{
+    "Auto Group": {
+        "prefix": "aug",
+        "body": [
+            "augroup $1",
+            "    autocmd!",
+            "    autocmd $0",
+            "augroup END"
+        ]
+    },
+
+    "Function": {
+        "prefix": "func",
+        "body": [
+            "function! $1",
+            "    $0",
+            "endfunction"
+        ]
+    }
+}
