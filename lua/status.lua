@@ -72,7 +72,7 @@ local types = {
 }
 
 function M.lsp()
-    if next(vim.lsp.buf_get_clients()) ~= nil then
+    if next(vim.lsp.get_clients()) ~= nil then
         return require'lsp-status'.status()
     end
     return ''
