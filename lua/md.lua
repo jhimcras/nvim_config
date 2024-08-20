@@ -234,7 +234,8 @@ function M.open_cursor_link()
     if node and node:type() == 'inline_link' then
         for n in node:iter_children() do
             if n:type() == 'link_destination' then
-                goto(ts.query.get_node_text(n, 0))
+                -- goto(ts.query.get_node_text(n, 0))
+                goto(ts.get_node_text(n, 0))
             end
         end
     end
