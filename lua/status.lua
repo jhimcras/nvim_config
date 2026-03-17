@@ -515,6 +515,15 @@ local percentage_loc = '%p%%'
 local column_loc = 'ﮇ %c'
 local gap = '%<%='
 
+local width_thresholds = {
+    encoding         = 90,
+    current_function = 70,
+    search_count     = 55,
+    percentage       = 55,
+    lsp              = 45,
+    git_branch       = 45,
+}
+
 local function fugitive_info(bufnr, winid)
     local rev_parse = vim.b[bufnr].fugitive_status.rev_parse
     local props = vim.b[bufnr].fugitive_status.props
@@ -563,8 +572,8 @@ local function make_statusline_text(bufnr, winid, components, sep)
 end
 
 
-local function general_statusline(activation, mode)
-    local active_only = function(st) return activation and st or '' end
+local function general_statusline(activation, mode, winid)
+    local w = vim.api.nvim_win_get_width(winid or 0)
     local hl = function(num)
         return 'StatuslineGeneral' .. (activation and ('Active_%d_%s'):format(num, mode) or 'Inactive')
     end
@@ -573,18 +582,23 @@ local function general_statusline(activation, mode)
     local encoding_memoized = ut.memoize_ttl(encoding, {ttl_ms=2000, cleanup_ms=ut.MEMOIZE_CLEANUP_HOUR_MS})
     return {
         {
-            proj_or_git_branch_memoized,
+            w >= width_thresholds.git_branch and proj_or_git_branch_memoized or false,
             filename_and_status_memoized,
-            active_only(lsp_status),
+            activation and w >= width_thresholds.lsp and lsp_status or false,
             hl = hl(1), sep = ' │ ', pad = ' '
         },
         gap,
         {
-            active_only(current_function),
-            encoding_memoized,
+            activation and w >= width_thresholds.current_function and current_function or false,
+            w >= width_thresholds.encoding and encoding_memoized or false,
             hl = hl(1), sep = ' │ ', pad = ' '
         },
-        active_only { search_count, percentage_loc, column_loc, hl = hl(2), sep = ' ', pad = ' ' },
+        activation and {
+            w >= width_thresholds.search_count and search_count or false,
+            w >= width_thresholds.percentage and percentage_loc or false,
+            column_loc,
+            hl = hl(2), sep = ' ', pad = ' '
+        } or nil,
     }
 end
 
@@ -733,7 +747,7 @@ function M.statusline_entry()
     local bufnr = vim.api.nvim_win_get_buf(winid)
     local activation = winid == vim.api.nvim_get_current_win()
     local entryfunc = get_entry_func(vim.bo[bufnr].buftype, vim.bo[bufnr].filetype)
-    return make_statusline_text(bufnr, winid, entryfunc(activation, vim.fn.mode()))
+    return make_statusline_text(bufnr, winid, entryfunc(activation, vim.fn.mode(), winid))
 end
 
 function M.setup()
