@@ -1,16 +1,21 @@
 local M = {}
 
 function M.setup()
-    --require "nvim-treesitter.parsers".get_parser_configs().markdown = {
-        --install_info = {
-            --url = "https://github.com/ikatyang/tree-sitter-markdown",
-            --files = {"src/parser.c", "src/scanner.cc"}
-        --},
-        --filetype = 'markdown',
-    --}
     require'nvim-treesitter.configs'.setup {
         -- one of "all", "language", or a list of languages
-        ensure_installed = { 'c', 'cpp', 'lua', 'json', 'bash', 'regex', 'query', 'rust', 'python', 'markdown', 'markdown_inline' };
+        ensure_installed = {
+            'c', 'cpp',
+            'lua',
+            'bash',
+            'rust',
+            'python',
+            'json',
+            'regex',
+            'query',
+            'typescript',
+            'javascript',
+            'markdown', 'markdown_inline'
+        };
         highlight = {
             enable = true,
             disable = {},

@@ -58,7 +58,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position)
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
     end
     --api.nvim_buf_set_lines(buf, -2, -1, false, {'---- Start', ''})
-    local pid = ut.AsyncProcess(cmd, args, cwd, ev, onread, on_exit)
+    local pid = ut.AsyncProcess(cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
     api.nvim_buf_set_var(buf, 'launcher_pid', pid)
     return buf
 end
@@ -105,7 +105,7 @@ end
 function M.TerminateCurrentLauncherBuffer()
     if vim.b.launcher_pid then
         vim.notify(string.format('Process %d has been terminated',  vim.b.launcher_pid), vim.log.levels.WARN)
-        vim.loop.kill(vim.b.launcher_pid, 15) -- terminate process
+        vim.uv.kill(vim.b.launcher_pid, 15) -- terminate process
     end
 end
 
@@ -131,7 +131,7 @@ function M.LaunchObject(obj)
             ev = env_cmd
         end
         if position == 'external' then
-            ut.AsyncProcess(cmd, args, cwd, ev)
+            ut.AsyncProcess(cmd, args, cwd, { env = ev })
         else
             local parent_win = vim.api.nvim_get_current_win()
             local buf = M.Launch(cmd, args, cwd, ev, hi, position)

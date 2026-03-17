@@ -1,9 +1,36 @@
-local lsp = require 'lspconfig'
+-- local lsp = require 'lspconfig'
 local env = require 'env'
 local ut = require 'util'
 local api = vim.api
 
 local M = {}
+
+function M.has_lsp_attached(bufnr)
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    local clients = vim.lsp.get_clients{ bufnr = bufnr }
+    return next(clients) ~= nil
+end
+
+-- https://clangd.llvm.org/extensions.html#switch-between-sourceheader
+local function switch_source_header(bufnr)
+    local method_name = 'textDocument/switchSourceHeader'
+    -- bufnr = util.validate_bufnr(bufnr)
+    local client = vim.lsp.get_clients({ bufnr = bufnr, name = 'clangd' })[1]
+    if not client then
+        return vim.notify(('method %s is not supported by any servers active on the current buffer'):format(method_name))
+    end
+    local params = vim.lsp.util.make_text_document_params(bufnr)
+    client:request(method_name, params, function(err, result)
+        if err then
+            error(tostring(err))
+        end
+        if not result then
+            vim.notify('corresponding file cannot be determined')
+            return
+        end
+        vim.cmd.edit(vim.uri_to_fname(result))
+    end, bufnr)
+end
 
 -- LSP settings (for overriding per client)
 -- local handlers =  {
@@ -23,126 +50,130 @@ local function capabilities()
 end
 
 local function general_mappings()
-    ut.nnoremap('gd', vim.lsp.buf.declaration, {'buffer'})
-    ut.nnoremap('<c-]>', vim.lsp.buf.definition, {'buffer'})
-    ut.nnoremap('<c-m-]>', '<cmd>vs<cr><cmd>lua vim.lsp.buf.definition()<CR>', {'buffer'})
-    ut.nnoremap('<2-LeftMouse>', vim.lsp.buf.definition, {'buffer'})
-    ut.nnoremap('<2-RightMouse>', '<c-o>', {'buffer'})
-    ut.nnoremap('K', vim.lsp.buf.hover, {'buffer'})
-    ut.nnoremap('gD', vim.lsp.buf.implementation, {'buffer'}) -- clangd doesn't support this
-    ut.nnoremap('1gD', vim.lsp.buf.type_definition, {'buffer'}) -- clangd doesn't support this
-    ut.nnoremap('gr', vim.lsp.buf.references, {'buffer'})
-    ut.nnoremap('g0', vim.lsp.buf.document_symbol, {'buffer'})
     ut.nnoremap('gW', vim.lsp.buf.workspace_symbol, {'buffer'})
-    --ut.inoremap('<c-k>', vim.lsp.buf.signature_help, {'buffer'})
-    ut.nnoremap('<F2>', vim.lsp.buf.rename, {'buffer'})
-    ut.nnoremap('ga', vim.lsp.buf.code_action, {'buffer'})
 
     -- Diagnostic keymaps
-    ut.nnoremap('[d', vim.diagnostic.goto_prev, {'buffer'})
-    ut.nnoremap(']d', vim.diagnostic.goto_next, {'buffer'})
+    ut.nnoremap('[d', function() vim.diagnostic.jump{count=-1, float=true} end, {'buffer'})
+    ut.nnoremap(']d', function() vim.diagnostic.jump{count=1, float=true} end, {'buffer'})
     ut.nnoremap('<leader>do', vim.diagnostic.setloclist, {'buffer'})
 end
 
-local function reference_highliting()
+local function reference_highlighting()
     api.nvim_create_autocmd('CursorHold', { buffer = 0, callback = function() vim.lsp.buf.document_highlight() end })
     api.nvim_create_autocmd('CursorHoldI', { buffer = 0, callback = function() vim.lsp.buf.document_highlight() end })
     api.nvim_create_autocmd('CursorMoved', { buffer = 0, callback = function() vim.lsp.buf.clear_references() end })
 end
 
-local function on_attach(client)
-    --require'lsp-status'.on_attach(client)
-    -- This came from https://github.com/tjdevries/config_manager/blob/master/xdg_config/nvim/lua/lsp_config.lua
-    --require'illuminate'.on_attach(client)
-    general_mappings()
-    reference_highliting()
+local function make_on_attach(extras)
+    return function(client, bufnr)
+        general_mappings()
+        reference_highlighting()
+        if extras then extras(client, bufnr) end
+    end
 end
 
-local function on_attatch_clangd(args)
+local on_attach = make_on_attach(nil)
+
+local function on_init(client, initialize_result)
+    local bufnr = vim.api.nvim_get_current_buf()
+    local name = vim.api.nvim_buf_get_name(bufnr) or ""
+    if name:match("^fugitive:") then
+        client.stop()
+        return false
+    end
+    return true
+end
+
+
+local function on_attach_clangd(client, bufnr)
+    if vim.bo[bufnr].buftype ~= '' then
+        vim.lsp.buf_detach_client(bufnr, client.id)
+        return
+    end
     general_mappings()
+    vim.api.nvim_buf_create_user_command(0, 'ClangdSwitchSourceHeader', function() switch_source_header(0) end, { desc = 'Switch between source/header' })
     ut.nnoremap('<m-o>', '<cmd>ClangdSwitchSourceHeader<cr>', { 'buffer' })
     ut.nnoremap('<m-O>', '<cmd>vertical split<cr><cmd>ClangdSwitchSourceHeader<cr>', { 'buffer' })
-    reference_highliting()
+    reference_highlighting()
     vim.bo.formatexpr = 'v:lua.vim.lsp.formatexpr()'
 end
 
-local function on_attatch_lua(args)
-    general_mappings()
-    reference_highliting()
-    vim.bo.formatexpr = 'v:lua.vim.lsp.formatexpr()'
-end
+local on_attach_lua = make_on_attach(nil)
+
 
 local function SetupClangd()
     if vim.fn.executable('clangd') then
-        lsp.clangd.setup {
-            on_attach = on_attatch_clangd,
+        vim.lsp.config.clangd = {
+            on_init = on_init,
+            on_attach = on_attach_clangd,
             cmd = {
-                'clangd',
-                '--cross-file-rename',
-                '--background-index',
-                '--clang-tidy',
-                --'--log=verbose',
+                'clangd_with_env.bat',
+                -- '--background-index',
+                -- '--cross-file-rename',
+                -- '--clang-tidy',
+                -- '--log=verbose',
             },
-            capabilities = capabilities(),
-            -- init_options = {
-            --     usePlaceholders = false,
-            --     completeUnimported = false,
-            --     clangdFileStatus = true,
-            -- },
-            -- root_dir = lsp.util.root_pattern(
-            --     './build/compile_commands.json',
-            --     'compile_commands.json',
-            --     'compile_flags.txt',
-            --     '.git'
-            -- ),
+            root_markers = {
+                'compile_commands.json',
+                '.git'
+                -- './build/compile_commands.json',
+                -- 'compile_flags.txt',
+            },
+            filetypes = { 'c', 'cpp' },
+            -- capabilities = capabilities(),
             handlers = {
-                ['textDocument/publishDiagnostics'] = vim.lsp.with(
-                    vim.lsp.diagnostic.on_publish_diagnostics,
-                    { virtual_text = false }
-                ),
-                unpack(require'lsp-status'.extensions.clangd.setup()),
+            --     ['textDocument/publishDiagnostics'] = vim.lsp.with(
+            --         vim.lsp.diagnostic.on_publish_diagnostics,
+            --         { virtual_text = false }
+            --     ),
+            --     unpack(require'lsp-status'.extensions.clangd.setup()),
             },
         }
+        vim.lsp.enable('clangd')
     end
 end
 
 local function SetupLua()
-    if vim.env.LUALS == nil then return end
-    local lua_lsp_cmd = { vim.env.LUALS .. (env.os.win and [[\lua-language-server.exe]] or '/bin/lua-language-server') }
-    if vim.fn.executable(lua_lsp_cmd[1]) then
-        lsp.lua_ls.setup {
-            cmd = lua_lsp_cmd,
-            on_attach = on_attatch_lua,
-            capabilities = capabilities(),
-            settings = {
-                Lua = {
-                    completion = {
-                        -- keywordSnippet = "Disable";
-                    },
-                    runtime = {
-                        version = 'LuaJIT',
-                    },
-                    diagnostics = {
-                        enable = true,
-                        globals = { 'vim', 'unpack', 'ffi' },
-                    },
-                    workspace = {
-                        library = {
-                            --[vim.fn.expand("~/packages/neovim/runtime/lua")] = true,
-                            --[vim.fn.expand("~/packages/neovim/src/nvim/lua")] = true,
-                        },
+    -- if vim.env.LUALS == nil then return end
+    -- local lua_lsp_cmd = { vim.env.LUALS .. (env.os.win and [[\lua-language-server.exe]] or '/bin/lua-language-server') }
+    local lua_lsp_cmd = "lua-language-server.exe"
+    if not vim.fn.executable(lua_lsp_cmd) then return end
+    vim.lsp.config('lua_ls', {
+        cmd = { lua_lsp_cmd },
+        filetypes = { 'lua' },
+        on_attach = on_attach_lua,
+        on_init = function(client)
+            if on_init(client) == false then
+                return
+            end
+            if client.workspace_folders then
+                local path = client.workspace_folders[1].name
+                if path ~= vim.fn.stdpath('config') and (vim.uv.fs_stat(path .. '/.luarc.json') or vim.uv.fs_stat(path .. '/.luarc.jsonc')) then
+                    return
+                end
+            end
+
+            client.config.settings.Lua = vim.tbl_deep_extend('force', client.config.settings.Lua, {
+                runtime = {
+                    version = 'LuaJIT',
+                    path = {
+                        'lua/?.lua',
+                        'lua/?/init.lua',
                     },
                 },
-            },
-            handlers = {
-                ['textDocument/publishDiagnostics'] = vim.lsp.with(
-                    vim.lsp.diagnostic.on_publish_diagnostics,
-                    { virtual_text = false }
-                ),
-            },
-            -- handlers = handlers,
+                workspace = {
+                    checkThirdParty = 'Disable',
+                    library = {
+                        vim.env.VIMRUNTIME
+                    }
+                }
+            })
+        end,
+        settings = {
+            Lua = {}
         }
-    end
+    })
+    vim.lsp.enable('lua_ls')
 end
 
 local function SetupRust()
@@ -176,39 +207,60 @@ local function SetupVim()
 end
 
 local function SetupPython()
-    lsp.jedi_language_server.setup {
+    -- vim.lsp.config.jedi_lanuage_server = {
+    --     on_init = on_init,
+    --     on_attach = on_attach,
+    --     cmd = {"jedi-language-server"},
+    --     filetypes = { 'python' },
+    -- }
+    -- vim.lsp.enable('jedi_lanuage_server')
+    vim.lsp.config.ty = {
+        on_init = on_init,
         on_attach = on_attach,
-        capabilities = capabilities(),
-        cmd = { 'py', '-m', 'jedi_language_server' },
+        cmd = {'ty', 'server'},
+        filetypes = { 'python' },
     }
+    vim.lsp.enable('ty')
 end
 
+M.SymError = ' '
+M.SymWarn = ' '
+M.SymInfo = ' '
+M.SymHint = ' '
+-- M.SymError = '█'
+-- M.SymWarn = '▆'
+-- M.SymInfo = '■'
+-- M.SymHint = '▁'
+
 function M.setup()
-    vim.fn.sign_define('DiagnosticSignError', { text = '█', texthl = 'DiagnosticSignError' })
-    vim.fn.sign_define('DiagnosticSignWarn', { text = '▆', texthl = 'DiagnosticSignWarn' })
-    vim.fn.sign_define('DiagnosticSignInfo', { text = '■', texthl = 'DiagnosticSignInfo' })
-    vim.fn.sign_define('DiagnosticSignHint', { text = '▁', texthl = 'DiagnosticSignHint' })
-    -- vim.fn.sign_define('DiagnosticSignError', {text = ' ', texthl = 'DiagnosticSignError'})
-    -- vim.fn.sign_define('DiagnosticSignWarn', {text = ' ', texthl = 'DiagnosticSignWarn'})
-    -- vim.fn.sign_define('DiagnosticSignInfo', {text = ' ', texthl = 'DiagnosticSignInfo'})
-    -- vim.fn.sign_define('DiagnosticSignHint', {text = '𥉉', texthl = 'DiagnosticSignHint'})
+    vim.diagnostic.config {
+        signs =  {
+            text = {
+                [vim.diagnostic.severity.ERROR] = M.SymError,
+                [vim.diagnostic.severity.WARN] = M.SymWarn,
+                [vim.diagnostic.severity.INFO] = M.SymInfo,
+                [vim.diagnostic.severity.HINT] = M.SymHint,
+            },
+        }
+    }
 
     ut.set_highlight('LspReferenceText', { gui='bold' })
     ut.set_highlight('LspReferenceRead', { gui='bold' })
     ut.set_highlight('LspReferenceWrite', { gui='bold' })
 
-    require'lsp-status'.register_progress()
-    require'lsp-status'.config {
-        indicator_errors = 'E',
-        indicator_warnings = 'W',
-        indicator_info = 'I',
-        indicator_hint = '!',
-        status_symbol = '',
-    }
+    -- require'lsp-status'.register_progress()
+    -- require'lsp-status'.config {
+    --     mindicator_errors = M.SymError,
+    --     indicator_warnings = M.SymWarn,
+    --     indicator_info = M.SymInfo,
+    --     indicator_hint = M.SymHint,
+    --     status_symbol = '',
+    --     current_function = true,
+    -- }
     SetupClangd()
     SetupLua()
-    SetupRust()
-    SetupVim()
+    -- SetupRust()
+    -- SetupVim()
     SetupPython()
 end
 

@@ -12,11 +12,8 @@ local make_entry = require 'telescope.make_entry'
 
 
 local function Files()
-    if pr then
-        require 'telescope.builtin'.find_files {
-            cwd = pr.GetCurrentProjectRoot() or vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ':p:h')
-        }
-    end
+    local cwd = pr.GetCurrentProjectRoot() or ut.GetCurrentBufferDir()
+    require 'telescope.builtin'.find_files { cwd = cwd }
 end
 
 -- TODO: cannot swipe current diplayed buffer
@@ -35,7 +32,7 @@ local function Buffers()
             if opts.ignore_current_buffer and b == vim.api.nvim_get_current_buf() then
                 return false
             end
-            if opts.cwd_only and not string.find(vim.api.nvim_buf_get_name(b), vim.loop.cwd(), 1, true) then
+            if opts.cwd_only and not string.find(vim.api.nvim_buf_get_name(b), vim.uv.cwd(), 1, true) then
                 return false
             end
             return true
@@ -114,14 +111,16 @@ local function Sessions()
     local session = require 'session'
     pickers.new({}, {
         prompt_title = 'Sessions',
-        finder = finders.new_oneshot_job(session.SessionDir()),
+        finder = finders.new_table { results = session.SessionList(), },
         sorter = conf.generic_sorter({}),
         previewer = false,
         attach_mappings = function(prompt_bufnr)
             actions.select_default:replace(function()
                 actions.close(prompt_bufnr)
                 local selection = action_state.get_selected_entry()
-                session.OpenSession(selection[1])
+                if selection and #selection > 0 then
+                    session.OpenSession(selection[1])
+                end
             end)
             return true
         end,
@@ -149,6 +148,12 @@ local function Notes()
     require 'telescope.builtin'.find_files { cwd = '~/notes/' }
 end
 
+local function LSPWorkspaceSymbols()
+   require'telescope.builtin'.lsp_dynamic_workspace_symbols {
+       fname_width = 120,
+   }
+end
+
 function M.setup()
     require 'telescope'.setup {
         defaults = {
@@ -165,6 +170,7 @@ function M.setup()
     ut.nmap('<Leader>fs', Sessions)
     ut.nmap('<Leader>fu', RunLauncher)
     ut.nmap('<Leader>fn', Notes)
+    ut.nmap('<Leader>fw', LSPWorkspaceSymbols)
 end
 
 return M

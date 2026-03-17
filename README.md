@@ -1,13 +1,27 @@
 NeoVim settings
 ===============
 
-## Overview
-This self-studying project is not yet completed. The pressure is mine if you provide feedback for this project.
+## LSP settings
+
+```
+LUALS=/sumneko-language-server-directoty
+```
+
+```
+VIMLS
+```
+
 
 ## Built-in plugins
-- Asyncronous Program Launcher
-- Project Root
-- Session Management
-- Status Line
-- Microsoft Builder
-- RipGrep helper
+
+Asyncronous Program Launcher
+
+Project Root
+
+Session Management
+
+Status Line
+
+Microsoft Builder
+
+RipGrep helper

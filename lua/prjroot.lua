@@ -6,7 +6,8 @@ M.general_root_markers = {
     '.git',
     'compile_command.json',
     'compile_flags.txt',
-    'README.*',
+    'README.md',
+    -- 'README.*',     -- Cannot use wildcard nor pattern here
     '.prjroot',
 }
 
@@ -30,7 +31,7 @@ end
 
 function M.GetCurrentProjectRoot(root_markers)
     return vim.b.prjroot_folder or
-           M.GetProjectRoot(vim.api.nvim_buf_get_name(0), root_markers)
+           M.GetProjectRoot(ut.GetCurrentBufferDir(), root_markers)
 end
 
 function M.SetBufferProjectRoot(bufnr, folder)
@@ -64,6 +65,14 @@ function M.setup()
     ut.nnoremap('<m-t>t', function() ut.OpenProjectRootTerminal('tab') end)
     vim.api.nvim_create_autocmd({'BufRead', 'BufNew'}, {pattern = '.prjroot', callback = function() vim.bo.filetype = 'lua' end})
     vim.api.nvim_create_user_command('PrjRootConfig', function(t) vim.cmd.vsplit {mods = t.smods, args = {(M.GetCurrentProjectRoot() or '.') .. '/.prjroot'}} end, {})
+    vim.api.nvim_create_autocmd('BufRead', { callback = function() 
+        local cfg = M.GetCurrentConfig()
+        if type(cfg) == 'table' and cfg.options then
+            for opt, value in pairs(cfg.options) do
+                vim.bo[opt] = value
+            end
+        end
+    end})
 end
 
 return M

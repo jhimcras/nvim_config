@@ -20,9 +20,9 @@
     "Function": {
         "prefix": "fn",
         "body": [
-            "$1 $2($3)",
+            "${1:void} ${2:function name}(${3:params})",
             "{",
-            "    $0",
+            "    ${0:function body}",
             "}"
         ]
     },

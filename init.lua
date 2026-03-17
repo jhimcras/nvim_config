@@ -19,7 +19,7 @@ local function BasicSettings()
     vim.o.history = 1024
     vim.o.maxmempattern = 10240
     vim.o.undolevels = 2048
-    vim.o.mouse = 'nv'
+    vim.o.mouse = 'nvi'
     vim.o.lazyredraw = true
     vim.o.showmode = false
     vim.o.swapfile = false
@@ -27,12 +27,12 @@ local function BasicSettings()
     vim.o.pumheight = 20
     vim.o.pyx = 3
     vim.o.number = true
-    vim.o.relativenumber = false
+    vim.o.relativenumber = true
     vim.o.scrolloff = 1
     vim.o.sidescrolloff = 5
     vim.o.showmatch = true
     vim.o.splitright = true
-    vim.o.switchbuf = 'useopen'
+    -- vim.o.switchbuf = 'useopen'
     vim.o.title = true
     vim.opt.path:append('**')
     vim.opt.wildignore:append { '*/.git/*', '*/.hg/*', '*/.svn/*', '*/.sass-cache/*', '*/x64/*', '*/.vs/*', '*/.clangd/*' }
@@ -43,13 +43,16 @@ local function BasicSettings()
     vim.o.ttimeoutlen = 0       -- This solves the problem on linux terminal esc dealy
     vim.o.breakindent = true
     vim.g.original_path = vim.env.PATH
-    vim.o.fileencodings = 'ucs-bom,utf-8,euckr,latin1'
+    vim.o.fileencodings = 'ucs-bom,utf-8,euckr' --,latin1'
     cmd.packadd 'cfilter'   -- enable Cfilter command
+    vim.o.winblend = 20
+    vim.o.jumpoptions = 'stack,clean'
 
-    -- Disabling netrw and matchit
+    -- Disabling standard plugins
     vim.g.loaded_netrw = 1
     vim.g.loaded_netrwPlugin = 1
     vim.g.loaded_matchit = 1
+    vim.g.loaded_matchparen = 1
 
     api.nvim_create_autocmd('BufEnter', { callback = function()
         vim.opt_local.formatoptions:append('j')
@@ -109,20 +112,29 @@ local function SetTabAndIndent()
     end})
 end
 
-local function SetColorsAndHighlighting()
-    require('nvim-tundra').setup {}
-    cmd.colorscheme 'tundra'
-    vim.o.pumblend = 10
-    -- ut.set_highlight('Pmenu', { ctermbg=238 })
-    cmd.let '$TERM="xterm-256color"'
-    if not env.os.win then
-        vim.o.termguicolors = true
-    end
-    api.nvim_create_autocmd('TextYankPost', { callback = function()
-        vim.highlight.on_yank { timeout = 200 }
-    end } )
-end
-
+-- local function SetColorsAndHighlighting()
+--     require('nvim-tundra').setup {
+--         transparent_background = true,
+--         overwrite = {
+--             highlights = {
+--                 SpecialKey = { link = 'Normal' }
+--             },
+--         },
+--         -- plugins = {
+--         --     telescope = true,
+--         -- },
+--     }
+--     cmd.colorscheme 'tundra'
+--     vim.o.pumblend = 10
+--     -- ut.set_highlight('Pmenu', { ctermbg=238 })
+--     cmd.let '$TERM="xterm-256color"'
+--     if not env.os.win then
+--         vim.o.termguicolors = true
+--     end
+--     api.nvim_create_autocmd('TextYankPost', { callback = function()
+--         vim.hl.on_yank { timeout = 200 }
+--     end } )
+-- end
 
 local function KeyMappings()
     ut.nnoremap('<Up>', '<C-y>')
@@ -138,6 +150,9 @@ local function KeyMappings()
     ut.inoremap('<F1>', '<NOP>')
     ut.nnoremap('Q', '<NOP>')
 
+    ut.nnoremap('<LeftDrag>', '<NOP>')
+    ut.nnoremap('<LeftRelease>', '<NOP>')
+
     -- Easy yanking start from current position
     ut.nnoremap('Y', 'y$')
 
@@ -150,6 +165,9 @@ local function KeyMappings()
     -- Insert blank line
     ut.nnoremap('[<space>', 'O<c-[>')
     ut.nnoremap(']<space>', 'o<c-[>')
+
+    -- ut.nnoremap('[s', '<cmd>lprevious<cr>')
+    -- ut.nnoremap(']s', '<cmd>lnext<cr>')
 
     -- Start a new Undo group before making changes in INSERT mode.
     ut.inoremap('<C-W>', '<C-G>u<C-W>')
@@ -164,12 +182,13 @@ local function KeyMappings()
     ut.inoremap('<C-l>', '<Right>')
     ut.vnoremap('>', '>gv')
     ut.vnoremap('<', '<gv')
-
+    -- ut.nnoremap('<ESC>', '<CMD>nohlsearch<CR>')
 
     -- Mapping to insert today and current time
     cmd.inoreabbrev 'todayy <C-R>=strftime("%F")<CR>'
     cmd.inoreabbrev 'noww <C-R>=strftime("%T")<CR>'
     cmd.inoreabbrev 'thisfilee <C-R>=expand("%:t")<CR>'
+    cmd.inoreabbrev '--> →'
 
     -- Escaping Windows folder seperators
     -- TODO: Make it works on visual mode
@@ -209,7 +228,8 @@ local function KeyMappings()
     ut.tnoremap('<ESC>', [[<C-\><C-n>]])
 
     -- Reselect the text that has just been pasted
-    ut.nnoremap('<leader>v', '`[V`]')
+    ut.nnoremap('<leader>v', '`[v`]')
+    ut.nnoremap('<leader>V', '`[V`]')
 
     -- Search in selected region
     --vnoremap('/', ':<C-U>call feedkeys('/\%>'.(line("'<")-1).'l\%<'.(line("'>")+1)."l")<CR>')
@@ -220,10 +240,10 @@ local function KeyMappings()
 
     -- Convinients
     ut.nnoremap('<m-cr>', '<cmd>buffer #<cr><cmd>vertical sbuffer #<cr>')
-    cmd.cnoreabbrev 'h vert help'
-    cmd.cnoreabbrev 'he vert help'
-    cmd.cnoreabbrev 'hel vert help'
-    cmd.cnoreabbrev 'help vert help'
+    -- cmd.cnoreabbrev 'h vert help'
+    -- cmd.cnoreabbrev 'he vert help'
+    -- cmd.cnoreabbrev 'hel vert help'
+    -- cmd.cnoreabbrev 'help vert help'
     cmd.cnoreabbrev 'W w'
     cmd.cnoreabbrev 'Wa wa'
     cmd.cnoreabbrev 'Q q'
@@ -234,32 +254,117 @@ local function KeyMappings()
     api.nvim_create_user_command('Config', function(opts) ut.OpenConfig(opts) end, {})
     api.nvim_create_user_command('StripTrailingWhitespace', ut.StripTrailingWhitespace, {})
     api.nvim_create_user_command('OpenAllHiddenBuffer', ut.OpenAllHiddenBuffers, {})
+    api.nvim_create_user_command('WipeHiddenBuffers', ut.wipeout_hidden_buffers, {})
 
     ut.nnoremap('<leader><leader>', function() vim.notify(os.date("%F %T"), vim.log.levels.INFO) end)
+
+    ut.nnoremap('<c-+>', function() vim.g.neovide_scale_factor = vim.g.neovide_scale_factor * 1.25 end)
+    ut.nnoremap('<c-->', function() vim.g.neovide_scale_factor = vim.g.neovide_scale_factor * (1/1.25) end)
+    ut.nnoremap('<c-0>', function() vim.g.neovide_scale_factor = 1.0 end)
+
+    ut.nnoremap('<leader>r', function() if vim.o.relativenumber == true then vim.o.relativenumber = false else vim.o.relativenumber = true end end)
+
+    local function GetIMEStatus()
+        local output = vim.fn.system('D:\\temp\\immcheck\\main.exe')
+        if vim.v.shell_error ~= 0 then
+            return "IME_ERR_" .. tostring(vim.v.shell_error)
+        end
+
+        output = vim.trim(output)
+        if output == "IME_KOREAN_HANGUL" then
+            return "한"
+        elseif output == "IME_KOREAN_ENG" then
+            return "A(KR)"
+        elseif output == "IME_OFF" then
+            return "A"
+        else
+            return output
+        end
+    end
+
+    ut.nnoremap('<leader>ccc', function() print (GetIMEStatus()) end)
+
+    vim.api.nvim_create_autocmd("FileType", {
+        pattern = "qf",
+        callback = function()
+            vim.keymap.set("n", "dd", function()
+                local word = vim.fn.expand("<cword>")
+                if word ~= "" then
+                    vim.cmd("Lfilter! /\\v" .. word .. "/")
+                end
+            end, { buffer = true, silent = true })
+        end,
+    })
+
 end
 
 
 local function QuickFixSetting()
-    -- Navigation in the location and quickfix list
-    --nnoremap('<silent>[l', '<cmd>lprevious<CR>zv')
-    --nnoremap('<silent>]l', '<cmd>lnext<CR>zv')
-    --nnoremap('<silent>[L', '<cmd>lfirst<CR>zv')
-    --nnoremap('<silent>]L', '<cmd>llast<CR>zv')
-    ut.nnoremap('[q', cmd.cprevious)
-    ut.nnoremap(']q', cmd.cnext)
-    ut.nnoremap('[Q', cmd.cfirst)
-    ut.nnoremap(']Q', cmd.clast)
+    ut.set_highlight('QuickFixLine', { gui='underline' })
+end
 
-    -- ut.set_highlight('QuickFixLine', { gui='underline' })
+local function NeovideIMESetting()
+    local function set_ime(args)
+        if args.event:match("Enter$") then
+            vim.g.neovide_input_ime = true
+        else
+            vim.g.neovide_input_ime = false
+        end
+    end
+
+    local ime_input = vim.api.nvim_create_augroup("ime_input", { clear = true })
+
+    vim.api.nvim_create_autocmd({ "InsertEnter", "InsertLeave", "CmdlineEnter", "CmdlineLeave", "TermEnter", "TermLeave" }, {
+        group = ime_input,
+        pattern = "*",
+        callback = set_ime
+    })
+end
+
+local function MarkdownHighlighting()
+    ut.set_highlight('RenderMarkdownH1Bg', { guibg='#3B2C3C' })
+    ut.set_highlight('RenderMarkdownH2Bg', { guibg='#3A352C' })
+    ut.set_highlight('RenderMarkdownH3Bg', { guibg='#1F343D' })
+    ut.set_highlight('RenderMarkdownH4Bg', { guibg='#28304D' })
+    ut.set_highlight('RenderMarkdownH5Bg', { guibg='#32313A' })
+    ut.set_highlight('@markup.heading.1.markdown', { guifg='#FECDD3' })
+    ut.set_highlight('@markup.heading.2.markdown', { guifg='#E8D4B0' })
+    ut.set_highlight('@markup.heading.3.markdown', { guifg='#B5E8B0' })
+    ut.set_highlight('@markup.heading.4.markdown', { guifg='#A5B4FC' })
+    ut.set_highlight('@markup.heading.5.markdown', { guifg='#DDD6FE' })
+end
+
+
+local function C_CPP_HeaderCorrection()
+    vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
+        pattern = "*.h",
+        callback = function()
+            local base = vim.fn.expand("%:r")
+            if vim.fn.filereadable(base .. ".cpp") == 1
+                or vim.fn.filereadable(base .. ".cc") == 1
+                or vim.fn.filereadable(base .. ".cxx") == 1 then
+                vim.bo.filetype = "cpp"
+            else
+                vim.bo.filetype = "c"
+            end
+        end,
+    })
 end
 
 ----------------------------------------------------------------------------------------------------
 BasicSettings()
 FoldSetting()
-QuickFixSetting()
 TerminalSetting()
 SetAutoChangedFileReloading()
 SetTabAndIndent()
-SetColorsAndHighlighting()
+-- SetColorsAndHighlighting()
 KeyMappings()
 require'plugins'.setup()
+QuickFixSetting()
+MarkdownHighlighting()
+C_CPP_HeaderCorrection()
+
+if vim.g.neovide then
+    NeovideIMESetting()
+end
+
