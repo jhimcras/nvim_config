@@ -107,7 +107,7 @@ local function SetupClangd()
             on_init = on_init,
             on_attach = on_attach_clangd,
             cmd = {
-                'clangd_with_env.bat',
+                'clangd',
                 -- '--background-index',
                 -- '--cross-file-rename',
                 -- '--clang-tidy',
@@ -262,6 +262,16 @@ function M.setup()
     -- SetupRust()
     -- SetupVim()
     SetupPython()
+
+    -- Close diagnostic float on <ESC> in normal mode
+    ut.nnoremap('<ESC>', function()
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+            if vim.api.nvim_win_get_config(win).relative ~= '' then
+                pcall(vim.api.nvim_win_close, win, false)
+            end
+        end
+    end)
+
 end
 
 return M
