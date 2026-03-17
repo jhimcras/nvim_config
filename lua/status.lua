@@ -109,7 +109,14 @@ end
 
 
 function M.tabtitle(n)
-    local buflist = vim.fn.tabpagebuflist(n)
+    local num_wins = vim.fn.tabpagewinnr(n, '$')
+    local buflist = {}
+    for w = 1, num_wins do
+        local winid = vim.fn.win_getid(w, n)
+        if vim.api.nvim_win_get_config(winid).relative == '' then
+            table.insert(buflist, vim.api.nvim_win_get_buf(winid))
+        end
+    end
     local is_equal = function(a, b) return a == b end
     local prjroot_of = function(bufname)
         local pr = require'prjroot'.GetProjectRoot(vim.fn.fnamemodify(bufname, ':p'))
