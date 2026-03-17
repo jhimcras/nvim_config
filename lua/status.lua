@@ -257,42 +257,46 @@ function M.leftside()
     return table.concat(fi)
 end
 
-local ffi = require("ffi")
+if env.os.win then
+    local ffi = require("ffi")
 
-ffi.cdef[[
-    void* GetForegroundWindow(void);
-    void* GetParent(void* hWnd);
-    unsigned int GetWindowThreadProcessId(void* hWnd, unsigned int* lpdwProcessId);
-    void* ImmGetContext(void* hWnd);
-    int ImmGetOpenStatus(void* hIMC);
-]]
+    ffi.cdef[[
+        void* GetForegroundWindow(void);
+        void* GetParent(void* hWnd);
+        unsigned int GetWindowThreadProcessId(void* hWnd, unsigned int* lpdwProcessId);
+        void* ImmGetContext(void* hWnd);
+        int ImmGetOpenStatus(void* hIMC);
+    ]]
 
-local user32 = ffi.load("user32")
-local imm32 = ffi.load("imm32")
+    local user32 = ffi.load("user32")
+    local imm32 = ffi.load("imm32")
 
-local function get_hwnd()
-    local fg = user32.GetForegroundWindow()
-    local parent = user32.GetParent(fg)
-    if parent ~= nil then
-        return parent -- use parent if exists
-    else
-        return fg
+    local function get_hwnd()
+        local fg = user32.GetForegroundWindow()
+        local parent = user32.GetParent(fg)
+        if parent ~= nil then
+            return parent -- use parent if exists
+        else
+            return fg
+        end
     end
-end
 
-function M.GetIMEStatus()
-    local hwnd = get_hwnd()
-    if hwnd == nil then return "?hwnd" end
+    function M.GetIMEStatus()
+        local hwnd = get_hwnd()
+        if hwnd == nil then return "?hwnd" end
 
-    local himc = imm32.ImmGetContext(hwnd)
-    if himc == nil then return "?himc" end
+        local himc = imm32.ImmGetContext(hwnd)
+        if himc == nil then return "?himc" end
 
-    local status = imm32.ImmGetOpenStatus(himc)
-    if status == 1 then
-        return "한"  -- Hangul mode
-    else
-        return "A"   -- English mode
+        local status = imm32.ImmGetOpenStatus(himc)
+        if status == 1 then
+            return "한"  -- Hangul mode
+        else
+            return "A"   -- English mode
+        end
     end
+else
+    function M.GetIMEStatus() return "" end
 end
 
 function M.search_result()
