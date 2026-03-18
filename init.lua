@@ -251,7 +251,13 @@ local function KeyMappings()
 
     ut.inoremap('{<cr>', '{<cr>}<esc>O')
 
-    api.nvim_create_user_command('Config', function(opts) ut.OpenConfig(opts) end, {})
+    api.nvim_create_user_command('Config', function(opts)
+        if opts.args ~= '' then
+            require'tele'.ConfigFiles(opts.args)
+        else
+            ut.OpenConfig(opts)
+        end
+    end, { nargs='?' })
     api.nvim_create_user_command('StripTrailingWhitespace', ut.StripTrailingWhitespace, {})
     api.nvim_create_user_command('OpenAllHiddenBuffer', ut.OpenAllHiddenBuffers, {})
     api.nvim_create_user_command('WipeHiddenBuffers', ut.wipeout_hidden_buffers, {})

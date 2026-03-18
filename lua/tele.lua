@@ -148,6 +148,13 @@ local function Notes()
     require 'telescope.builtin'.find_files { cwd = '~/notes/' }
 end
 
+function M.ConfigFiles(query)
+    require'telescope.builtin'.find_files {
+        cwd = vim.fn.stdpath('config'),
+        default_text = query or '',
+    }
+end
+
 local function LSPWorkspaceSymbols()
    require'telescope.builtin'.lsp_dynamic_workspace_symbols {
        fname_width = 120,
