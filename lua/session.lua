@@ -6,7 +6,7 @@ local LIST_EXT_LOC = ".loc"
 
 -- Ensure a directory exists (create if missing)
 local function ensure_dir(path)
-    if not vim.fn.isdirectory(path) then
+    if vim.fn.isdirectory(path) == 0 then
         vim.fn.mkdir(path, "p")
     end
 end
@@ -254,7 +254,7 @@ function M.SaveSession(session_name)
     save_all_loclists(dir, session_prefix)
     save_quickfix(dir, session_prefix)
 
-
+    ensure_dir(dir)
     vim.cmd('mksession! ' .. session_path)
 
     vim.notify(
