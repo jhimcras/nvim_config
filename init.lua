@@ -296,6 +296,15 @@ local function KeyMappings()
         end,
     })
 
+    ut.nnoremap('<esc>', function()
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+            if vim.api.nvim_win_get_config(win).relative ~= '' then
+                pcall(vim.api.nvim_win_close, win, false)
+            end
+        end
+        vim.cmd.nohlsearch()
+    end)
+
 end
 
 
@@ -358,8 +367,8 @@ TerminalSetting()
 SetAutoChangedFileReloading()
 SetTabAndIndent()
 -- SetColorsAndHighlighting()
-KeyMappings()
 require'plugins'.setup()
+KeyMappings()
 QuickFixSetting()
 MarkdownHighlighting()
 C_CPP_HeaderCorrection()

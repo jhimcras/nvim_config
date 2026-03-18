@@ -263,15 +263,6 @@ function M.setup()
     -- SetupVim()
     SetupPython()
 
-    -- Close diagnostic float on <ESC> in normal mode
-    ut.nnoremap('<ESC>', function()
-        for _, win in ipairs(vim.api.nvim_list_wins()) do
-            if vim.api.nvim_win_get_config(win).relative ~= '' then
-                pcall(vim.api.nvim_win_close, win, false)
-            end
-        end
-    end)
-
 end
 
 return M

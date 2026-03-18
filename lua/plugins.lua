@@ -18,26 +18,11 @@ end
 bootstrap_pckr()
 
 local function LoupeSetting()
-    local ut = require'util'
     vim.g.LoupeCenterResults = 0
+    local ut = require'util'
     ut.nnoremap('*', [[<Plug>(LoupeStar)\|N]])
     ut.nnoremap('n', '<cmd>let v:searchforward=1<cr><Plug>(Loupen)')
     ut.nnoremap('N', '<cmd>let v:searchforward=1<cr><Plug>(LoupeN)')
-    -- ut.nnoremap('<esc>', function() return vim.v.count == 0 and '<Plug>(LoupeClearHighlight)' or '<esc>' end, {'expr'})
-    ut.nnoremap('<esc>', function()
-        if vim.v.count == 0 then
-            local keys = vim.api.nvim_replace_termcodes('<Plug>(LoupeClearHighlight)', true, true, true)
-            local ok = pcall(vim.api.nvim_feedkeys, keys, 'n', false)
-            if not ok then
-                vim.cmd('nohlsearch')
-            end
-        else
-            vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<esc>', true, true, true), 'n', true)
-        end
-        vim.schedule(function()
-            vim.cmd('redrawstatus')
-        end)
-    end)
 end
 
 local function DirvishSetting()
