@@ -316,6 +316,23 @@ local function bootstrap_pckr()
     vim.opt.rtp:prepend(pckr_path)
 end
 
+local function FugitiveSetting()
+    local ut = require'util'
+    local function gclog_back()
+        local bufname = vim.api.nvim_buf_get_name(0)
+        if bufname:match('^fugitive://') then
+            local real = vim.fn['fugitive#Real'](bufname)
+            if real ~= '' then
+                vim.cmd('edit ' .. vim.fn.fnameescape(real))
+                return
+            end
+        end
+        vim.notify('Not in a fugitive history buffer', vim.log.levels.WARN)
+    end
+    vim.api.nvim_create_user_command('GclogBack', gclog_back, {})
+    ut.nnoremap('<leader>gb', gclog_back)
+end
+
 function M.setup()
     bootstrap_pckr()
 
@@ -333,7 +350,7 @@ function M.setup()
         { 'nvim-treesitter/nvim-treesitter-textobjects' },
         -- { 'plasticboy/vim-markdown', ft = { 'markdown' } },
         -- { 'iamcco/markdown-preview.nvim', ft = { 'markdown' }, run = 'cd app & yarn install' },
-        { 'tpope/vim-fugitive' },
+        { 'tpope/vim-fugitive', config = FugitiveSetting },
         { 'tpope/vim-surround' },
         -- { 'justinmk/vim-dirvish', config = DirvishSetting },
         { 'stevearc/oil.nvim', config = OilSetting },
