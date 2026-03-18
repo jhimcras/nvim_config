@@ -20,9 +20,16 @@ bootstrap_pckr()
 local function LoupeSetting()
     vim.g.LoupeCenterResults = 0
     local ut = require'util'
-    ut.nnoremap('*', [[<Plug>(LoupeStar)\|N]])
     ut.nnoremap('n', '<cmd>let v:searchforward=1<cr><Plug>(Loupen)')
     ut.nnoremap('N', '<cmd>let v:searchforward=1<cr><Plug>(LoupeN)')
+    -- Apply * mapping after VimEnter so it's never overridden by plugin files
+    vim.api.nvim_create_autocmd('VimEnter', { once = true, callback = function()
+        ut.nnoremap('*', function()
+            local view = vim.fn.winsaveview()
+            vim.cmd('keepjumps normal! *')
+            vim.fn.winrestview(view)
+        end)
+    end })
 end
 
 local function DirvishSetting()
