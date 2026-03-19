@@ -627,6 +627,28 @@ local function help_statusline(activation)
      }
 end
 
+local function man_title(bufnr, winid)
+    local name = vim.fn.bufname(bufnr)
+    return name:gsub('^man://', '')
+end
+
+local function checkhealth_statusline(activation)
+    return {
+        { 'Checkhealth', hl = 'StatuslineGeneralActive_1_n', pad = ' ' },
+        gap,
+    }
+end
+
+local function man_statusline(activation)
+    local active_only = function(st) return activation and st or '' end
+    return {
+        { 'ManPage', man_title, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
+        gap,
+        active_only{ search_count, percentage_loc, column_loc,
+                     hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
+    }
+end
+
 local function fugitive_statusline(activation)
     local active_only = function(st) return activation and st or '' end
     return {
@@ -672,6 +694,9 @@ local statusline_setup = {
         help = help_statusline,
         fugitive = fugitive_statusline,
         terminal = terminal_statusline,
+        checkhealth = checkhealth_statusline,
+        health      = checkhealth_statusline,
+        man         = man_statusline,
         -- oil = oil_statusline,
     },
     highlights = {
