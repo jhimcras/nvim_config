@@ -21,7 +21,7 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 | Module | Description |
 |---|---|
 | `lua/launcher.lua` | Asynchronous program launcher |
-| `lua/prjroot.lua` | Project root detection (`.git`, `.prjroot`, etc.) |
+| `lua/prjroot.lua` | Project root detection (`.git`, `.prjroot`, etc.) — see [docs/prjroot.md](docs/prjroot.md) |
 | `lua/session.lua` | Session management per project root |
 | `lua/status.lua` | Custom statusline with LSP, git branch/commit, diagnostics |
 | `lua/git.lua` | Git branch and commit info with TTL caching |
