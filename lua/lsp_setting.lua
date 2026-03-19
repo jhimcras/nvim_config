@@ -265,6 +265,22 @@ function M.setup()
     -- SetupVim()
     SetupPython()
 
+    local prjroot = require 'prjroot'
+    local lsp_server_names = { 'clangd', 'lua_ls', 'ty' }
+
+    api.nvim_create_autocmd('BufReadPre', {
+        desc = 'Apply per-project LSP env vars from .prjroot',
+        callback = function(ev)
+            local fname = vim.api.nvim_buf_get_name(ev.buf)
+            if fname == '' then return end
+            local cfg = prjroot.GetPrjrootConfig(fname)
+            if not cfg or not cfg.lsp_env then return end
+            for _, name in ipairs(lsp_server_names) do
+                vim.lsp.config(name, { cmd_env = cfg.lsp_env })
+            end
+        end,
+    })
+
 end
 
 return M
