@@ -214,7 +214,25 @@ local function load_qflist(path)
 end
 
 
+local function save_session(path)
+    local prefix = vim.fn.fnamemodify(path, ':t')
+    local dir = vim.fn.fnamemodify(path, ':h')
+    clear_session_lists(dir, prefix)
+    save_all_loclists(dir, prefix)
+    save_quickfix(dir, prefix)
+    ensure_dir(dir)
+    vim.cmd('mksession! ' .. path)
+end
+
+local function auto_save()
+    if vim.v.this_session ~= "" then
+        save_session(vim.v.this_session)
+    end
+end
+
+
 function M.OpenSession(session)
+    auto_save()
     vim.cmd('%bwipeout!')
     local sess_path = string.format('%s/sessions/%s', vim.fn.stdpath('data'), session)
     vim.cmd.source(sess_path)
@@ -236,7 +254,6 @@ end
 
 function M.SaveSession(session_name)
     local session_path
-    local session_prefix
 
     if session_name and session_name ~= '' then
         session_path = vim.fn.stdpath('data') .. '/sessions/' .. session_name
@@ -247,18 +264,10 @@ function M.SaveSession(session_name)
         return
     end
 
-    session_prefix = vim.fn.fnamemodify(session_path, ':t')
-    local dir = vim.fn.fnamemodify(session_path, ':h')
-
-    clear_session_lists(dir, session_prefix)
-    save_all_loclists(dir, session_prefix)
-    save_quickfix(dir, session_prefix)
-
-    ensure_dir(dir)
-    vim.cmd('mksession! ' .. session_path)
+    save_session(session_path)
 
     vim.notify(
-        string.format('Session %s has been saved.', session_prefix),
+        string.format('Session %s has been saved.', vim.fn.fnamemodify(session_path, ':t')),
         vim.log.levels.INFO
     )
 
@@ -294,6 +303,7 @@ end
 
 
 function M.CloseSession()
+    auto_save()
     vim.cmd('%bwipeout!')
     vim.cmd.cd('~')
     vim.v.this_session = ''
@@ -331,6 +341,11 @@ function M.setup()
 
     -- Session mapping
     ut.nnoremap('<F12>', M.SaveSession)
+
+    vim.api.nvim_create_autocmd("VimLeave", {
+        group = vim.api.nvim_create_augroup("SessionAutoSave", { clear = true }),
+        callback = auto_save,
+    })
 end
 
 
