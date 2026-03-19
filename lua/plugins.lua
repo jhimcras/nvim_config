@@ -168,147 +168,45 @@ end
 
 local function MarkdownConfig()
     require'render-markdown'.setup{
-        enabled = true,
         overrides = {
             buftype = {
-                nofile = {
-                    enabled = false,
-                },
+                nofile = { enabled = false },
             },
         },
         indent = {
-            -- Mimic org-indent-mode behavior by indenting everything under a heading based on the
-            -- level of the heading. Indenting starts from level 2 headings onward by default.
-
-            -- Turn on / off org-indent-mode.
             enabled = true,
-            -- Additional modes to render indents.
             render_modes = true,
-            -- Amount of additional padding added for each heading level.
             per_level = 4,
-            -- Heading levels <= this value will not be indented.
-            -- Use 0 to begin indenting from the very first level.
             skip_level = 0,
-            -- Do not indent heading titles, only the body.
             skip_heading = true,
-            -- Prefix added when indenting, one per level.
-            icon = '▎',
-            -- Applied to icon.
-            highlight = 'RenderMarkdownIndent',
         },
         heading = {
-            -- Replaces '#+' of 'atx_h._marker'.
-            -- Output is evaluated depending on the type.
-            -- | function | `value(context)`              |
-            -- | string[] | `cycle(value, context.level)` |
             icons = { '  ' },
-            -- Added to the sign column if enabled.
-            -- Output is evaluated by `cycle(value, context.level)`.
             signs = { ' ' },
-            -- Used above heading for border.
-            above = '▄',
-            -- Used below heading for border.
-            below = '▀',
-
             width = 'block',
             border = true,
-            -- border_virtual = true,
             left_pad = 2,
             right_pad = 2,
         },
         checkbox = {
-            unchecked = {
-                -- Replaces '[ ]' of 'task_list_marker_unchecked'.
-                icon = ' ',
-            },
-            checked = {
-                -- Replaces '[x]' of 'task_list_marker_checked'.
-                icon = ' ',
-                -- scope_highlight = '@markup.strikethrough',
-            },
-            -- Define custom checkbox states, more involved, not part of the markdown grammar.
-            -- As a result this requires neovim >= 0.10.0 since it relies on 'inline' extmarks.
-            -- The key is for healthcheck and to allow users to change its values, value type below.
-            -- | raw             | matched against the raw text of a 'shortcut_link'           |
-            -- | rendered        | replaces the 'raw' value when rendering                     |
-            -- | highlight       | highlight for the 'rendered' icon                           |
-            -- | scope_highlight | optional highlight for item associated with custom checkbox |
-            -- stylua: ignore
+            unchecked = { icon = ' ' },
+            checked   = { icon = ' ' },
             custom = {
                 todo = { raw = '[-]', rendered = ' ', highlight = 'RenderMarkdownTodo', scope_highlight = nil },
             },
         },
-        callout = {
-            -- Callouts are a special instance of a 'block_quote' that start with a 'shortcut_link'.
-            -- The key is for healthcheck and to allow users to change its values, value type below.
-            -- | raw        | matched against the raw text of a 'shortcut_link', case insensitive |
-            -- | rendered   | replaces the 'raw' value when rendering                             |
-            -- | highlight  | highlight for the 'rendered' text and quote markers                 |
-            -- | quote_icon | optional override for quote.icon value for individual callout       |
-            -- | category   | optional metadata useful for filtering                              |
-
-            note      = { raw = '[!NOTE]',      rendered = '󰋽 Note',      highlight = 'RenderMarkdownInfo',    category = 'github'   },
-            tip       = { raw = '[!TIP]',       rendered = '󰌶 Tip',       highlight = 'RenderMarkdownSuccess', category = 'github'   },
-            important = { raw = '[!IMPORTANT]', rendered = '󰅾 Important', highlight = 'RenderMarkdownHint',    category = 'github'   },
-            warning   = { raw = '[!WARNING]',   rendered = '󰀪 Warning',   highlight = 'RenderMarkdownWarn',    category = 'github'   },
-            caution   = { raw = '[!CAUTION]',   rendered = '󰳦 Caution',   highlight = 'RenderMarkdownError',   category = 'github'   },
-            -- Obsidian: https://help.obsidian.md/Editing+and+formatting/Callouts
-            abstract  = { raw = '[!ABSTRACT]',  rendered = '󰨸 Abstract',  highlight = 'RenderMarkdownInfo',    category = 'obsidian' },
-            summary   = { raw = '[!SUMMARY]',   rendered = '󰨸 Summary',   highlight = 'RenderMarkdownInfo',    category = 'obsidian' },
-            tldr      = { raw = '[!TLDR]',      rendered = '󰨸 Tldr',      highlight = 'RenderMarkdownInfo',    category = 'obsidian' },
-            info      = { raw = '[!INFO]',      rendered = '󰋽 Info',      highlight = 'RenderMarkdownInfo',    category = 'obsidian' },
-            todo      = { raw = '[!TODO]',      rendered = '󰗡 Todo',      highlight = 'RenderMarkdownInfo',    category = 'obsidian' },
-            hint      = { raw = '[!HINT]',      rendered = '󰌶 Hint',      highlight = 'RenderMarkdownSuccess', category = 'obsidian' },
-            success   = { raw = '[!SUCCESS]',   rendered = '󰄬 Success',   highlight = 'RenderMarkdownSuccess', category = 'obsidian' },
-            check     = { raw = '[!CHECK]',     rendered = '󰄬 Check',     highlight = 'RenderMarkdownSuccess', category = 'obsidian' },
-            done      = { raw = '[!DONE]',      rendered = '󰄬 Done',      highlight = 'RenderMarkdownSuccess', category = 'obsidian' },
-            question  = { raw = '[!QUESTION]',  rendered = '󰘥 Question',  highlight = 'RenderMarkdownWarn',    category = 'obsidian' },
-            help      = { raw = '[!HELP]',      rendered = '󰘥 Help',      highlight = 'RenderMarkdownWarn',    category = 'obsidian' },
-            faq       = { raw = '[!FAQ]',       rendered = '󰘥 Faq',       highlight = 'RenderMarkdownWarn',    category = 'obsidian' },
-            attention = { raw = '[!ATTENTION]', rendered = '󰀪 Attention', highlight = 'RenderMarkdownWarn',    category = 'obsidian' },
-            failure   = { raw = '[!FAILURE]',   rendered = '󰅖 Failure',   highlight = 'RenderMarkdownError',   category = 'obsidian' },
-            fail      = { raw = '[!FAIL]',      rendered = '󰅖 Fail',      highlight = 'RenderMarkdownError',   category = 'obsidian' },
-            missing   = { raw = '[!MISSING]',   rendered = '󰅖 Missing',   highlight = 'RenderMarkdownError',   category = 'obsidian' },
-            danger    = { raw = '[!DANGER]',    rendered = '󱐌 Danger',    highlight = 'RenderMarkdownError',   category = 'obsidian' },
-            error     = { raw = '[!ERROR]',     rendered = '󱐌 Error',     highlight = 'RenderMarkdownError',   category = 'obsidian' },
-            bug       = { raw = '[!BUG]',       rendered = '󰨰 Bug',       highlight = 'RenderMarkdownError',   category = 'obsidian' },
-            example   = { raw = '[!EXAMPLE]',   rendered = '󰉹 Example',   highlight = 'RenderMarkdownHint' ,   category = 'obsidian' },
-            quote     = { raw = '[!QUOTE]',     rendered = '󱆨 Quote',     highlight = 'RenderMarkdownQuote',   category = 'obsidian' },
-            cite      = { raw = '[!CITE]',      rendered = '󱆨 Cite',      highlight = 'RenderMarkdownQuote',   category = 'obsidian' },
-        },
         link = {
-            -- Inlined with 'image' elements.
-            image = ' ',
-            -- Inlined with 'email_autolink' elements.
-            email = ' ',
-            -- Fallback icon for 'inline_link' and 'uri_autolink' elements.
+            image     = ' ',
+            email     = ' ',
             hyperlink = ' ',
-            -- Applies to WikiLink elements.
-            wiki = {
-                icon = ' ',
-            },
-            -- Define custom destination patterns so icons can quickly inform you of what a link
-            -- contains. Applies to 'inline_link', 'uri_autolink', and wikilink nodes. When multiple
-            -- patterns match a link the one with the longer pattern is used.
-            -- The key is for healthcheck and to allow users to change its values, value type below.
-            -- | pattern   | matched against the destination text                            |
-            -- | icon      | gets inlined before the link text                               |
-            -- | kind      | optional determines how pattern is checked                      |
-            -- |           | pattern | @see :h lua-patterns, is the default if not set       |
-            -- |           | suffix  | @see :h vim.endswith()                                |
-            -- | priority  | optional used when multiple match, uses pattern length if empty |
-            -- | highlight | optional highlight for 'icon', uses fallback highlight if empty |
+            wiki      = { icon = ' ' },
             custom = {
-                web = { pattern = '^http', icon = ' ' },
-                discord = { pattern = 'discord%.com', icon = '󰙯 ' },
-                github = { pattern = 'github%.com', icon = '  ' },
-                gitlab = { pattern = 'gitlab%.com', icon = '󰮠 ' },
-                google = { pattern = 'google%.com', icon = '  ' },
-                neovim = { pattern = 'neovim%.io', icon = ' ' },
-                reddit = { pattern = 'reddit%.com', icon = '  ' },
-                stackoverflow = { pattern = 'stackoverflow%.com', icon = '󰓌 ' },
+                web       = { pattern = '^http',          icon = ' '  },
+                github    = { pattern = 'github%.com',    icon = '  ' },
+                google    = { pattern = 'google%.com',    icon = '  ' },
+                reddit    = { pattern = 'reddit%.com',    icon = '  ' },
                 wikipedia = { pattern = 'wikipedia%.org', icon = '  ' },
-                youtube = { pattern = 'youtube%.com', icon = '󰗃 ' },
+                youtube   = { pattern = 'youtube%.com',   icon = '󰗃 '  },
             },
         },
     }
