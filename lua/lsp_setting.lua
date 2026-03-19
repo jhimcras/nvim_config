@@ -108,10 +108,10 @@ local function SetupClangd()
             on_attach = on_attach_clangd,
             cmd = {
                 'clangd',
+                '--log=error',
                 -- '--background-index',
                 -- '--cross-file-rename',
                 -- '--clang-tidy',
-                -- '--log=verbose',
             },
             root_markers = {
                 'compile_commands.json',
@@ -233,6 +233,8 @@ M.SymHint = ' '
 -- M.SymHint = '▁'
 
 function M.setup()
+    vim.lsp.set_log_level('WARN')
+
     vim.diagnostic.config {
         signs =  {
             text = {
