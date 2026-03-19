@@ -259,6 +259,10 @@ function M.setup()
     --     status_symbol = '',
     --     current_function = true,
     -- }
+    api.nvim_create_autocmd({'LspProgress', 'DiagnosticChanged'}, {
+        callback = function() vim.cmd.redrawstatus() end,
+    })
+
     SetupClangd()
     SetupLua()
     -- SetupRust()
