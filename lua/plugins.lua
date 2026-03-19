@@ -62,6 +62,9 @@ local function OilSetting()
             show_hidden = true,
             case_insensitive = true,
         },
+        confirmation = {
+            border = "rounded",
+        },
         keymaps = {
             ["<C-h>"] = false,
             ["<C-l>"] = false,
