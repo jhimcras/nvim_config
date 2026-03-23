@@ -3,6 +3,8 @@ local api = vim.api
 local env = require 'env'
 local M = {}
 
+local tag_counter = 0
+
 function M.asyncGrep(term, word, wndidforll)
     if term == nil or term == '' or term == '\n' then
         print('Cannot grep a blank word')
@@ -70,6 +72,10 @@ function M.asyncGrep(term, word, wndidforll)
     vim.cmd.nohlsearch()
     vim.b.qf_prjroot = prjroot
     qfwinid = vim.fn.win_getid()
+    tag_counter = (tag_counter % 5) + 1
+    local tag = tag_counter
+    vim.w[wndidforll].loclist_tag = tag
+    vim.w[qfwinid].loclist_tag = tag
     vim.fn.clearmatches()
     local args = {'--vimgrep', '--smart-case'}
     if word and word == true then

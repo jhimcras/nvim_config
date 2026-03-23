@@ -561,6 +561,13 @@ local function grep_status_icon(bufnr, winid)
 end
 
 
+local function loclist_tag(bufnr, winid)
+    local tag = vim.w[winid] and vim.w[winid].loclist_tag
+    if not tag then return end
+    return ('%#StatuslineTag' .. tag .. '#  ')
+end
+
+
 local function make_statusline_text(bufnr, winid, components, sep)
     sep = sep or ''
     if type(components) == 'string' then
@@ -601,6 +608,7 @@ local function general_statusline(activation, mode, winid)
     local filename_and_status_memoized = ut.memoize_ttl(filename_and_status, {ttl_ms=300})
     local encoding_memoized = ut.memoize_ttl(encoding, {ttl_ms=2000})
     return {
+        loclist_tag,
         {
             w >= width_thresholds.git_branch and proj_or_git_branch_memoized or false,
             filename_and_status_memoized,
@@ -625,6 +633,7 @@ end
 
 local function quickfix_statusline(activation, mode)
     return {
+        loclist_tag,
         { 'ﴴ ', quickfix_search_query, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
         gap,
         { search_count, grep_status_icon, '%l/%L', hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
@@ -741,6 +750,11 @@ local statusline_setup = {
             }
         },
         StatuslineTermInactive = { link = 'StatuslineGeneralInactive' },
+        StatuslineTag1 = { fg = '#1e1e2e', bg = '#89b4fa' },
+        StatuslineTag2 = { fg = '#1e1e2e', bg = '#a6e3a1' },
+        StatuslineTag3 = { fg = '#1e1e2e', bg = '#fab387' },
+        StatuslineTag4 = { fg = '#1e1e2e', bg = '#cba6f7' },
+        StatuslineTag5 = { fg = '#1e1e2e', bg = '#f38ba8' },
     },
     -- seperator = { '│', hl = { bg = '', fg = '' } },
 }
