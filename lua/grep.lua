@@ -108,6 +108,19 @@ local function prompt_grep(word)
 end
 
 function M.setup()
+    api.nvim_create_autocmd('BufWinEnter', {
+        callback = function()
+            local winid = vim.fn.win_getid()
+            if vim.bo.buftype ~= 'quickfix' then return end
+            local info = vim.fn.getloclist(winid, { filewinid = 0 })
+            if not info.filewinid or info.filewinid == 0 then return end
+            local tag = vim.w[info.filewinid] and vim.w[info.filewinid].loclist_tag
+            if tag then
+                vim.w[winid].loclist_tag = tag
+            end
+        end,
+    })
+
     api.nvim_create_user_command('Grep', function(t) M.asyncGrep(t.args, false, vim.fn.win_getid()) end, { nargs='+', bar=true })
     api.nvim_create_user_command('GrepWord', function(t) M.asyncGrep(t.args, true, vim.fn.win_getid()) end, { nargs='+', bar=true })
 
