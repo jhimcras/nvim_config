@@ -547,6 +547,19 @@ local function quickfix_search_query(bufnr, winid)
     return vim.w[winid].quickfix_title
 end
 
+local spinner_frames = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
+
+local function grep_status_icon(bufnr, winid)
+    local gs = vim.w[winid].grep_status
+    if gs == 'searching' then
+        return spinner_frames[(math.floor(vim.uv.now() / 120) % #spinner_frames) + 1]
+    elseif gs == 'done' then
+        return '✓'
+    elseif gs == 'killed' then
+        return '✗'
+    end
+end
+
 
 local function make_statusline_text(bufnr, winid, components, sep)
     sep = sep or ''
@@ -612,7 +625,7 @@ end
 
 local function quickfix_statusline(activation, mode)
     return {
-        { 'ﴴ ', quickfix_search_query, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
+        { grep_status_icon, 'ﴴ ', quickfix_search_query, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
         gap,
         { search_count, '%l/%L', hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
     }

@@ -52,8 +52,10 @@ function M.asyncGrep(term, word, wndidforll)
     end
 
     local onexit = function()
+        local final_status = killed and 'killed' or 'done'
         killed = true
-        if qfwinid then
+        if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
+            vim.w[qfwinid].grep_status = final_status
             vim.api.nvim_win_call(qfwinid, function() vim.cmd 'redrawstatus!' end)
         end
     end
@@ -78,6 +80,7 @@ function M.asyncGrep(term, word, wndidforll)
     end
     args[#args+1] = term
     args[#args+1] = prjroot
+    vim.w[qfwinid].grep_status = 'searching'
     local pid, term_func, status = ut.AsyncProcess('rg', args, '.', { onread = onread, onexit = onexit })
 
     ut.nnoremap('<C-c>', function()
