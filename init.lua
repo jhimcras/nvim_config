@@ -58,6 +58,14 @@ local function BasicSettings()
         vim.opt_local.formatoptions:append('j')
         vim.opt_local.formatoptions:remove{'r', 'o'}
     end })
+
+    -- Clean up stale shada tmp files left by previous crashes (Windows)
+    api.nvim_create_autocmd('VimEnter', { once = true, callback = function()
+        local shada = vim.fn.stdpath('data') .. '/shada/main.shada'
+        for _, f in ipairs(vim.fn.glob(shada .. '.tmp.*', false, true)) do
+            vim.fn.delete(f)
+        end
+    end })
 end
 
 -- TODO: Find out not to use global function
