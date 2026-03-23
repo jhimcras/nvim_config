@@ -625,9 +625,9 @@ end
 
 local function quickfix_statusline(activation, mode)
     return {
-        { grep_status_icon, 'ﴴ ', quickfix_search_query, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
+        { 'ﴴ ', quickfix_search_query, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
         gap,
-        { search_count, '%l/%L', hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
+        { search_count, grep_status_icon, '%l/%L', hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
     }
 end
 
