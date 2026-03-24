@@ -298,18 +298,6 @@ local function KeyMappings()
 
     ut.nnoremap('<leader>ccc', function() print (GetIMEStatus()) end)
 
-    vim.api.nvim_create_autocmd("FileType", {
-        pattern = "qf",
-        callback = function()
-            vim.keymap.set("n", "dd", function()
-                local word = vim.fn.expand("<cword>")
-                if word ~= "" then
-                    vim.cmd("Lfilter! /\\v" .. word .. "/")
-                end
-            end, { buffer = true, silent = true })
-        end,
-    })
-
     ut.nnoremap('<esc>', function()
         for _, win in ipairs(vim.api.nvim_list_wins()) do
             if vim.api.nvim_win_get_config(win).relative ~= '' then
