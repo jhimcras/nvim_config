@@ -110,17 +110,19 @@ function M.asyncGrep(term, word, wndidforll)
         pattern = tostring(wndidforll),
         once = true,
         callback = function()
-            for _, win in ipairs(vim.api.nvim_list_wins()) do
-                if vim.api.nvim_win_is_valid(win) then
-                    local buftype = vim.bo[vim.api.nvim_win_get_buf(win)].buftype
-                    if buftype == 'quickfix' then
-                        local info = vim.fn.getloclist(win, { filewinid = 0 })
-                        if info.filewinid == wndidforll then
-                            vim.api.nvim_win_close(win, true)
+            vim.schedule(function()
+                for _, win in ipairs(vim.api.nvim_list_wins()) do
+                    if vim.api.nvim_win_is_valid(win) then
+                        local buftype = vim.bo[vim.api.nvim_win_get_buf(win)].buftype
+                        if buftype == 'quickfix' then
+                            local info = vim.fn.getloclist(win, { filewinid = 0 })
+                            if info.filewinid == wndidforll then
+                                vim.api.nvim_win_close(win, true)
+                            end
                         end
                     end
                 end
-            end
+            end)
         end,
     })
     vim.fn.clearmatches()
