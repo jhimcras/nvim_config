@@ -6,6 +6,12 @@ local M = {}
 local tag_counter = 0
 local filter_chains = {}  -- keyed by loclist window ID
 
+function M.assign_tag(origin_winid, loc_winid)
+    tag_counter = (tag_counter % 5) + 1
+    vim.w[origin_winid].loclist_tag = tag_counter
+    vim.w[loc_winid].loclist_tag = tag_counter
+end
+
 function M.record_filter(loclist_winid, term, bang)
     if loclist_winid == 0 then
         loclist_winid = vim.api.nvim_get_current_win()

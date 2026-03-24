@@ -46,6 +46,19 @@ local function build_origin_window(origin_winid)
     return winctx
 end
 
+local function items_with_filename(items)
+    local out = {}
+    for _, item in ipairs(items) do
+        local entry = vim.deepcopy(item)
+        if entry.bufnr and entry.bufnr ~= 0 then
+            entry.filename = vim.api.nvim_buf_get_name(entry.bufnr)
+            entry.bufnr = nil
+        end
+        table.insert(out, entry)
+    end
+    return out
+end
+
 local function save_loclist(winid, path)
     if not winid or not vim.api.nvim_win_is_valid(winid) then
         return false, "Invalid window id"
@@ -53,12 +66,10 @@ local function save_loclist(winid, path)
 
     ensure_dir(vim.fn.fnamemodify(path, ':h'))
 
-    local info = vim.fn.getloclist(winid, { title = 1, items = 1, winid = 0, filewinid = 1 })
+    local info = vim.fn.getloclist(winid, { title = 1, items = 1 })
     if not info or not info.items or #info.items == 0 then
         return false, "List is empty or invalid"
     end
-
-    local origin_winid = info.filewinid and info.filewinid ~= 0 and info.filewinid or nil
 
     -- Capture selection index for location list
     local sel = vim.fn.getloclist(winid, { idx = 0 }).idx or 1
@@ -66,8 +77,8 @@ local function save_loclist(winid, path)
     local data = {
         kind   = "loc",
         title  = info.title,
-        items  = info.items,
-        origin = origin_winid and build_origin_window(origin_winid) or nil,
+        items  = items_with_filename(info.items),
+        origin = build_origin_window(winid),
         selection = sel,
     }
 
@@ -79,10 +90,13 @@ local function save_all_loclists(path, session_prefix)
     ensure_dir(path)
     for _, tabpage in ipairs(vim.api.nvim_list_tabpages()) do
         for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+            local bufnr = vim.api.nvim_win_get_buf(winid)
+            if vim.bo[bufnr].buftype == 'quickfix' then goto continue end
             local loc = vim.fn.getloclist(winid, { items = 0, winid = 0 })
             if loc and loc.items and #loc.items > 0 and loc.winid ~= 0 then
                 save_loclist(winid, string.format("%s/%s%s.%d.lua", path, session_prefix, LIST_EXT_LOC, winid))
             end
+            ::continue::
         end
     end
 end
@@ -114,7 +128,7 @@ local function save_quickfix(path, session_prefix)
     local data = {
         kind      = "qf",
         title     = info.title,
-        items     = info.items,
+        items     = items_with_filename(info.items),
         selection = sel,
     }
 
@@ -138,21 +152,23 @@ end
 local function find_target_window(origin)
     if not origin then return nil end
     -- Try to find a window that matches the saved origin context, ignoring quickfix windows.
-    local matches = {}
+    local tab_matches = {}
     for _, winid in ipairs(vim.api.nvim_list_wins()) do
         local bufnr = vim.api.nvim_win_get_buf(winid)
         if vim.bo[bufnr].buftype ~= 'quickfix' then
             local ctx = ut.get_window_context(winid)
             if ctx and ctx.bufname == origin.bufname then
                 if ctx.tabpage == origin.tabpage then
-                    return winid  -- exact tab match preferred
+                    if ctx.winidx == origin.winidx then
+                        return winid  -- exact tab+position match
+                    end
+                    table.insert(tab_matches, winid)
                 end
-                table.insert(matches, winid)
             end
         end
     end
-    -- Fallback: first non‑quickfix window with same buffer name.
-    return matches[1]
+    -- Fallback: first same-tab window with matching buffer name.
+    return tab_matches[1]
 end
 
 -- Close any empty quickfix or location list windows (they may be created by mksession)
@@ -166,14 +182,12 @@ local function close_empty_qf_loc_windows()
 end
 
 
-local function load_qflist(path)
+-- Load list data and set it, but do not open any window.
+-- Returns "qf" for quickfix, target winid for loc, or nil on error.
+local function load_qflist_no_open(path)
     local ok, data = pcall(dofile, path)
-    if not ok then
-        return false, "Failed to load list file"
-    end
-
-    if type(data) ~= "table" or not data.items then
-        return false, "Invalid list file"
+    if not ok or type(data) ~= "table" or not data.items then
+        return nil
     end
 
     if data.kind == "qf" then
@@ -181,11 +195,10 @@ local function load_qflist(path)
             title = data.title or "Restored Quickfix",
             items = data.items,
         })
-        -- Restore cursor/selection if present
         if data.selection and data.selection > 0 then
             vim.fn.setqflist({}, "r", { idx = data.selection })
         end
-        vim.cmd('copen')  -- automatically open quickfix window
+        return "qf"
 
     elseif data.kind == "loc" then
         local target = find_target_window(data.origin)
@@ -199,18 +212,10 @@ local function load_qflist(path)
         if data.selection and data.selection > 0 then
             vim.fn.setloclist(target, {}, "r", { idx = data.selection })
         end
-        -- Open the location list only if it actually exists (has items)
-        local cur_loc = vim.fn.getloclist(target, { items = 1 })
-        if cur_loc and cur_loc.items and #cur_loc.items > 0 then
-            -- Ensure we are in the target window when opening
-            vim.api.nvim_set_current_win(target)
-            pcall(vim.cmd, 'lopen')
-        end
-    else
-        return false, "Unknown list kind"
+        return target
     end
 
-    return true
+    return nil
 end
 
 
@@ -236,16 +241,31 @@ function M.OpenSession(session)
     vim.cmd('%bwipeout!')
     local sess_path = string.format('%s/sessions/%s', vim.fn.stdpath('data'), session)
     vim.cmd.source(sess_path)
-    -- Load any saved quickfix or location list files for this session
+    -- Load any saved quickfix or location list files for this session.
+    -- Two-pass: set all lists first (so winidx values stay stable), then open windows.
     local prefix = vim.fn.fnamemodify(sess_path, ':t')
     local dir = vim.fn.fnamemodify(sess_path, ':h')
     local patterns = {
         string.format('%s/%s%s', dir, prefix, LIST_EXT_QF),
         string.format('%s/%s%s.*.lua', dir, prefix, LIST_EXT_LOC),
     }
+    local to_open = {}
     for _, pat in ipairs(patterns) do
         for _, file in ipairs(vim.fn.glob(pat, false, true)) do
-            load_qflist(file)
+            local result = load_qflist_no_open(file)
+            if result then table.insert(to_open, result) end
+        end
+    end
+    for _, target in ipairs(to_open) do
+        if target == "qf" then
+            pcall(vim.cmd, 'copen')
+        else
+            vim.api.nvim_set_current_win(target)
+            pcall(vim.cmd, 'lopen')
+            local loc_winid = vim.fn.getloclist(target, { winid = 0 }).winid
+            if loc_winid and loc_winid ~= 0 then
+                require'grep'.assign_tag(target, loc_winid)
+            end
         end
     end
     close_empty_qf_loc_windows()
