@@ -544,7 +544,24 @@ local function fugitive_info(bufnr, winid)
 end
 
 local function quickfix_search_query(bufnr, winid)
-    return vim.w[winid].quickfix_title
+    local title = vim.w[winid].quickfix_title
+    if not title then return end
+    local chain = require'grep'.get_filter_chain(winid)
+    if not chain or #chain == 0 then return title end
+    local MAX_CHAIN = 25
+    local visible = {}
+    for i, v in ipairs(chain) do visible[i] = v end
+    local hidden = 0
+    while #table.concat(visible, ' → ') > MAX_CHAIN and #visible > 1 do
+        table.remove(visible, 1)
+        hidden = hidden + 1
+    end
+    local chain_str = ' → ' .. (hidden > 0 and ('(+' .. hidden .. ') ') or '') .. table.concat(visible, ' → ')
+    local before, sep_and_after = title:match('^(.-)( │ .+)$')
+    if before then
+        return before .. chain_str .. sep_and_after
+    end
+    return title .. chain_str
 end
 
 local spinner_frames = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }

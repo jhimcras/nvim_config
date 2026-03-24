@@ -4,6 +4,26 @@ local env = require 'env'
 local M = {}
 
 local tag_counter = 0
+local filter_chains = {}  -- keyed by loclist window ID
+
+function M.record_filter(loclist_winid, term, bang)
+    if loclist_winid == 0 then
+        loclist_winid = vim.api.nvim_get_current_win()
+    end
+    local label = bang and ('!' .. term) or term
+    filter_chains[loclist_winid] = filter_chains[loclist_winid] or {}
+    table.insert(filter_chains[loclist_winid], label)
+    if vim.api.nvim_win_is_valid(loclist_winid) then
+        vim.api.nvim_win_call(loclist_winid, function() vim.cmd 'redrawstatus' end)
+    end
+end
+
+function M.get_filter_chain(loclist_winid)
+    if loclist_winid == 0 then
+        loclist_winid = vim.api.nvim_get_current_win()
+    end
+    return filter_chains[loclist_winid]
+end
 
 function M.asyncGrep(term, word, wndidforll)
     if term == nil or term == '' or term == '\n' then
@@ -14,6 +34,7 @@ function M.asyncGrep(term, word, wndidforll)
     local killed = false
     local remain = ""
     local qfwinid
+    local redraw_timer
 
     local onread = function(err, data)
         if killed then return end
@@ -49,16 +70,19 @@ function M.asyncGrep(term, word, wndidforll)
                 end)
             end
         end
-        -- !!!!!! different results occured when the tab has chagned
-        vim.schedule(function() vim.api.nvim_win_call(qfwinid, function() vim.cmd 'redrawstatus!' end) end)
     end
 
     local onexit = function()
         local final_status = killed and 'killed' or 'done'
         killed = true
+        if redraw_timer then
+            redraw_timer:stop()
+            redraw_timer:close()
+            redraw_timer = nil
+        end
         if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
             vim.w[qfwinid].grep_status = final_status
-            vim.api.nvim_win_call(qfwinid, function() vim.cmd 'redrawstatus!' end)
+            vim.api.nvim_win_call(qfwinid, function() vim.cmd 'redrawstatus' end)
         end
     end
 
@@ -104,6 +128,13 @@ function M.asyncGrep(term, word, wndidforll)
     args[#args+1] = term
     args[#args+1] = prjroot
     vim.w[qfwinid].grep_status = 'searching'
+    filter_chains[qfwinid] = nil
+    redraw_timer = vim.uv.new_timer()
+    redraw_timer:start(0, 120, vim.schedule_wrap(function()
+        if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
+            vim.api.nvim_win_call(qfwinid, function() vim.cmd 'redrawstatus' end)
+        end
+    end))
     local pid, term_func, status = ut.AsyncProcess('rg', args, '.', { onread = onread, onexit = onexit })
 
     ut.nnoremap('<C-c>', function()
@@ -146,6 +177,47 @@ function M.setup()
 
     ut.vnoremap('<leader>s', function() M.asyncGrep(ut.GetSelectWord(), false, vim.fn.win_getid()) end)
     ut.nnoremap('<leader>s', function() M.asyncGrep(vim.fn.expand('<cword>'), true, vim.fn.win_getid()) end)
+
+    local function filter_list(get_items, set_items, pat, bang)
+        local items = get_items()
+        local filtered = {}
+        for _, item in ipairs(items) do
+            local text = item.text or ''
+            local fname = item.bufnr and vim.fn.bufname(item.bufnr) or ''
+            local matches = vim.fn.match(text, pat) >= 0 or vim.fn.match(fname, pat) >= 0
+            if (bang and not matches) or (not bang and matches) then
+                table.insert(filtered, item)
+            end
+        end
+        set_items(filtered)
+    end
+
+    local function strip_pat(raw) return raw:gsub('^/', ''):gsub('/$', ''):gsub('^\\v', '') end
+
+    local function handle_lfilter(opts)
+        local winid = vim.api.nvim_get_current_win()
+        local term = strip_pat(opts.args)
+        filter_list(
+            function() return vim.fn.getloclist(0) end,
+            function(items) vim.fn.setloclist(0, {}, 'r', { items = items }) end,
+            term, opts.bang
+        )
+        M.record_filter(winid, term, opts.bang)
+    end
+
+    local function handle_cfilter(opts)
+        local winid = vim.api.nvim_get_current_win()
+        local term = strip_pat(opts.args)
+        filter_list(
+            function() return vim.fn.getqflist() end,
+            function(items) vim.fn.setqflist({}, 'r', { items = items }) end,
+            term, opts.bang
+        )
+        M.record_filter(winid, term, opts.bang)
+    end
+
+    api.nvim_create_user_command('Lfilter', handle_lfilter, { nargs = '+', bang = true, force = true })
+    api.nvim_create_user_command('Cfilter', handle_cfilter, { nargs = '+', bang = true, force = true })
 
 end
 
