@@ -76,6 +76,23 @@ function M.asyncGrep(term, word, wndidforll)
     local tag = tag_counter
     vim.w[wndidforll].loclist_tag = tag
     vim.w[qfwinid].loclist_tag = tag
+    api.nvim_create_autocmd('WinClosed', {
+        pattern = tostring(wndidforll),
+        once = true,
+        callback = function()
+            for _, win in ipairs(vim.api.nvim_list_wins()) do
+                if vim.api.nvim_win_is_valid(win) then
+                    local buftype = vim.bo[vim.api.nvim_win_get_buf(win)].buftype
+                    if buftype == 'quickfix' then
+                        local info = vim.fn.getloclist(win, { filewinid = 0 })
+                        if info.filewinid == wndidforll then
+                            vim.api.nvim_win_close(win, true)
+                        end
+                    end
+                end
+            end
+        end,
+    })
     vim.fn.clearmatches()
     local args = {'--vimgrep', '--smart-case'}
     if word and word == true then
