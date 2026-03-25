@@ -544,7 +544,15 @@ local function fugitive_info(bufnr, winid)
 end
 
 local function quickfix_search_query(bufnr, winid)
-    local title = vim.w[winid].quickfix_title
+    -- Read title directly from loclist data via filewinid, bypassing w:quickfix_title
+    -- which Neovim sets with incorrect timing when lopen splits an existing loclist window.
+    local title
+    local filewinid = vim.fn.getloclist(winid, { filewinid = 0 }).filewinid
+    if filewinid and filewinid ~= 0 then
+        title = vim.fn.getloclist(filewinid, { title = 0 }).title
+    else
+        title = vim.w[winid].quickfix_title
+    end
     if not title then return end
     local chain = require'grep'.get_filter_chain(winid)
     if not chain or #chain == 0 then return title end
@@ -834,7 +842,6 @@ function M.setup()
     if testing == true then
         vim.o.statusline = "%!v:lua.require'status'.statusline_entry()"
         set_all_highlight(statusline_setup.highlights)
-        vim.api.nvim_create_autocmd({'Filetype'}, {pattern='qf', callback = function() vim.o.statusline = "%!v:lua.require'status'.statusline_entry()" end})
     else
         vim.api.nvim_create_autocmd({'WinEnter', 'BufWinEnter'},
                                     { callback = function() vim.wo.statusline = M.ActiveWin() end })

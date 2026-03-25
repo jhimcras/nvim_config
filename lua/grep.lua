@@ -6,6 +6,65 @@ local M = {}
 local tag_counter = 0
 local filter_chains = {}  -- keyed by loclist window ID
 
+local spinner_frames = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
+
+-- Build a literal statusline format string for a loclist window.
+-- Uses embedded %#HighlightGroup# and %l/%L sequences so Neovim expands
+-- them per-window without needing %!expr evaluation.
+local function build_loclist_sl(winid)
+    local filewinid = vim.fn.getloclist(winid, { filewinid = 0 }).filewinid
+    local title = ''
+    if filewinid and filewinid ~= 0 then
+        local t = vim.fn.getloclist(filewinid, { title = 0 }).title
+        if t then title = t end
+    end
+    if title == '' then
+        title = (vim.w[winid] and vim.w[winid].grep_title) or ''
+    end
+
+    local chain = filter_chains[winid]
+    if chain and #chain > 0 then
+        local MAX_CHAIN = 25
+        local visible = {}
+        for i, v in ipairs(chain) do visible[i] = v end
+        local hidden = 0
+        while #table.concat(visible, ' → ') > MAX_CHAIN and #visible > 1 do
+            table.remove(visible, 1)
+            hidden = hidden + 1
+        end
+        local chain_str = ' → ' .. (hidden > 0 and ('(+' .. hidden .. ') ') or '') .. table.concat(visible, ' → ')
+        local before, sep_and_after = title:match('^(.-)( │ .+)$')
+        title = before and (before .. chain_str .. sep_and_after) or (title .. chain_str)
+    end
+
+    local gs = vim.w[winid] and vim.w[winid].grep_status
+    local icon = ''
+    if gs == 'searching' then
+        icon = spinner_frames[(math.floor(vim.uv.now() / 120) % #spinner_frames) + 1]
+    elseif gs == 'done' then
+        icon = '✓'
+    elseif gs == 'killed' then
+        icon = '✗'
+    end
+
+    local tag = vim.w[winid] and vim.w[winid].loclist_tag
+    local tag_hl = tag and string.format('%%#StatuslineTag%d#  ', tag) or ''
+
+    -- Escape '%' in title so it is not interpreted as a statusline format sequence.
+    local safe_title = title:gsub('%%', '%%%%')
+    local hl1, hl2 = 'StatuslineGeneralActive_1_n', 'StatuslineGeneralActive_2_n'
+    return string.format('%%#%s# ﴴ  %%#%s# %s %%<%%=%%#%s# %s %%l/%%L %s',
+        hl1, hl1, safe_title, hl2, icon, tag_hl)
+end
+
+-- Set the window-local statusline for a loclist window to a pre-rendered
+-- format string.  Must be followed by a redrawstatus call to take effect.
+function M.update_loclist_sl(winid)
+    if not winid or not vim.api.nvim_win_is_valid(winid) then return end
+    vim.api.nvim_set_option_value('statusline', build_loclist_sl(winid),
+        { win = winid, scope = 'local' })
+end
+
 function M.assign_tag(origin_winid, loc_winid)
     tag_counter = (tag_counter % 5) + 1
     vim.w[origin_winid].loclist_tag = tag_counter
@@ -19,9 +78,8 @@ function M.record_filter(loclist_winid, term, bang)
     local label = bang and ('!' .. term) or term
     filter_chains[loclist_winid] = filter_chains[loclist_winid] or {}
     table.insert(filter_chains[loclist_winid], label)
-    if vim.api.nvim_win_is_valid(loclist_winid) then
-        vim.api.nvim_win_call(loclist_winid, function() vim.cmd 'redrawstatus' end)
-    end
+    M.update_loclist_sl(loclist_winid)
+    vim.cmd 'redrawstatus!'
 end
 
 function M.get_filter_chain(loclist_winid)
@@ -29,6 +87,12 @@ function M.get_filter_chain(loclist_winid)
         loclist_winid = vim.api.nvim_get_current_win()
     end
     return filter_chains[loclist_winid]
+end
+
+function M.set_filter_chain(loclist_winid, chain)
+    filter_chains[loclist_winid] = chain
+    M.update_loclist_sl(loclist_winid)
+    vim.cmd 'redrawstatus!'
 end
 
 function M.asyncGrep(term, word, wndidforll)
@@ -88,7 +152,8 @@ function M.asyncGrep(term, word, wndidforll)
         end
         if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
             vim.w[qfwinid].grep_status = final_status
-            vim.api.nvim_win_call(qfwinid, function() vim.cmd 'redrawstatus' end)
+            M.update_loclist_sl(qfwinid)
+            vim.cmd 'redrawstatus!'
         end
     end
 
@@ -97,15 +162,37 @@ function M.asyncGrep(term, word, wndidforll)
     local prjroot = require'prjroot'.GetCurrentProjectRoot() or
                     vim.b.qf_prjroot or
                     ut.GetCurrentBufferDir()
+    -- If wndidforll inherited a loclist window from a vsplit (filewinid points to a
+    -- different origin), flush it so lopen creates a fresh window instead of stealing
+    -- the other window's loclist window.
+    vim.api.nvim_set_current_win(wndidforll)
+    local inherited = vim.fn.getloclist(wndidforll, { winid = 0 }).winid
+    if inherited ~= 0 and vim.api.nvim_win_is_valid(inherited) then
+        local origin = vim.fn.getloclist(inherited, { filewinid = 0 }).filewinid
+        if origin ~= 0 and origin ~= wndidforll then
+            vim.fn.setloclist(wndidforll, {}, 'f')
+        end
+    end
     vim.fn.setloclist(wndidforll, {}, ' ', {title = string.format("Search: %s │ %s", term, prjroot), items = {}, nr = '$'})
     vim.cmd.lopen()
+    qfwinid = vim.fn.getloclist(wndidforll, { winid = 0 }).winid
+    if not qfwinid or qfwinid == 0 then
+        qfwinid = vim.fn.win_getid()
+    end
+    vim.api.nvim_set_current_win(qfwinid)
     vim.cmd.nohlsearch()
     vim.b.qf_prjroot = prjroot
-    qfwinid = vim.fn.win_getid()
     tag_counter = (tag_counter % 5) + 1
     local tag = tag_counter
+    -- Store the search title so it can be used during statusline rendering.
+    vim.w[qfwinid].grep_title = string.format("Search: %s │ %s", term, prjroot)
     vim.w[wndidforll].loclist_tag = tag
     vim.w[qfwinid].loclist_tag = tag
+    -- Set a pre-rendered format string as the window-local statusline.
+    -- Using a literal string (no %!expr) avoids Neovim ignoring the local %! for qf windows.
+    vim.w[qfwinid].grep_status = 'searching'
+    filter_chains[qfwinid] = nil
+    M.update_loclist_sl(qfwinid)
     api.nvim_create_autocmd('WinClosed', {
         pattern = tostring(wndidforll),
         once = true,
@@ -135,12 +222,11 @@ function M.asyncGrep(term, word, wndidforll)
     end
     args[#args+1] = term
     args[#args+1] = prjroot
-    vim.w[qfwinid].grep_status = 'searching'
-    filter_chains[qfwinid] = nil
     redraw_timer = vim.uv.new_timer()
     redraw_timer:start(0, 120, vim.schedule_wrap(function()
         if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
-            vim.api.nvim_win_call(qfwinid, function() vim.cmd 'redrawstatus' end)
+            M.update_loclist_sl(qfwinid)
+            vim.cmd 'redrawstatus!'
         end
     end))
     local pid, term_func, status = ut.AsyncProcess('rg', args, '.', { onread = onread, onexit = onexit })
@@ -168,12 +254,18 @@ function M.setup()
         callback = function()
             local winid = vim.fn.win_getid()
             if vim.bo.buftype ~= 'quickfix' then return end
+            local winfo = vim.fn.getwininfo(winid)[1]
+            if not winfo or winfo.loclist ~= 1 then return end
+            -- Propagate loclist_tag from origin window if not already set.
             local info = vim.fn.getloclist(winid, { filewinid = 0 })
-            if not info.filewinid or info.filewinid == 0 then return end
-            local tag = vim.w[info.filewinid] and vim.w[info.filewinid].loclist_tag
-            if tag then
-                vim.w[winid].loclist_tag = tag
+            if info.filewinid and info.filewinid ~= 0 then
+                local tag = vim.w[info.filewinid] and vim.w[info.filewinid].loclist_tag
+                if tag and not (vim.w[winid] and vim.w[winid].loclist_tag) then
+                    vim.w[winid].loclist_tag = tag
+                end
             end
+            -- Set the pre-rendered window-local statusline.
+            M.update_loclist_sl(winid)
         end,
     })
 

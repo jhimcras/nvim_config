@@ -74,12 +74,24 @@ local function save_loclist(winid, path)
     -- Capture selection index for location list
     local sel = vim.fn.getloclist(winid, { idx = 0 }).idx or 1
 
+    local loc_winid = vim.fn.getloclist(winid, { winid = 0 }).winid
+    local filter_chain, matches, cursor
+    if loc_winid and loc_winid ~= 0 and vim.api.nvim_win_is_valid(loc_winid) then
+        filter_chain = require'grep'.get_filter_chain(loc_winid)
+        matches = vim.fn.getmatches(loc_winid)
+        local c = vim.api.nvim_win_get_cursor(loc_winid)
+        cursor = { row = c[1], col = c[2] }
+    end
+
     local data = {
-        kind   = "loc",
-        title  = info.title,
-        items  = items_with_filename(info.items),
-        origin = build_origin_window(winid),
-        selection = sel,
+        kind         = "loc",
+        title        = info.title,
+        items        = items_with_filename(info.items),
+        origin       = build_origin_window(winid),
+        selection    = sel,
+        filter_chain = filter_chain,
+        matches      = matches,
+        cursor       = cursor,
     }
 
     return write_list_file(data, path)
@@ -125,11 +137,23 @@ local function save_quickfix(path, session_prefix)
     -- Capture the current selected entry (index)
     local sel = vim.fn.getqflist({ idx = 0 }).idx or 1
 
+    local qf_winid = info.winid
+    local filter_chain, matches, cursor
+    if qf_winid and qf_winid ~= 0 and vim.api.nvim_win_is_valid(qf_winid) then
+        filter_chain = require'grep'.get_filter_chain(qf_winid)
+        matches = vim.fn.getmatches(qf_winid)
+        local c = vim.api.nvim_win_get_cursor(qf_winid)
+        cursor = { row = c[1], col = c[2] }
+    end
+
     local data = {
-        kind      = "qf",
-        title     = info.title,
-        items     = items_with_filename(info.items),
-        selection = sel,
+        kind         = "qf",
+        title        = info.title,
+        items        = items_with_filename(info.items),
+        selection    = sel,
+        filter_chain = filter_chain,
+        matches      = matches,
+        cursor       = cursor,
     }
 
     return write_list_file(data, string.format("%s/%s%s", path, session_prefix, LIST_EXT_QF))
@@ -183,7 +207,7 @@ end
 
 
 -- Load list data and set it, but do not open any window.
--- Returns "qf" for quickfix, target winid for loc, or nil on error.
+-- Returns a table { kind, [target], filter_chain, matches, cursor } or nil on error.
 local function load_qflist_no_open(path)
     local ok, data = pcall(dofile, path)
     if not ok or type(data) ~= "table" or not data.items then
@@ -198,7 +222,7 @@ local function load_qflist_no_open(path)
         if data.selection and data.selection > 0 then
             vim.fn.setqflist({}, "r", { idx = data.selection })
         end
-        return "qf"
+        return { kind = "qf", title = data.title, filter_chain = data.filter_chain, matches = data.matches, cursor = data.cursor }
 
     elseif data.kind == "loc" then
         local target = find_target_window(data.origin)
@@ -212,7 +236,7 @@ local function load_qflist_no_open(path)
         if data.selection and data.selection > 0 then
             vim.fn.setloclist(target, {}, "r", { idx = data.selection })
         end
-        return target
+        return { kind = "loc", title = data.title, target = target, filter_chain = data.filter_chain, matches = data.matches, cursor = data.cursor }
     end
 
     return nil
@@ -256,15 +280,29 @@ function M.OpenSession(session)
             if result then table.insert(to_open, result) end
         end
     end
-    for _, target in ipairs(to_open) do
-        if target == "qf" then
+    local grep = require'grep'
+    for _, info in ipairs(to_open) do
+        if info.kind == "qf" then
             pcall(vim.cmd, 'copen')
+            local qf_winid = vim.fn.getqflist({ winid = 0 }).winid
+            if qf_winid and qf_winid ~= 0 then
+                if info.title then vim.w[qf_winid].grep_title = info.title end
+                if info.filter_chain then grep.set_filter_chain(qf_winid, info.filter_chain) end
+                if info.matches then pcall(vim.fn.setmatches, info.matches, qf_winid) end
+                if info.cursor then pcall(vim.api.nvim_win_set_cursor, qf_winid, { info.cursor.row, info.cursor.col }) end
+            end
         else
+            local target = info.target
             vim.api.nvim_set_current_win(target)
             pcall(vim.cmd, 'lopen')
             local loc_winid = vim.fn.getloclist(target, { winid = 0 }).winid
             if loc_winid and loc_winid ~= 0 then
-                require'grep'.assign_tag(target, loc_winid)
+                grep.assign_tag(target, loc_winid)
+                if info.title then vim.w[loc_winid].grep_title = info.title end
+                if info.filter_chain then grep.set_filter_chain(loc_winid, info.filter_chain) end
+                if info.matches then pcall(vim.fn.setmatches, info.matches, loc_winid) end
+                if info.cursor then pcall(vim.api.nvim_win_set_cursor, loc_winid, { info.cursor.row, info.cursor.col }) end
+                grep.update_loclist_sl(loc_winid)
             end
         end
     end
