@@ -656,11 +656,21 @@ local function general_statusline(activation, mode, winid)
 end
 
 
-local function quickfix_statusline(activation, mode)
+local function quickfix_statusline(activation, mode, winid)
+    local is_search = false
+    if winid and winid ~= 0 then
+        local filewinid = vim.fn.getloclist(winid, { filewinid = 0 }).filewinid
+        if filewinid and filewinid ~= 0 then
+            local title = vim.fn.getloclist(filewinid, { title = 0 }).title
+            is_search = title ~= nil and title:sub(1, 8) == 'Search: '
+        end
+    end
+    local hl1 = is_search and 'StatuslineSearch_1' or 'StatuslineGeneralActive_1_n'
+    local hl2 = is_search and 'StatuslineSearch_2' or 'StatuslineGeneralActive_2_n'
     return {
-        { 'ﴴ ', quickfix_search_query, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
+        { 'ﴴ ', quickfix_search_query, hl = hl1, sep = ' ', pad = ' ' },
         gap,
-        { search_count, grep_status_icon, '%l/%L', hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
+        { search_count, grep_status_icon, '%l/%L', hl = hl2, sep = ' ', pad = ' ' },
         loclist_tag,
     }
 end
@@ -780,6 +790,8 @@ local statusline_setup = {
         StatuslineTag3 = { fg = '#1e1e2e', bg = '#fab387' },
         StatuslineTag4 = { fg = '#1e1e2e', bg = '#cba6f7' },
         StatuslineTag5 = { fg = '#1e1e2e', bg = '#f38ba8' },
+        StatuslineSearch_1 = { bg = '#1F2937', fg = '#38bdf8' },
+        StatuslineSearch_2 = { bg = '#075985', fg = '#bae6fd' },
     },
     -- seperator = { '│', hl = { bg = '', fg = '' } },
 }

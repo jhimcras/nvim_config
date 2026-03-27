@@ -7,6 +7,7 @@ local tag_counter = 0
 local filter_chains = {}   -- keyed by loclist window ID
 local origin_tags = {}     -- origin_winid -> last assigned tag (persists across loclist close)
 local active_loclist = {}  -- origin_winid -> current loclist winid
+local search_info = {}     -- loclist title -> {term=str, word=bool}
 
 function M.update_loclist_sl(winid)
     -- Do NOT set a window-local statusline option here.
@@ -22,6 +23,23 @@ function M.update_loclist_sl(winid)
     -- All we need to do is trigger a redraw so the global re-evaluates.
     if not winid or not vim.api.nvim_win_is_valid(winid) then return end
     vim.cmd 'redrawstatus!'
+end
+
+function M.restore_highlight(loclist_winid)
+    local filewinid = vim.fn.getloclist(loclist_winid, { filewinid = 0 }).filewinid
+    if not filewinid or filewinid == 0 then return end
+    local title = vim.fn.getloclist(filewinid, { title = 0 }).title
+    local info = title and search_info[title]
+    vim.api.nvim_win_call(loclist_winid, function()
+        vim.fn.clearmatches()
+        if info then
+            if info.word then
+                vim.fn.matchadd('Special', [[\v<]] .. info.term .. [[>]])
+            else
+                vim.fn.matchadd('Special', [[\v]] .. info.term)
+            end
+        end
+    end)
 end
 
 function M.assign_tag(origin_winid, loc_winid)
@@ -133,6 +151,7 @@ function M.asyncGrep(term, word, wndidforll)
         end
     end
     local title = string.format("Search: %s │ %s", term, prjroot)
+    search_info[title] = {term = term, word = word == true}
     vim.fn.setloclist(wndidforll, {}, ' ', {title = title, items = {}, nr = '$'})
     vim.cmd.lopen()
     qfwinid = vim.fn.getloclist(wndidforll, { winid = 0 }).winid
@@ -332,6 +351,7 @@ function M.setup()
             -- cannot be combined and doing so silently corrupts vim.o.statusline.
             vim.api.nvim_set_option_value('statusline', '', { win = winid })
             M.update_loclist_sl(winid)
+            M.restore_highlight(winid)
         end,
     })
 
