@@ -151,11 +151,41 @@ function M.asyncGrep(term, word, wndidforll)
     vim.w[qfwinid].grep_status = 'searching'
     filter_chains[qfwinid] = nil
     M.update_loclist_sl(qfwinid)
+    -- QuitPre fires BEFORE Neovim creates the auto-buffer window that normally
+    -- appears when the last normal window is quit while a loclist is open.
+    -- Closing the loclist here lets the origin become the true last window,
+    -- so Neovim exits cleanly on its own.
+    local quit_handled = false
+    local quitpre_au_id
+    quitpre_au_id = api.nvim_create_autocmd('QuitPre', {
+        callback = function()
+            if vim.api.nvim_get_current_win() ~= wndidforll then return end
+            pcall(api.nvim_del_autocmd, quitpre_au_id)
+            quit_handled = true
+            for _, win in ipairs(vim.api.nvim_list_wins()) do
+                if vim.api.nvim_win_is_valid(win) then
+                    local bt = vim.bo[vim.api.nvim_win_get_buf(win)].buftype
+                    if bt == 'quickfix' then
+                        local info = vim.fn.getloclist(win, { filewinid = 0 })
+                        if info.filewinid == wndidforll then
+                            vim.api.nvim_win_close(win, true)
+                        end
+                    end
+                end
+            end
+        end,
+    })
+
+    -- WinClosed: fallback for non-:q closes (wincmd c, API calls, etc.)
+    -- QuitPre won't fire for those, so we still need to clean up the loclist.
     api.nvim_create_autocmd('WinClosed', {
         pattern = tostring(wndidforll),
         once = true,
         callback = function()
+            pcall(api.nvim_del_autocmd, quitpre_au_id)
+            if quit_handled then return end  -- QuitPre already cleaned up
             vim.schedule(function()
+                -- Close loclist windows for this origin
                 for _, win in ipairs(vim.api.nvim_list_wins()) do
                     if vim.api.nvim_win_is_valid(win) then
                         local buftype = vim.bo[vim.api.nvim_win_get_buf(win)].buftype
@@ -166,6 +196,25 @@ function M.asyncGrep(term, word, wndidforll)
                             end
                         end
                     end
+                end
+                -- After closing loclist, if only empty/unnamed buffers remain in
+                -- normal windows (auto-created by Neovim), quit cleanly.
+                local has_real_win = false
+                for _, win in ipairs(vim.api.nvim_list_wins()) do
+                    if vim.api.nvim_win_is_valid(win) then
+                        local buf = vim.api.nvim_win_get_buf(win)
+                        local bt = vim.bo[buf].buftype
+                        if bt ~= 'quickfix' then
+                            local name = vim.api.nvim_buf_get_name(buf)
+                            if name ~= '' or vim.bo[buf].modified then
+                                has_real_win = true
+                                break
+                            end
+                        end
+                    end
+                end
+                if not has_real_win then
+                    vim.cmd('qall!')
                 end
             end)
         end,
