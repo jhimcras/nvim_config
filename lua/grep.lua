@@ -303,8 +303,25 @@ function M.setup()
                 if tag and not (vim.w[winid] and vim.w[winid].loclist_tag) then
                     vim.w[winid].loclist_tag = tag
                 end
-                -- Track this as the new active loclist window for the origin.
-                active_loclist[filewinid] = winid
+                -- Track this as the new active loclist window for the origin, and
+                -- register a WinClosed so the tag is hidden if this window is closed
+                -- (e.g. via lclose after lopen — asyncGrep only covers the first open).
+                if active_loclist[filewinid] ~= winid then
+                    active_loclist[filewinid] = winid
+                    api.nvim_create_autocmd('WinClosed', {
+                        pattern = tostring(winid),
+                        once = true,
+                        callback = function()
+                            if active_loclist[filewinid] == winid then
+                                active_loclist[filewinid] = nil
+                                if vim.api.nvim_win_is_valid(filewinid) then
+                                    vim.w[filewinid].loclist_tag = nil
+                                    vim.cmd 'redrawstatus!'
+                                end
+                            end
+                        end,
+                    })
+                end
             end
             -- Clear any window-local statusline Neovim may have set for this
             -- qf/loclist window (e.g. showing just quickfix_title).  Setting to ''
