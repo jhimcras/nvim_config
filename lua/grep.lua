@@ -4,7 +4,9 @@ local env = require 'env'
 local M = {}
 
 local tag_counter = 0
-local filter_chains = {}  -- keyed by loclist window ID
+local filter_chains = {}   -- keyed by loclist window ID
+local origin_tags = {}     -- origin_winid -> last assigned tag (persists across loclist close)
+local active_loclist = {}  -- origin_winid -> current loclist winid
 
 function M.update_loclist_sl(winid)
     -- Do NOT set a window-local statusline option here.
@@ -148,6 +150,8 @@ function M.asyncGrep(term, word, wndidforll)
     vim.w[qfwinid].grep_title = title
     vim.w[wndidforll].loclist_tag = tag
     vim.w[qfwinid].loclist_tag = tag
+    origin_tags[wndidforll] = tag
+    active_loclist[wndidforll] = qfwinid
     vim.w[qfwinid].grep_status = 'searching'
     filter_chains[qfwinid] = nil
     M.update_loclist_sl(qfwinid)
@@ -176,6 +180,22 @@ function M.asyncGrep(term, word, wndidforll)
         end,
     })
 
+    -- WinClosed for the loclist window: hide the color tag on the origin window.
+    -- When lopen reopens the loclist, BufWinEnter restores it from origin_tags.
+    api.nvim_create_autocmd('WinClosed', {
+        pattern = tostring(qfwinid),
+        once = true,
+        callback = function()
+            if active_loclist[wndidforll] == qfwinid then
+                active_loclist[wndidforll] = nil
+                if vim.api.nvim_win_is_valid(wndidforll) then
+                    vim.w[wndidforll].loclist_tag = nil
+                    vim.cmd 'redrawstatus!'
+                end
+            end
+        end,
+    })
+
     -- WinClosed: fallback for non-:q closes (wincmd c, API calls, etc.)
     -- QuitPre won't fire for those, so we still need to clean up the loclist.
     api.nvim_create_autocmd('WinClosed', {
@@ -183,6 +203,8 @@ function M.asyncGrep(term, word, wndidforll)
         once = true,
         callback = function()
             pcall(api.nvim_del_autocmd, quitpre_au_id)
+            origin_tags[wndidforll] = nil
+            active_loclist[wndidforll] = nil
             if quit_handled then return end  -- QuitPre already cleaned up
             vim.schedule(function()
                 -- Close loclist windows for this origin
@@ -264,12 +286,25 @@ function M.setup()
             local winfo = vim.fn.getwininfo(winid)[1]
             if not winfo or winfo.loclist ~= 1 then return end
             -- Propagate loclist_tag from origin window if not already set.
+            -- Also restore origin's tag from origin_tags when loclist is reopened
+            -- after being closed (e.g. via lopen after lclose).
             local info = vim.fn.getloclist(winid, { filewinid = 0 })
             if info.filewinid and info.filewinid ~= 0 then
-                local tag = vim.w[info.filewinid] and vim.w[info.filewinid].loclist_tag
+                local filewinid = info.filewinid
+                local tag = vim.w[filewinid] and vim.w[filewinid].loclist_tag
+                if not tag then
+                    -- Origin tag was cleared when the previous loclist window closed.
+                    -- Restore it from our persistent store so the color tag reappears.
+                    tag = origin_tags[filewinid]
+                    if tag and vim.api.nvim_win_is_valid(filewinid) then
+                        vim.w[filewinid].loclist_tag = tag
+                    end
+                end
                 if tag and not (vim.w[winid] and vim.w[winid].loclist_tag) then
                     vim.w[winid].loclist_tag = tag
                 end
+                -- Track this as the new active loclist window for the origin.
+                active_loclist[filewinid] = winid
             end
             -- Clear any window-local statusline Neovim may have set for this
             -- qf/loclist window (e.g. showing just quickfix_title).  Setting to ''
