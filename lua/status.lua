@@ -790,8 +790,8 @@ local statusline_setup = {
         StatuslineTag3 = { fg = '#1e1e2e', bg = '#fab387' },
         StatuslineTag4 = { fg = '#1e1e2e', bg = '#cba6f7' },
         StatuslineTag5 = { fg = '#1e1e2e', bg = '#f38ba8' },
-        StatuslineSearch_1 = { bg = '#1F2937', fg = '#38bdf8' },
-        StatuslineSearch_2 = { bg = '#075985', fg = '#bae6fd' },
+        StatuslineSearch_1 = { bg = '#1F2937', fg = '#0284c7' },
+        StatuslineSearch_2 = { bg = '#0c4a6e', fg = '#7dd3fc' },
     },
     -- seperator = { '│', hl = { bg = '', fg = '' } },
 }
