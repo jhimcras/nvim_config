@@ -632,6 +632,7 @@ local function general_statusline(activation, mode, winid)
     local proj_or_git_branch_memoized = ut.memoize_ttl(project_or_git_branch_name, {ttl_ms=1000})
     local filename_and_status_memoized = ut.memoize_ttl(filename_and_status, {ttl_ms=300})
     local encoding_memoized = ut.memoize_ttl(encoding, {ttl_ms=2000})
+    local current_function_memoized = ut.memoize_ttl(current_function, {ttl_ms=300})
     return {
         {
             w >= width_thresholds.git_branch and proj_or_git_branch_memoized or false,
@@ -641,7 +642,7 @@ local function general_statusline(activation, mode, winid)
         },
         gap,
         {
-            activation and w >= width_thresholds.current_function and current_function or false,
+            activation and w >= width_thresholds.current_function and current_function_memoized or false,
             w >= width_thresholds.encoding and encoding_memoized or false,
             hl = hl(1), sep = ' │ ', pad = ' '
         },
