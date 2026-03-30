@@ -438,6 +438,16 @@ local function filename_and_status(bufnr, winid)
 end
 
 
+local function filename_and_status_compact(bufnr, winid)
+    local bufname = vim.api.nvim_buf_get_name(bufnr)
+    local name = bufname ~= '' and vim.fn.fnamemodify(bufname, ':t') or 'No Name'
+    local mods = (vim.bo[bufnr].modified and '+' or '')
+               .. (vim.bo[bufnr].readonly and '[RO]' or '')
+               .. (not vim.bo[bufnr].modifiable and '[-]' or '')
+    return name .. (mods ~= '' and (' ' .. mods) or '')
+end
+
+
 local function current_function(bufnr, winid)
     local curfunc =  M.current_function()
     if curfunc and curfunc ~= '' then
@@ -518,18 +528,27 @@ end
 --     return ('  %d/%s'):format(current, total)
 -- end
 
+--- Mark a component as shrinkable.
+--- priority: 1=first to shrink (most expendable), 10=last to shrink (most critical)
+--- compact: optional function(bufnr,winid)->string for compact rendering; nil=remove
+local function sh(fn, priority, compact)
+    return { __sh = true, fn = fn, priority = priority, compact = compact }
+end
+
+local function measure_sl_text(s)
+    s = s:gsub('%%#[^#]*#', '')   -- strip %#HighlightGroup# codes
+    s = s:gsub('%%p%%%%', '100')  -- %p%% -> percentage estimate
+    s = s:gsub('%%c', '999')      -- %c -> column estimate
+    s = s:gsub('%%[lL]', '9999') -- %l/%L -> line estimate
+    s = s:gsub('%%[<=]', '')      -- %< and %= are zero-width separators
+    s = s:gsub('%%%%', '%%')      -- %% -> literal %
+    return vim.fn.strdisplaywidth(s)
+end
+
 local percentage_loc = '%p%%'
 local column_loc = 'ﮇ %c'
 local gap = '%<%='
 
-local width_thresholds = {
-    encoding         = 90,
-    current_function = 70,
-    lsp              = 60,
-    search_count     = 55,
-    percentage       = 55,
-    git_branch       = 45,
-}
 
 local function fugitive_info(bufnr, winid)
     local rev_parse = vim.b[bufnr].fugitive_status.rev_parse
@@ -572,6 +591,18 @@ local function quickfix_search_query(bufnr, winid)
     return title .. chain_str
 end
 
+
+local function quickfix_search_query_compact(bufnr, winid)
+    local title
+    local filewinid = vim.fn.getloclist(winid, { filewinid = 0 }).filewinid
+    if filewinid and filewinid ~= 0 then
+        title = vim.fn.getloclist(filewinid, { title = 0 }).title
+    else
+        title = vim.w[winid].quickfix_title
+    end
+    return title or ''
+end
+
 local spinner_frames = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
 
 local function grep_status_icon(bufnr, winid)
@@ -593,14 +624,32 @@ local function loclist_tag(bufnr, winid)
 end
 
 
-local function make_statusline_text(bufnr, winid, components, sep)
+local function make_statusline_text(bufnr, winid, components, sep, ctx)
     sep = sep or ''
     if type(components) == 'string' then
         return components
     elseif type(components) == 'number' then
         return tostring(components)
     elseif type(components) == 'function' then
-        return make_statusline_text(bufnr, winid, components(bufnr, winid), sep)
+        return make_statusline_text(bufnr, winid, components(bufnr, winid), sep, ctx)
+    elseif type(components) == 'table' and components.__sh then
+        if ctx then
+            ctx.order = ctx.order + 1
+            ctx.candidates[#ctx.candidates + 1] = {
+                fn       = components.fn,
+                priority = components.priority,
+                compact  = components.compact,
+                order    = ctx.order,
+            }
+        end
+        local active
+        if ctx and ctx.excluded[components.fn] then
+            active = components.compact
+        else
+            active = components.fn
+        end
+        if active == nil then return '' end
+        return make_statusline_text(bufnr, winid, active, sep, ctx)
     elseif type(components) == 'table' then
         sep = components.sep or sep
         local pad = components.pad or ''
@@ -608,7 +657,7 @@ local function make_statusline_text(bufnr, winid, components, sep)
         local t = {}
         for _, c in ipairs(components) do
             if c then
-                local c_str = make_statusline_text(bufnr, winid, c, sep)
+                local c_str = make_statusline_text(bufnr, winid, c, sep, ctx)
                 if c_str and c_str ~= '' then
                     t[#t+1] = c_str
                 end
@@ -625,31 +674,31 @@ end
 
 
 local function general_statusline(activation, mode, winid)
-    local w = vim.api.nvim_win_get_width(winid or 0)
     local hl = function(num)
         return 'StatuslineGeneral' .. (activation and ('Active_%d_%s'):format(num, mode) or 'Inactive')
     end
-    local proj_or_git_branch_memoized = ut.memoize_ttl(project_or_git_branch_name, {ttl_ms=1000})
-    local filename_and_status_memoized = ut.memoize_ttl(filename_and_status, {ttl_ms=300})
-    local encoding_memoized = ut.memoize_ttl(encoding, {ttl_ms=2000})
-    local current_function_memoized = ut.memoize_ttl(current_function, {ttl_ms=300})
+    local proj_or_git_branch_memoized          = ut.memoize_ttl(project_or_git_branch_name,  {ttl_ms=1000})
+    local filename_and_status_memoized         = ut.memoize_ttl(filename_and_status,          {ttl_ms=300})
+    local filename_and_status_compact_memoized = ut.memoize_ttl(filename_and_status_compact,  {ttl_ms=300})
+    local encoding_memoized                    = ut.memoize_ttl(encoding,                     {ttl_ms=2000})
+    local current_function_memoized            = ut.memoize_ttl(current_function,             {ttl_ms=200})
     return {
         {
-            w >= width_thresholds.git_branch and proj_or_git_branch_memoized or false,
-            filename_and_status_memoized,
-            activation and w >= width_thresholds.lsp and lsp_status or false,
+            sh(proj_or_git_branch_memoized, 9),
+            sh(filename_and_status_memoized, 8, filename_and_status_compact_memoized),
+            activation and sh(lsp_status, 1) or false,
             hl = hl(1), sep = ' │ ', pad = ' '
         },
         gap,
         {
-            activation and w >= width_thresholds.current_function and current_function_memoized or false,
-            w >= width_thresholds.encoding and encoding_memoized or false,
+            activation and sh(current_function_memoized, 2) or false,
+            sh(encoding_memoized, 3),
             hl = hl(1), sep = ' │ ', pad = ' '
         },
         activation and {
-            w >= width_thresholds.search_count and search_count or false,
-            w >= width_thresholds.percentage and percentage_loc or false,
-            column_loc,
+            sh(search_count, 5),
+            sh(percentage_loc, 10),
+            sh(column_loc, 6),
             hl = hl(2), sep = ' ', pad = ' '
         } or false,
         loclist_tag,
@@ -669,9 +718,9 @@ local function quickfix_statusline(activation, mode, winid)
     local hl1 = is_search and 'StatuslineSearch_1' or 'StatuslineGeneralActive_1_n'
     local hl2 = is_search and 'StatuslineSearch_2' or 'StatuslineGeneralActive_2_n'
     return {
-        { 'ﴴ ', quickfix_search_query, hl = hl1, sep = ' ', pad = ' ' },
+        { 'ﴴ ', sh(quickfix_search_query, 1, quickfix_search_query_compact), hl = hl1, sep = ' ', pad = ' ' },
         gap,
-        { search_count, grep_status_icon, '%l/%L', hl = hl2, sep = ' ', pad = ' ' },
+        { grep_status_icon, sh(search_count, 2), sh('%l/%L', 3, '%l'), hl = hl2, sep = ' ', pad = ' ' },
         loclist_tag,
     }
 end
@@ -681,7 +730,7 @@ local function help_statusline(activation)
     return {
         {' ', filename_only, hl = 'StatuslineGeneralActive_1_n', pad = ' ', sep = ' ' },
         gap,
-        active_only{ search_count, percentage_loc, hl = 'StatuslineGeneralActive_2_n', pad = ' ', sep = ' ' },
+        active_only{ sh(search_count, 1), sh(percentage_loc, 2), hl = 'StatuslineGeneralActive_2_n', pad = ' ', sep = ' ' },
      }
 end
 
@@ -702,7 +751,7 @@ local function man_statusline(activation)
     return {
         { 'ManPage', man_title, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
         gap,
-        active_only{ search_count, percentage_loc, column_loc,
+        active_only{ sh(search_count, 1), sh(percentage_loc, 2), sh(column_loc, 3),
                      hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
     }
 end
@@ -712,7 +761,7 @@ local function fugitive_statusline(activation)
     return {
         { ' ', fugitive_info, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
         gap,
-        active_only{ percentage_loc, hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
+        active_only{ sh(percentage_loc, 1), hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
     }
 end
 
@@ -842,9 +891,35 @@ end
 function M.statusline_entry()
     local winid = vim.g.statusline_winid or 0
     local bufnr = vim.api.nvim_win_get_buf(winid)
+    local w = vim.api.nvim_win_get_width(winid)
     local activation = winid == vim.api.nvim_get_current_win()
     local entryfunc = get_entry_func(vim.bo[bufnr].buftype, vim.bo[bufnr].filetype)
-    return make_statusline_text(bufnr, winid, entryfunc(activation, vim.fn.mode(), winid))
+    local tree = entryfunc(activation, vim.fn.mode(), winid)
+
+    local excluded = {}
+    local result
+
+    repeat
+        local ctx = { excluded = excluded, candidates = {}, order = 0 }
+        result = make_statusline_text(bufnr, winid, tree, '', ctx)
+
+        if measure_sl_text(result) <= w then break end
+
+        table.sort(ctx.candidates, function(a, b)
+            if a.priority ~= b.priority then return a.priority < b.priority end
+            return a.order < b.order
+        end)
+
+        local next_c
+        for _, c in ipairs(ctx.candidates) do
+            if not excluded[c.fn] then next_c = c; break end
+        end
+        if not next_c then break end
+
+        excluded[next_c.fn] = true
+    until false
+
+    return result
 end
 
 function M.setup()
