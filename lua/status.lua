@@ -1060,22 +1060,3 @@ function M.setup()
 end
 
 return M
-
--- TODO
--- [x] prjroot.GetCurrentProjectRoot → prjroot.GetProjectRoot
--- [x] FugitiveHead → branch_or_commit
--- [x] activation parameter
--- [x] highlights
--- [x] explicit space characters
--- [x] project_or_git_branch_name
--- [x] encoding
--- [x] bom
--- [x] filename_and_status
--- [x] current_function
--- [x] lsp_status
--- [x] search_count
--- [ ] quickfix - put some buf option rather than use quickfix_title
--- [x] help
--- [ ] fugitive
--- [ ] terminal
--- [ ] search_count performance improvement
