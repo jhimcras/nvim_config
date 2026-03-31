@@ -243,6 +243,18 @@ local function load_qflist_no_open(path)
 end
 
 
+local function get_unsaved_buffers()
+    local unsaved = {}
+    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_loaded(bufnr) and vim.bo[bufnr].modified then
+            local name = vim.api.nvim_buf_get_name(bufnr)
+            table.insert(unsaved, name ~= '' and vim.fn.fnamemodify(name, ':~:.') or '[No Name]')
+        end
+    end
+    return unsaved
+end
+
+
 local function save_session(path)
     local prefix = vim.fn.fnamemodify(path, ':t')
     local dir = vim.fn.fnamemodify(path, ':h')
@@ -261,6 +273,11 @@ end
 
 
 function M.OpenSession(session)
+    local unsaved = get_unsaved_buffers()
+    if #unsaved > 0 then
+        vim.notify('Unsaved buffers:\n  ' .. table.concat(unsaved, '\n  '), vim.log.levels.WARN)
+        return
+    end
     auto_save()
     vim.cmd('%bwipeout!')
     local sess_path = string.format('%s/sessions/%s', vim.fn.stdpath('data'), session)
@@ -361,6 +378,11 @@ end
 
 
 function M.CloseSession()
+    local unsaved = get_unsaved_buffers()
+    if #unsaved > 0 then
+        vim.notify('Unsaved buffers:\n  ' .. table.concat(unsaved, '\n  '), vim.log.levels.WARN)
+        return
+    end
     auto_save()
     vim.cmd('%bwipeout!')
     vim.cmd.cd('~')
