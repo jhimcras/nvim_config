@@ -148,6 +148,69 @@ local function Notes()
     require 'telescope.builtin'.find_files { cwd = '~/notes/' }
 end
 
+local function Tabs()
+    local total = vim.fn.tabpagenr('$')
+    local cur = vim.fn.tabpagenr()
+    local entries = {}
+    for i = 1, total do
+        local tabtitle = require'status'.tabtitle(i)
+        -- Collect all buffer file names in this tab for display/filtering
+        local num_wins = vim.fn.tabpagewinnr(i, '$')
+        local files = {}
+        for w = 1, num_wins do
+            local winid = vim.fn.win_getid(w, i)
+            if vim.api.nvim_win_get_config(winid).relative == '' then
+                local buf = vim.api.nvim_win_get_buf(winid)
+                local name = vim.fn.bufname(buf)
+                if name ~= '' and vim.bo[buf].buftype ~= 'quickfix' then
+                    files[#files + 1] = vim.fn.fnamemodify(name, ':p')
+                end
+            end
+        end
+        -- Use basenames for ordinal so fzy scores stay tight
+        local basenames = {}
+        for _, f in ipairs(files) do
+            basenames[#basenames + 1] = vim.fn.fnamemodify(f, ':t')
+        end
+        entries[#entries + 1] = {
+            tabnr = i,
+            title = tabtitle,
+            files = files,
+            basenames = basenames,
+            is_current = (i == cur),
+        }
+    end
+
+    pickers.new({}, {
+        prompt_title = 'Tabs',
+        finder = finders.new_table {
+            results = entries,
+            entry_maker = function(entry)
+                local prefix = entry.is_current and '* ' or '  '
+                local display = string.format('%s%d: %s', prefix, entry.tabnr, entry.title)
+                local ordinal = entry.title .. ' ' .. table.concat(entry.basenames, ' ')
+                return {
+                    value = entry,
+                    display = display,
+                    ordinal = ordinal,
+                }
+            end,
+        },
+        sorter = conf.generic_sorter({}),
+        previewer = false,
+        attach_mappings = function(prompt_bufnr)
+            actions.select_default:replace(function()
+                actions.close(prompt_bufnr)
+                local selection = action_state.get_selected_entry()
+                if selection then
+                    vim.cmd('tabnext ' .. selection.value.tabnr)
+                end
+            end)
+            return true
+        end,
+    }):find()
+end
+
 function M.ConfigFiles(query)
     require'telescope.builtin'.find_files {
         cwd = vim.fn.stdpath('config'),
@@ -178,6 +241,7 @@ function M.setup()
     ut.nmap('<Leader>fu', RunLauncher)
     ut.nmap('<Leader>fn', Notes)
     ut.nmap('<Leader>fw', LSPWorkspaceSymbols)
+    ut.nmap('<Leader>ft', Tabs)
 end
 
 return M

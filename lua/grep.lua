@@ -378,14 +378,18 @@ function M.setup()
         set_items(filtered)
     end
 
-    local function strip_pat(raw) return raw:gsub('^/', ''):gsub('/$', ''):gsub('^\\v', '') end
+    local function strip_pat(raw) return raw:gsub('^/', ''):gsub('/$', '') end
 
     local function handle_lfilter(opts)
         local winid = vim.api.nvim_get_current_win()
         local term = strip_pat(opts.args)
+        -- When run from within a loclist window, getloclist(0) uses the loclist
+        -- window itself as owner — but items belong to the file window (filewinid).
+        local info = vim.fn.getloclist(winid, { filewinid = 0 })
+        local owner = (info.filewinid and info.filewinid ~= 0) and info.filewinid or winid
         filter_list(
-            function() return vim.fn.getloclist(0) end,
-            function(items) vim.fn.setloclist(0, {}, 'r', { items = items }) end,
+            function() return vim.fn.getloclist(owner) end,
+            function(items) vim.fn.setloclist(owner, {}, 'r', { items = items }) end,
             term, opts.bang
         )
         M.record_filter(winid, term, opts.bang)
