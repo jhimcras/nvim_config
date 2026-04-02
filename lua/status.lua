@@ -795,14 +795,14 @@ local function general_statusline(activation, mode, winid)
     return {
         {
             sh(proj_or_git_branch_memoized, 9),
-            sh(filename_and_status_memoized, 8, filename_and_status_compact_memoized),
-            activation and sh(lsp_status, 1) or false,
+            sh(filename_and_status_memoized, 1, filename_and_status_compact_memoized),
+            activation and sh(lsp_status, 2) or false,
             hl = hl(1), sep = ' │ ', pad = ' '
         },
         gap,
         {
-            activation and sh(current_function_memoized, 2) or false,
-            sh(encoding_memoized, 3),
+            activation and sh(current_function_memoized, 3) or false,
+            sh(encoding_memoized, 4),
             hl = hl(1), sep = ' │ ', pad = ' '
         },
         activation and {
