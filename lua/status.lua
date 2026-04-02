@@ -551,9 +551,9 @@ end
 local function filename_and_status_compact(bufnr, winid)
     local bufname = vim.api.nvim_buf_get_name(bufnr)
     local name = bufname ~= '' and vim.fn.fnamemodify(bufname, ':t') or 'No Name'
-    local mods = (vim.bo[bufnr].modified and '+' or '')
-               .. (vim.bo[bufnr].readonly and '[RO]' or '')
-               .. (not vim.bo[bufnr].modifiable and '[-]' or '')
+    local mods = (vim.bo[bufnr].modified and ' ' or '')
+               .. (vim.bo[bufnr].readonly and '' or '')
+               .. (not vim.bo[bufnr].modifiable and '-' or '')
     return name .. (mods ~= '' and (' ' .. mods) or '')
 end
 
