@@ -10,7 +10,16 @@ function M.GetBufferName(bufnr)
     if raw == '' then return '' end
 
     if vim.bo[bufnr].filetype == 'oil' then
-        return raw:sub(8, 8) .. ':' .. raw:sub(9):gsub('\\', '/')
+        if env.os.win then
+            return raw:sub(8, 8) .. ':' .. raw:sub(9):gsub('\\', '/')
+        else
+            local path = raw:sub(7)
+            local home = os.getenv('HOME')
+            if home and path:sub(1, #home) == home then
+                return '~' .. path:sub(#home + 1)
+            end
+            return path
+        end
     end
     -- TODO: implement as possible as every filetype, buftype currently used
 
