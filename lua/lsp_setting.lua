@@ -134,9 +134,14 @@ local function SetupClangd()
 end
 
 local function SetupLua()
+    local lua_lsp_cmd
     -- if vim.env.LUALS == nil then return end
     -- local lua_lsp_cmd = { vim.env.LUALS .. (env.os.win and [[\lua-language-server.exe]] or '/bin/lua-language-server') }
-    local lua_lsp_cmd = "lua-language-server.exe"
+    if env.os.win then
+        lua_lsp_cmd = "lua-language-server.exe"
+    else
+        lua_lsp_cmd = vim.env.LUALS .. '/bin/lua-language-server'
+    end
     if not vim.fn.executable(lua_lsp_cmd) then return end
     vim.lsp.config('lua_ls', {
         cmd = { lua_lsp_cmd },
