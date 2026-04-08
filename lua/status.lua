@@ -67,10 +67,6 @@ local function helpinfo()
     return 'HELP │ ' .. (help_file_name or '')
 end
 
-local function fugitiveinfo()
-    return 'FUGITIVE │ ' .. (require'prjroot'.GetCurrentProjectRoot() or '')
-end
-
 local function launcher()
     return string.format('%s(%s)', vim.b.prjroot_folder, vim.b.lc_object)
 end
@@ -82,7 +78,6 @@ end
 local types = {
     { bt = 'terminal', info = terminalinfo },
     { bt = 'help', info = helpinfo },
-    { ft = 'fugitive', info = fugitiveinfo },
     { ft = 'launcher', info = launcher },
     { bt = 'quickfix', info = quickfix },
 }
@@ -672,15 +667,34 @@ local gap = '%<%='
 
 
 local function fugitive_info(bufnr, winid)
-    local rev_parse = vim.b[bufnr].fugitive_status.rev_parse
-    local props = vim.b[bufnr].fugitive_status.props
-    return {
-        rev_parse.cwd,
-        props["branch.head"] ~= '(detached)' and props["branch.head"] or props["branch.oid"],
-        props["branch.upstream"] and props["branch.upstream"],
-        props["branch.ab"] and props["branch.ab"],
-        sep = ' │ '
-    }
+    local info = require'git'.get_fugitive_info(bufnr)
+    if not info then return 'FUGITIVE' end
+
+    if info.type == 'summary' then
+        return {
+            info.cwd,
+            info.head,
+            info.upstream,
+            info.ab,
+            sep = ' │ '
+        }
+    elseif info.type == 'blob' then
+        return { info.obj, info.file, sep = ' │ ' }
+    end
+    return 'FUGITIVE'
+end
+
+local function fugitive_info_compact(bufnr, winid)
+    local info = require'git'.get_fugitive_info(bufnr)
+    if not info then return 'FUG' end
+
+    if info.type == 'summary' then
+        return info.head
+    elseif info.type == 'blob' then
+        local obj_map = { INDEX = 'IDX', OURS = 'OUR', THEIRS = 'THE', BASE = 'BASE' }
+        return (obj_map[info.obj] or info.obj:sub(1, 4)) .. ' │ ' .. info.file
+    end
+    return 'FUG'
 end
 
 local function quickfix_search_query(bufnr, winid)
@@ -880,7 +894,7 @@ end
 local function fugitive_statusline(activation)
     local active_only = function(st) return activation and st or '' end
     return {
-        { ' ', fugitive_info, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
+        { ' ', sh(fugitive_info, 2, fugitive_info_compact), hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
         gap,
         active_only{ sh(percentage_loc, 1), hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
     }
@@ -1000,7 +1014,11 @@ local function set_all_highlight(hls)
     end
 end
 
-local function get_entry_func(buftype, filetype)
+local function get_entry_func(buftype, filetype, bufnr)
+    local protocol = ut.GetBufferProtocol(bufnr)
+    if protocol == 'fugitive' then
+        return statusline_setup.components.fugitive
+    end
     if statusline_setup.components[buftype] then
         return statusline_setup.components[buftype]
     elseif statusline_setup.components[filetype] then
@@ -1014,7 +1032,7 @@ function M.statusline_entry()
     local bufnr = vim.api.nvim_win_get_buf(winid)
     local w = vim.api.nvim_win_get_width(winid)
     local activation = winid == vim.api.nvim_get_current_win()
-    local entryfunc = get_entry_func(vim.bo[bufnr].buftype, vim.bo[bufnr].filetype)
+    local entryfunc = get_entry_func(vim.bo[bufnr].buftype, vim.bo[bufnr].filetype, bufnr)
     local tree = entryfunc(activation, vim.fn.mode(), winid)
 
     local excluded = {}

@@ -102,4 +102,37 @@ function M.git_branch_commit(dir)
     return branch, commit
 end
 
+function M.get_fugitive_info(bufnr)
+    local fs = vim.b[bufnr].fugitive_status
+    if fs and fs.rev_parse and fs.props then
+        local props = fs.props
+        return {
+            type = 'summary',
+            cwd = fs.rev_parse.cwd,
+            head = props["branch.head"] ~= '(detached)' and props["branch.head"] or props["branch.oid"]:sub(1, 7),
+            upstream = props["branch.upstream"],
+            ab = props["branch.ab"]
+        }
+    end
+
+    local name = vim.api.nvim_buf_get_name(bufnr)
+    local obj, path = name:match('//.-//(.-)/(.*)$')
+    if obj and path then
+        local display_obj = obj
+        if obj == '0' then display_obj = 'INDEX' end
+        if obj == '1' then display_obj = 'BASE' end
+        if obj == '2' then display_obj = 'OURS' end
+        if obj == '3' then display_obj = 'THEIRS' end
+        if #display_obj > 10 and display_obj:match('^%x+$') then
+            display_obj = display_obj:sub(1, 7)
+        end
+        return {
+            type = 'blob',
+            obj = display_obj,
+            file = vim.fn.fnamemodify(path, ':t')
+        }
+    end
+    return nil
+end
+
 return M

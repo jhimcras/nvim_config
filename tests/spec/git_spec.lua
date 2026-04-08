@@ -83,3 +83,54 @@ describe('git.git_branch_commit', function()
         assert.equals('cafebabe0000', commit)
     end)
 end)
+
+describe('git.get_fugitive_info', function()
+    it('parses fugitive blob name: index', function()
+        local git = fresh_git()
+        local name = 'fugitive:///repo/.git//0/file.lua'
+        local old_buf_name = vim.api.nvim_buf_get_name
+        vim.api.nvim_buf_get_name = function() return name end
+
+        local info = git.get_fugitive_info(0)
+        assert.equals('blob', info.type)
+        assert.equals('INDEX', info.obj)
+        assert.equals('file.lua', info.file)
+
+        vim.api.nvim_buf_get_name = old_buf_name
+    end)
+
+    it('parses fugitive blob name: commit hash', function()
+        local git = fresh_git()
+        local name = 'fugitive:///repo/.git//deadbeef12345678/file.lua'
+        local old_buf_name = vim.api.nvim_buf_get_name
+        vim.api.nvim_buf_get_name = function() return name end
+
+        local info = git.get_fugitive_info(0)
+        assert.equals('blob', info.type)
+        assert.equals('deadbee', info.obj)
+        assert.equals('file.lua', info.file)
+
+        vim.api.nvim_buf_get_name = old_buf_name
+    end)
+
+    it('returns summary info if fugitive_status exists', function()
+        local git = fresh_git()
+        vim.b.fugitive_status = {
+            rev_parse = { cwd = '/repo' },
+            props = {
+                ["branch.head"] = 'main',
+                ["branch.upstream"] = 'origin/main',
+                ["branch.ab"] = '+1 -0'
+            }
+        }
+
+        local info = git.get_fugitive_info(0)
+        assert.equals('summary', info.type)
+        assert.equals('/repo', info.cwd)
+        assert.equals('main', info.head)
+        assert.equals('origin/main', info.upstream)
+        assert.equals('+1 -0', info.ab)
+
+        vim.b.fugitive_status = nil
+    end)
+end)
