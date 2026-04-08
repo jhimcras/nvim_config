@@ -31,7 +31,7 @@ function M.GetBufferDir(bufnr)
     local name = M.GetBufferName(bufnr)
     if name == '' then return '' end
     if env.os.win then
-        name = name:gsub('^/(%a)/', '%1:')
+        name = name:gsub('^/(%a)/', '%1:/')
         name = name:gsub('\\', '/')
     end
     local path = vim.fn.fnamemodify(name, ':p:h')
