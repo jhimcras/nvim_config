@@ -1014,25 +1014,27 @@ local function set_all_highlight(hls)
     end
 end
 
-local function get_entry_func(buftype, filetype, bufnr)
-    local protocol = ut.GetBufferProtocol(bufnr)
-    if protocol == 'fugitive' then
-        return statusline_setup.components.fugitive
+local function get_entry_func(buftype, filetype, protocol)
+    local components = statusline_setup.components
+
+    if components[protocol] then
+        return components[protocol]
+    elseif components[buftype] then
+        return components[buftype]
+    elseif components[filetype] then
+        return components[filetype]
     end
-    if statusline_setup.components[buftype] then
-        return statusline_setup.components[buftype]
-    elseif statusline_setup.components[filetype] then
-        return statusline_setup.components[filetype]
-    end
-    return statusline_setup.components.general
+
+    return components.general
 end
 
 function M.statusline_entry()
     local winid = vim.g.statusline_winid or 0
     local bufnr = vim.api.nvim_win_get_buf(winid)
+    local protocol = ut.GetBufferProtocol(bufnr)
     local w = vim.api.nvim_win_get_width(winid)
     local activation = winid == vim.api.nvim_get_current_win()
-    local entryfunc = get_entry_func(vim.bo[bufnr].buftype, vim.bo[bufnr].filetype, bufnr)
+    local entryfunc = get_entry_func(vim.bo[bufnr].buftype, vim.bo[bufnr].filetype, protocol)
     local tree = entryfunc(activation, vim.fn.mode(), winid)
 
     local excluded = {}
