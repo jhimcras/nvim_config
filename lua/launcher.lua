@@ -19,7 +19,7 @@ local function CloseLauncherBuffer()
 end
 
 local function set_launcher_mapping(buf)
-    ut.nnoremap('q', CloseLauncherBuffer, { buffer = buf })
+    ut.nnoremap('gq', CloseLauncherBuffer, { buffer = buf })
     -- ut.nnoremap('e', [[gg/error<cr>]], { buffer = buf })
     -- ut.nnoremap('w', [[gg/warning<cr>]], { buffer = buf })
     -- ut.nnoremap('<cr>', [[<cmd>lua require'launcher'.Jump()<cr>]], { buffer = buf })
