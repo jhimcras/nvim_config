@@ -65,26 +65,28 @@ Applied on `BufReadPre`, before the LSP server starts.
 
 ### Launcher objects — named build/run tasks
 
-Any key that is **not** `options` or `lsp_env` is treated as a launcher object. Each object defines a command that can be run asynchronously in a scratch buffer.
+Any launcher definition should be placed inside a `launchers` table. Each object defines a command that can be run asynchronously in a scratch buffer.
 
 ```lua
 return {
-  build = {
-    cmd      = 'cmake',
-    args     = { '--build', 'build' },
-    cwd      = './build',       -- relative (.) is expanded to project root
-    key      = '<f5>',          -- optional buffer-local keymap to trigger this
-    env      = { CC = 'clang' },-- optional environment variables
-    position = { orientation = 'vertical' },  -- or 'horizontal', 'tab', 'external'
-    highlight = {
-      ['error']   = 'ErrorMsg',
-      ['warning'] = 'WarningMsg',
+  launchers = {
+    build = {
+      cmd      = 'cmake',
+      args     = { '--build', 'build' },
+      cwd      = './build',       -- relative (.) is expanded to project root
+      key      = '<f5>',          -- optional buffer-local keymap to trigger this
+      env      = { CC = 'clang' },-- optional environment variables
+      position = { orientation = 'vertical' },  -- or 'horizontal', 'tab', 'external'
+      highlight = {
+        ['error']   = 'ErrorMsg',
+        ['warning'] = 'WarningMsg',
+      },
     },
-  },
-  run = {
-    cmd  = './my_app',
-    args = {},
-    key  = '<f6>',
+    run = {
+      cmd  = './my_app',
+      args = {},
+      key  = '<f6>',
+    },
   },
 }
 ```
@@ -125,22 +127,24 @@ return {
     VIRTUAL_ENV = '/home/user/projects/myapp/.venv',
   },
 
-  build = {
-    cmd      = 'make',
-    args     = { '-j8' },
-    key      = '<f5>',
-    highlight = {
-      ['error:']   = 'ErrorMsg',
-      ['warning:'] = 'WarningMsg',
+  launchers = {
+    build = {
+      cmd      = 'make',
+      args     = { '-j8' },
+      key      = '<f5>',
+      highlight = {
+        ['error:']   = 'ErrorMsg',
+        ['warning:'] = 'WarningMsg',
+      },
     },
-  },
 
-  test = {
-    cmd      = 'pytest',
-    args     = { '-v' },
-    cwd      = './tests',
-    key      = '<f6>',
-    position = { orientation = 'horizontal' },
+    test = {
+      cmd      = 'pytest',
+      args     = { '-v' },
+      cwd      = './tests',
+      key      = '<f6>',
+      position = { orientation = 'horizontal' },
+    },
   },
 }
 ```

@@ -182,19 +182,19 @@ end
 function M.LaunchObject(obj)
     local parent_win_prjroot = pr.GetCurrentProjectRoot()
     local c = pr.GetPrjrootConfig(parent_win_prjroot)
-    if c and c[obj] then
-        local cmd = c[obj].cmd
-        local args = c[obj].args
-        local hi = c[obj].highlight
-        local color_mode = c[obj].color or 'use'
-        local encoding = c[obj].encoding
-        local cwd = (c[obj].cwd) and c[obj].cwd:gsub([[^%.]], parent_win_prjroot) or parent_win_prjroot
-        local position = (c[obj].position) or { orientation = 'vertical' }
+    if c and c.launchers and c.launchers[obj] then
+        local cmd = c.launchers[obj].cmd
+        local args = c.launchers[obj].args
+        local hi = c.launchers[obj].highlight
+        local color_mode = c.launchers[obj].color or 'use'
+        local encoding = c.launchers[obj].encoding
+        local cwd = (c.launchers[obj].cwd) and c.launchers[obj].cwd:gsub([[^%.]], parent_win_prjroot) or parent_win_prjroot
+        local position = (c.launchers[obj].position) or { orientation = 'vertical' }
         if not ut.IsExist(cwd) then
             vim.notify(string.format('"%s" is not exist', cwd), vim.log.levels.ERROR)
             return
         end
-        local ev = c[obj].env
+        local ev = c.launchers[obj].env
         if ev then
             local env_cmd = {}
             for key, val in pairs(ev) do
@@ -236,8 +236,8 @@ end
 
 local function BufMapping()
     local c = pr.GetCurrentConfig()
-    if c then
-        for key, val in pairs(c) do
+    if c and c.launchers then
+        for key, val in pairs(c.launchers) do
             if val.key then
                 ut.nnoremap(val.key, function() M.LaunchObject(key) end)
             end
@@ -267,9 +267,9 @@ end
 function M.GetLauncherList()
     local parent_win_prjroot = pr.GetCurrentProjectRoot()
     local c = pr.GetPrjrootConfig(parent_win_prjroot)
-    if c then
+    if c and c.launchers then
         local launcher_list = {}
-        for launcher_name, _ in pairs(c) do
+        for launcher_name, _ in pairs(c.launchers) do
             launcher_list[#launcher_list+1] = launcher_name
         end
         return launcher_list
