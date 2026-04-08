@@ -85,6 +85,7 @@ describe('git.git_branch_commit', function()
 end)
 
 describe('git.get_fugitive_info', function()
+    local git = fresh_git()
     it('parses fugitive blob name: index', function()
         local git = fresh_git()
         local name = 'fugitive:///repo/.git//0/file.lua'
@@ -132,5 +133,14 @@ describe('git.get_fugitive_info', function()
         assert.equals('+1 -0', info.ab)
 
         vim.b.fugitive_status = nil
+    end)
+
+    it('parses fugitive diff name', function()
+        -- Mock buffer name for a diff: fugitive:///path/to/repo/.git//1:2/file.lua
+        local name = 'fugitive:///repo/.git//1:2/file.lua'
+        vim.api.nvim_buf_set_name(0, name)
+        local info = git.get_fugitive_info(0)
+        assert.equals('diff', info.type)
+        assert.equals('file.lua', info.file)
     end)
 end)

@@ -119,15 +119,20 @@ function M.get_fugitive_info(bufnr)
     local obj, path = name:match('//.-//(.-)/(.*)$')
     if obj and path then
         local display_obj = obj
-        if obj == '0' then display_obj = 'INDEX' end
-        if obj == '1' then display_obj = 'BASE' end
-        if obj == '2' then display_obj = 'OURS' end
-        if obj == '3' then display_obj = 'THEIRS' end
-        if #display_obj > 10 and display_obj:match('^%x+$') then
+        local type = 'blob'
+        if obj:match(':') then
+            type = 'diff'
+        elseif obj == '0' then display_obj = 'INDEX'
+        elseif obj == '1' then display_obj = 'BASE'
+        elseif obj == '2' then display_obj = 'OURS'
+        elseif obj == '3' then display_obj = 'THEIRS'
+        end
+
+        if type == 'blob' and #display_obj > 10 and display_obj:match('^%x+$') then
             display_obj = display_obj:sub(1, 7)
         end
         return {
-            type = 'blob',
+            type = type,
             obj = display_obj,
             file = vim.fn.fnamemodify(path, ':t')
         }

@@ -668,10 +668,11 @@ local gap = '%<%='
 
 local function fugitive_info(bufnr, winid)
     local info = require'git'.get_fugitive_info(bufnr)
-    if not info then return 'FUGITIVE' end
+    if not info then return 'Fugitive' end
 
     if info.type == 'summary' then
         return {
+            'Git status',
             info.cwd,
             info.head,
             info.upstream,
@@ -679,9 +680,11 @@ local function fugitive_info(bufnr, winid)
             sep = ' │ '
         }
     elseif info.type == 'blob' then
-        return { info.obj, info.file, sep = ' │ ' }
+        return { 'Git blob', info.obj, info.file, sep = ' │ ' }
+    elseif info.type == 'diff' then
+        return { 'Git diff', info.file, sep = ' │ ' }
     end
-    return 'FUGITIVE'
+    return 'Fugitive'
 end
 
 local function fugitive_info_compact(bufnr, winid)
@@ -689,10 +692,12 @@ local function fugitive_info_compact(bufnr, winid)
     if not info then return 'FUG' end
 
     if info.type == 'summary' then
-        return info.head
+        return 'SUM │ ' .. info.head
     elseif info.type == 'blob' then
         local obj_map = { INDEX = 'IDX', OURS = 'OUR', THEIRS = 'THE', BASE = 'BASE' }
         return (obj_map[info.obj] or info.obj:sub(1, 4)) .. ' │ ' .. info.file
+    elseif info.type == 'diff' then
+        return 'DIF │ ' .. info.file
     end
     return 'FUG'
 end
