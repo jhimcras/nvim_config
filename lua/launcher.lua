@@ -26,7 +26,7 @@ local function set_launcher_mapping(buf)
     -- ut.nnoremap('<c-c>', [[<cmd>lua require'launcher'.TerminateCurrentLauncherBuffer()<cr>]], { buffer = buf })
 end
 
-function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf)
+function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, encoding)
     local prjroot_origin = pr.GetCurrentProjectRoot()
     local buf
     if existing_buf then
@@ -45,6 +45,9 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf)
             return
         end
         if data then
+            if encoding and encoding ~= 'utf-8' then
+                data = vim.iconv(data, encoding, 'utf-8')
+            end
             local results = vim.split(data, env.new_line_char)
             local append_result = vim.schedule_wrap(function()
                 if not api.nvim_buf_is_valid(buf) then return end
@@ -184,6 +187,7 @@ function M.LaunchObject(obj)
         local args = c[obj].args
         local hi = c[obj].highlight
         local color_mode = c[obj].color or 'use'
+        local encoding = c[obj].encoding
         local cwd = (c[obj].cwd) and c[obj].cwd:gsub([[^%.]], parent_win_prjroot) or parent_win_prjroot
         local position = (c[obj].position) or { orientation = 'vertical' }
         if not ut.IsExist(cwd) then
@@ -216,7 +220,7 @@ function M.LaunchObject(obj)
             end
 
             -- If existing_buf is nil, M.Launch will call ut.NewScratchBuffer internally
-            local buf = M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf)
+            local buf = M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, encoding)
             
             if not existing_buf then
                 api.nvim_buf_set_name(buf, string.format("(%d) %s", buf, obj))
