@@ -4,24 +4,22 @@ local env = require 'env'
 M.MEMOIZE_CLEANUP_HOUR_MS = 3600000
 
 
+function M.GetBufferProtocol(bufnr)
+    bufnr = bufnr or 0
+    local raw = vim.api.nvim_buf_get_name(bufnr)
+    return raw:match('^([^:]+)://')
+end
+
+
 function M.GetBufferName(bufnr)
     bufnr = bufnr or 0
     local raw = vim.api.nvim_buf_get_name(bufnr)
     if raw == '' then return '' end
 
-    if vim.bo[bufnr].filetype == 'oil' then
-        if env.os.win then
-            return raw:sub(8, 8) .. ':' .. raw:sub(9):gsub('\\', '/')
-        else
-            local path = raw:sub(7)
-            local home = os.getenv('HOME')
-            if home and path:sub(1, #home) == home then
-                return '~' .. path:sub(#home + 1)
-            end
-            return path
-        end
+    local protocol = M.GetBufferProtocol(bufnr)
+    if protocol then
+        return raw:sub(#protocol + 4), protocol
     end
-    -- TODO: implement as possible as every filetype, buftype currently used
 
     local abs = vim.fn.fnamemodify(raw, ':p')
     local resolved = vim.uv.fs_realpath(abs)
@@ -32,7 +30,12 @@ end
 function M.GetBufferDir(bufnr)
     local name = M.GetBufferName(bufnr)
     if name == '' then return '' end
-    return vim.fn.fnamemodify(name, ':p:h')
+    if env.os.win then
+        name = name:gsub('^/(%a)/', '%1:')
+        name = name:gsub('\\', '/')
+    end
+    local path = vim.fn.fnamemodify(name, ':p:h')
+    return vim.uv.fs_stat(path) and path or ''
 end
 
 

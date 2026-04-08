@@ -521,7 +521,15 @@ end
 
 
 local function filename_and_status(bufnr, winid)
-    local buf_name = ut.GetBufferName(bufnr)
+    local buf_name, protocol = ut.GetBufferName(bufnr)
+    if protocol == 'oil' then
+        if not env.os.win then
+            local home = os.getenv('HOME')
+            if home and buf_name:sub(1, #home) == home then
+                buf_name = '~' .. buf_name:sub(#home + 1)
+            end
+        end
+    end
     if env.os.win then
         buf_name = buf_name:gsub('\\', '/')
     end
@@ -1057,6 +1065,11 @@ function M.show_file_info()
 
     local bufname = ut.GetBufferName(bufnr)
     add_line("Path", bufname ~= "" and bufname or "[No Name]")
+
+    local protocol = ut.GetBufferProtocol(bufnr)
+    if protocol and protocol ~= '' then
+        add_line("Protocol", protocol)
+    end
 
     local pr = require'prjroot'.GetProjectRoot(bufname)
     if pr then
