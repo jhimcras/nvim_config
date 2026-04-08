@@ -26,9 +26,14 @@ local function set_launcher_mapping(buf)
     -- ut.nnoremap('<c-c>', [[<cmd>lua require'launcher'.TerminateCurrentLauncherBuffer()<cr>]], { buffer = buf })
 end
 
-function M.Launch(cmd, args, cwd, ev, hi, position, color_mode)
+function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf)
     local prjroot_origin = pr.GetCurrentProjectRoot()
-    local buf = ut.NewScratchBuffer(position)
+    local buf
+    if existing_buf then
+        buf = existing_buf
+    else
+        buf = ut.NewScratchBuffer(position)
+    end
     
     local onread = function(err, data)
         if err then
@@ -97,6 +102,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode)
     
     local win = api.nvim_get_current_win()
     pr.SetBufferProjectRoot(buf, prjroot_origin)
+    api.nvim_buf_set_var(buf, 'prjroot_folder', prjroot_origin)
     set_launcher_mapping(buf)
     
     local ok, pid, terminate_fn, get_status = pcall(ut.AsyncProcess, cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
@@ -157,6 +163,19 @@ function M.TerminateCurrentLauncherBuffer()
     end
 end
 
+local function FindExistingLauncherBuffer(obj, prjroot)
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_get_option_value('filetype', { buf = buf }) == 'launcher' then
+            local success, buf_obj = pcall(vim.api.nvim_buf_get_var, buf, 'lc_object')
+            local success2, buf_prj = pcall(vim.api.nvim_buf_get_var, buf, 'prjroot_folder')
+            if success and buf_obj == obj and success2 and buf_prj == prjroot then
+                return buf
+            end
+        end
+    end
+    return nil
+end
+
 function M.LaunchObject(obj)
     local parent_win_prjroot = pr.GetCurrentProjectRoot()
     local c = pr.GetPrjrootConfig(parent_win_prjroot)
@@ -183,12 +202,30 @@ function M.LaunchObject(obj)
             ut.AsyncProcess(cmd, args, cwd, { env = ev })
         else
             local parent_win = vim.api.nvim_get_current_win()
-            local buf = M.Launch(cmd, args, cwd, ev, hi, position, color_mode)
-            --M.LaunchOnTerm(cmd, args, cwd, ev, hi, position)
-            api.nvim_buf_set_name(buf, string.format("(%d) %s", buf, obj))
-            api.nvim_buf_set_option(buf, 'filetype', 'launcher')
-            api.nvim_buf_set_var(buf, 'lc_object', obj)
+            local existing_buf = FindExistingLauncherBuffer(obj, parent_win_prjroot)
+            
+            if existing_buf then
+                -- Terminate any process currently in that buffer
+                local pid = pcall(vim.api.nvim_buf_get_var, existing_buf, 'launcher_pid') and vim.api.nvim_buf_get_var(existing_buf, 'launcher_pid')
+                if pid then
+                    pcall(vim.uv.kill, pid, 15)
+                end
+                
+                -- Clear the buffer content
+                api.nvim_buf_set_lines(existing_buf, 0, -1, false, {})
+            end
+
+            -- If existing_buf is nil, M.Launch will call ut.NewScratchBuffer internally
+            local buf = M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf)
+            
+            if not existing_buf then
+                api.nvim_buf_set_name(buf, string.format("(%d) %s", buf, obj))
+                api.nvim_buf_set_option(buf, 'filetype', 'launcher')
+                api.nvim_buf_set_var(buf, 'lc_object', obj)
+            end
+            
             api.nvim_buf_set_var(buf, 'lc_parent_win', parent_win)
+            api.nvim_buf_set_var(buf, 'prjroot_folder', parent_win_prjroot)
         end
     end
 end
