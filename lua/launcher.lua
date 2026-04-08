@@ -7,10 +7,14 @@ local api = vim.api
 
 -- TODO: check whether the thread actually processing
 local function CloseLauncherBuffer()
-    if vim.b.this_buf_can_be_closed then
+    local buf = vim.api.nvim_get_current_buf()
+    local success, failed = pcall(api.nvim_buf_get_var, buf, 'launcher_failed')
+    local success2, closed = pcall(api.nvim_buf_get_var, buf, 'this_buf_can_be_closed')
+    
+    if (success2 and closed) or (success and failed) then
         vim.cmd.bwipeout { bang = true }
     else
-        vim.notify('This process does not closed yet.', vim.log.levels.WARN)
+        vim.notify('This process is not closed yet.', vim.log.levels.WARN)
     end
 end
 
@@ -25,19 +29,21 @@ end
 function M.Launch(cmd, args, cwd, ev, hi, position, color_mode)
     local prjroot_origin = pr.GetCurrentProjectRoot()
     local buf = ut.NewScratchBuffer(position)
-    local win = api.nvim_get_current_win()
-    if hi then
-        for keyword, highlight_group in pairs(hi) do
-            vim.fn.matchadd(highlight_group, keyword)
-        end
-    end
-    pr.SetBufferProjectRoot(buf, prjroot_origin)
-    set_launcher_mapping(buf)
+    
     local onread = function(err, data)
-        assert(not err, err)
+        if err then
+            api.nvim_buf_call(buf, function()
+                api.nvim_buf_set_lines(buf, -2, -1, false, {'Error reading output: ' .. err})
+                api.nvim_buf_set_var(buf, 'launcher_failed', true)
+                api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
+            end)
+            return
+        end
         if data then
             local results = vim.split(data, env.new_line_char)
             local append_result = vim.schedule_wrap(function()
+                if not api.nvim_buf_is_valid(buf) then return end
+                -- (rest of the logic remains the same)
                 local processed_lines = results
                 local highlight_data = {}
                 
@@ -76,20 +82,32 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode)
                     end
                 end
                 
-                local buf_line_count = api.nvim_buf_line_count(buf)
-                api.nvim_win_set_cursor(win, {buf_line_count,0})
+                -- local buf_line_count = api.nvim_buf_line_count(buf)
+                -- api.nvim_win_set_cursor(win, {buf_line_count,0})
             end)
             append_result()
         end
     end
     local on_exit = function(code, signal)
+        if not api.nvim_buf_is_valid(buf) then return end
         local end_text = string.format('---- End [code %d] [signal %d]', code, signal)
         api.nvim_buf_set_lines(buf, -2, -1, false, {end_text})
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
     end
-    --api.nvim_buf_set_lines(buf, -2, -1, false, {'---- Start', ''})
-    local pid = ut.AsyncProcess(cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
-    api.nvim_buf_set_var(buf, 'launcher_pid', pid)
+    
+    local win = api.nvim_get_current_win()
+    pr.SetBufferProjectRoot(buf, prjroot_origin)
+    set_launcher_mapping(buf)
+    
+    local ok, pid, terminate_fn, get_status = pcall(ut.AsyncProcess, cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
+
+    if ok and type(pid) == 'number' then
+        api.nvim_buf_set_var(buf, 'launcher_pid', pid)
+    else
+        api.nvim_buf_set_lines(buf, -1, -1, false, {'Failed to start process: ' .. tostring(pid)})
+        api.nvim_buf_set_var(buf, 'launcher_failed', true)
+        api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
+    end
     return buf
 end
 
