@@ -22,7 +22,7 @@ local function set_launcher_mapping(buf)
     -- ut.nnoremap('<c-c>', [[<cmd>lua require'launcher'.TerminateCurrentLauncherBuffer()<cr>]], { buffer = buf })
 end
 
-function M.Launch(cmd, args, cwd, ev, hi, position)
+function M.Launch(cmd, args, cwd, ev, hi, position, color_mode)
     local prjroot_origin = pr.GetCurrentProjectRoot()
     local buf = ut.NewScratchBuffer(position)
     local win = api.nvim_get_current_win()
@@ -38,14 +38,44 @@ function M.Launch(cmd, args, cwd, ev, hi, position)
         if data then
             local results = vim.split(data, env.new_line_char)
             local append_result = vim.schedule_wrap(function()
-                --if env.os.win then
-                    --for idx = 1,#results do
-                        --results[idx] = vim.fn.iconv(results[idx], 'euc-kr', 'utf-8')
-                    --end
-                --end
+                local processed_lines = results
+                local highlight_data = {}
+                
+                if color_mode == 'use' or color_mode == 'mono' then
+                    local ansi = require('ansi_parser')
+                    processed_lines = {}
+                    for i, line in ipairs(results) do
+                        local cleaned, highlights = ansi.parse_ansi(line)
+                        processed_lines[i] = cleaned
+                        if color_mode == 'use' then
+                            highlight_data[i] = highlights
+                        end
+                    end
+                end
+
+                local start_line = api.nvim_buf_line_count(buf) - 1
                 local last_line = api.nvim_buf_get_lines(buf, -2, -1, false)
-                results[1] = last_line[1] .. results[1]
-                api.nvim_buf_set_lines(buf, -2, -1, false, results)
+                processed_lines[1] = last_line[1] .. processed_lines[1]
+                
+                -- Adjust the first line's highlights if we prepended to an existing line
+                if color_mode == 'use' and #last_line[1] > 0 and highlight_data[1] then
+                    for _, hl in ipairs(highlight_data[1]) do
+                        hl[1] = hl[1] + #last_line[1]
+                        hl[2] = hl[2] + #last_line[1]
+                    end
+                end
+
+                api.nvim_buf_set_lines(buf, -2, -1, false, processed_lines)
+                
+                if color_mode == 'use' then
+                    for i, line_highlights in ipairs(highlight_data) do
+                        local lnum = start_line + i - 1
+                        for _, hl in ipairs(line_highlights) do
+                            api.nvim_buf_add_highlight(buf, -1, hl[3], lnum, hl[1], hl[2])
+                        end
+                    end
+                end
+                
                 local buf_line_count = api.nvim_buf_line_count(buf)
                 api.nvim_win_set_cursor(win, {buf_line_count,0})
             end)
@@ -116,6 +146,7 @@ function M.LaunchObject(obj)
         local cmd = c[obj].cmd
         local args = c[obj].args
         local hi = c[obj].highlight
+        local color_mode = c[obj].color or 'use'
         local cwd = (c[obj].cwd) and c[obj].cwd:gsub([[^%.]], parent_win_prjroot) or parent_win_prjroot
         local position = (c[obj].position) or { orientation = 'vertical' }
         if not ut.IsExist(cwd) then
@@ -134,7 +165,7 @@ function M.LaunchObject(obj)
             ut.AsyncProcess(cmd, args, cwd, { env = ev })
         else
             local parent_win = vim.api.nvim_get_current_win()
-            local buf = M.Launch(cmd, args, cwd, ev, hi, position)
+            local buf = M.Launch(cmd, args, cwd, ev, hi, position, color_mode)
             --M.LaunchOnTerm(cmd, args, cwd, ev, hi, position)
             api.nvim_buf_set_name(buf, string.format("(%d) %s", buf, obj))
             api.nvim_buf_set_option(buf, 'filetype', 'launcher')
@@ -188,6 +219,17 @@ end
 
 function M.setup()
     api.nvim_create_autocmd({'BufRead', 'BufNew'}, {callback = BufMapping})
+    
+    -- Initialize ANSI highlight groups
+    local set_hl = vim.api.nvim_set_hl
+    set_hl(0, 'AnsiBlack',   { fg = '#000000', bold = true })
+    set_hl(0, 'AnsiRed',     { fg = '#ff5555' })
+    set_hl(0, 'AnsiGreen',   { fg = '#50fa7b' })
+    set_hl(0, 'AnsiYellow',  { fg = '#f1fa8c' })
+    set_hl(0, 'AnsiBlue',    { fg = '#8be9fd' })
+    set_hl(0, 'AnsiMagenta', { fg = '#ff79c6' })
+    set_hl(0, 'AnsiCyan',    { fg = '#8be9fd' })
+    set_hl(0, 'AnsiWhite',   { fg = '#f8f8f2' })
 end
 
 return M
