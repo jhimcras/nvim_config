@@ -523,7 +523,10 @@ end
 local function filename_and_status(bufnr, winid)
     local buf_name, protocol = ut.GetBufferName(bufnr)
     if protocol == 'oil' then
-        if not env.os.win then
+        if env.os.win then
+            buf_name = buf_name:gsub('^/(%a)/', '%1:/')
+            buf_name = buf_name:gsub('\\', '/')
+        else
             local home = os.getenv('HOME')
             if home and buf_name:sub(1, #home) == home then
                 buf_name = '~' .. buf_name:sub(#home + 1)
