@@ -1052,6 +1052,7 @@ function M.statusline_entry()
     repeat
         local ctx = { excluded = excluded, candidates = {}, order = 0 }
         result = make_statusline_text(bufnr, winid, tree, '', ctx)
+        if not result then print("DEBUG: statusline_entry result is nil") end
 
         if measure_sl_text(result) <= w then break end
 
