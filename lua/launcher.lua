@@ -5,6 +5,7 @@ local ut = require'util'
 local env = require 'env'
 local api = vim.api
 local buffers_handles = {}
+local launcher_timers = {}
 
 -- TODO: check whether the thread actually processing
 local function CloseLauncherBuffer()
@@ -34,6 +35,13 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         buf = existing_buf
     else
         buf = ut.NewScratchBuffer(position)
+    end
+    api.nvim_buf_set_option(buf, 'filetype', 'launcher')
+    
+    -- Ensure lc_object is set for statusline
+    local success, _ = pcall(api.nvim_buf_get_var, buf, 'lc_object')
+    if not success then
+        api.nvim_buf_set_var(buf, 'lc_object', cmd)
     end
     
     local onread = function(err, data)
@@ -99,14 +107,42 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     end
     local on_exit = function(code, signal)
         if not api.nvim_buf_is_valid(buf) then return end
+        
+        -- Stop spinner timer
+        local timer = launcher_timers[buf]
+        if timer then
+            timer:stop()
+            timer:close()
+            launcher_timers[buf] = nil
+        end
+        
+        api.nvim_buf_set_var(buf, 'launcher_status', (code == 0) and 'done' or 'terminated')
+        
         local end_text = string.format('---- End [code %d] [signal %d]', code, signal)
         api.nvim_buf_set_lines(buf, -2, -1, false, {end_text})
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
+        vim.cmd('redrawstatus!')
     end
     
+    -- Start spinner timer
+    api.nvim_buf_set_var(buf, 'launcher_status', 'running')
+    local timer = vim.uv.new_timer()
+    timer:start(0, 120, vim.schedule_wrap(function()
+        if api.nvim_buf_is_valid(buf) then
+            vim.cmd('redrawstatus!')
+        else
+            timer:stop()
+            timer:close()
+            launcher_timers[buf] = nil
+        end
+    end))
+    launcher_timers[buf] = timer
+    
     local win = api.nvim_get_current_win()
-    pr.SetBufferProjectRoot(buf, prjroot_origin)
-    api.nvim_buf_set_var(buf, 'prjroot_folder', prjroot_origin)
+    if prjroot_origin then
+        pr.SetBufferProjectRoot(buf, prjroot_origin)
+        api.nvim_buf_set_var(buf, 'prjroot_folder', prjroot_origin)
+    end
     set_launcher_mapping(buf)
     
     local ok, pid, terminate_fn, get_status, handle, err = pcall(ut.AsyncProcess, cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
@@ -233,7 +269,6 @@ function M.LaunchObject(obj)
             
             if not existing_buf then
                 api.nvim_buf_set_name(buf, string.format("(%d) %s", buf, obj))
-                api.nvim_buf_set_option(buf, 'filetype', 'launcher')
                 api.nvim_buf_set_var(buf, 'lc_object', obj)
             end
             

@@ -67,8 +67,35 @@ local function helpinfo()
     return 'HELP │ ' .. (help_file_name or '')
 end
 
-local function launcher()
-    return string.format('%s(%s)', vim.b.prjroot_folder, vim.b.lc_object)
+local spinner_frames = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
+
+local function launcher_status_icon(bufnr, winid)
+    local b = bufnr and vim.b[bufnr] or vim.b
+    local status = b.launcher_status
+    if status == 'running' then
+        return spinner_frames[(math.floor(vim.uv.now() / 120) % #spinner_frames) + 1]
+    elseif status == 'done' then
+        return '✓'
+    elseif status == 'terminated' then
+        return '✗'
+    end
+end
+
+local function grep_status_icon(bufnr, winid)
+    local gs = vim.w[winid].grep_status
+    if gs == 'searching' then
+        return spinner_frames[(math.floor(vim.uv.now() / 120) % #spinner_frames) + 1]
+    elseif gs == 'done' then
+        return '✓'
+    elseif gs == 'killed' then
+        return '✗'
+    end
+end
+
+local function launcher(bufnr, winid)
+    local icon = launcher_status_icon(bufnr, winid)
+    local b = bufnr and vim.b[bufnr] or vim.b
+    return string.format('%s%s(%s)', icon and (icon .. ' ') or '', b.prjroot_folder, b.lc_object)
 end
 
 local function quickfix()
@@ -743,20 +770,6 @@ local function quickfix_search_query_compact(bufnr, winid)
     return title or ''
 end
 
-local spinner_frames = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
-
-local function grep_status_icon(bufnr, winid)
-    local gs = vim.w[winid].grep_status
-    if gs == 'searching' then
-        return spinner_frames[(math.floor(vim.uv.now() / 120) % #spinner_frames) + 1]
-    elseif gs == 'done' then
-        return '✓'
-    elseif gs == 'killed' then
-        return '✗'
-    end
-end
-
-
 local function loclist_tag(bufnr, winid)
     local tag = vim.w[winid] and vim.w[winid].loclist_tag
     if not tag then return end
@@ -933,6 +946,18 @@ local function oil_statusline(activation, mode)
     }
 end
 
+local function launcher_statusline(activation, mode, winid)
+    local active_only = function(st) return activation and st or '' end
+    local hl = function(num)
+        return 'StatuslineGeneral' .. (activation and ('Active_%d_%s'):format(num, mode) or 'Inactive')
+    end
+    return {
+        { launcher, hl = hl(1), sep = ' ', pad = ' ' },
+        gap,
+        active_only { search_count, percentage_loc, hl = hl(2), sep = ' ', pad = ' ' },
+    }
+end
+
 -- Let's make not to use any functions on stausline option.
 -- Refreshing on the selected events is the place that to execute funtions.
 
@@ -946,6 +971,7 @@ local statusline_setup = {
         help = help_statusline,
         fugitive = fugitive_statusline,
         terminal = terminal_statusline,
+        launcher = launcher_statusline,
         checkhealth = checkhealth_statusline,
         health      = checkhealth_statusline,
         man         = man_statusline,
