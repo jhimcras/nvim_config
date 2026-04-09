@@ -24,7 +24,7 @@ local function set_launcher_mapping(buf)
     -- ut.nnoremap('e', [[gg/error<cr>]], { buffer = buf })
     -- ut.nnoremap('w', [[gg/warning<cr>]], { buffer = buf })
     -- ut.nnoremap('<cr>', [[<cmd>lua require'launcher'.Jump()<cr>]], { buffer = buf })
-    -- ut.nnoremap('<c-c>', [[<cmd>lua require'launcher'.TerminateCurrentLauncherBuffer()<cr>]], { buffer = buf })
+    ut.nnoremap('<c-c>', [[<cmd>lua require'launcher'.TerminateCurrentLauncherBuffer()<cr>]], { buffer = buf })
 end
 
 function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, encoding)
@@ -113,6 +113,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
 
     if ok and handle then
         buffers_handles[buf] = handle
+        api.nvim_buf_set_var(buf, 'launcher_terminate_fn', terminate_fn)
     else
         local err_msg = 'Failed to start process: ' .. tostring(err or pid or 'unknown')
         api.nvim_buf_set_lines(buf, -1, -1, false, {err_msg})
@@ -164,7 +165,11 @@ end
 function M.TerminateCurrentLauncherBuffer()
     local buf = vim.api.nvim_get_current_buf()
     local handle = buffers_handles[buf]
-    if handle and not handle:is_closing() then
+    local success, terminate_fn = pcall(vim.api.nvim_buf_get_var, buf, 'launcher_terminate_fn')
+    if success and type(terminate_fn) == 'function' then
+        vim.notify(string.format('Terminating process...'), vim.log.levels.WARN)
+        terminate_fn(15) -- SIGTERM
+    elseif handle and not handle:is_closing() then
         vim.notify(string.format('Terminating process...'), vim.log.levels.WARN)
         handle:kill(15) -- SIGTERM
     end
