@@ -773,7 +773,6 @@ local function make_statusline_text(bufnr, winid, components, sep, ctx)
     elseif type(components) == 'number' then
         return tostring(components)
     elseif type(components) == 'function' then
-        print("DEBUG: Calling component function: " .. tostring(components))
         local res = components(bufnr, winid)
         if res == nil then return '' end
         return make_statusline_text(bufnr, winid, res, sep, ctx)
