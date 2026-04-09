@@ -9,8 +9,11 @@ describe('status', function()
         -- Mock vim.o and vim.go
         local original_o = vim.o
         local original_go = vim.go
+        local original_testing = vim.g.is_testing
+        
         vim.o = {}
         vim.go = {}
+        vim.g.is_testing = nil -- Temporarily allow setup to run
         
         -- Mock set_highlight to avoid errors
         package.loaded['util'] = { set_highlight = function() end }
@@ -22,5 +25,6 @@ describe('status', function()
         
         vim.o = original_o
         vim.go = original_go
+        vim.g.is_testing = original_testing
     end)
 end)
