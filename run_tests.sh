@@ -7,11 +7,10 @@ output=$(nvim --headless -u tests/minimal_init.lua \
 
 echo "$output"
 
-# Count failures and errors by summing up the numbers at the end of the line
+# Count failures and errors
 failures=$(echo "$output" | grep "Failed :" | awk '{print $3}' | awk '{s+=$1} END {print s}')
 errors=$(echo "$output" | grep "Errors :" | awk '{print $3}' | awk '{s+=$1} END {print s}')
 
-# Default to 0 if no match
 failures=${failures:-0}
 errors=${errors:-0}
 
