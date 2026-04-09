@@ -116,7 +116,8 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
             launcher_timers[buf] = nil
         end
         
-        api.nvim_buf_set_var(buf, 'launcher_status', (code == 0) and 'done' or 'terminated')
+        local status = (code == 0 and signal == 0) and 'done' or 'terminated'
+        api.nvim_buf_set_var(buf, 'launcher_status', status)
         
         local end_text = string.format('---- End [code %d] [signal %d]', code, signal)
         api.nvim_buf_set_lines(buf, -2, -1, false, {end_text})
@@ -153,8 +154,17 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     else
         local err_msg = 'Failed to start process: ' .. tostring(err or pid or 'unknown')
         api.nvim_buf_set_lines(buf, -1, -1, false, {err_msg})
+        api.nvim_buf_set_var(buf, 'launcher_status', 'terminated')
         api.nvim_buf_set_var(buf, 'launcher_failed', true)
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
+        
+        -- Stop timer if failed to start
+        if launcher_timers[buf] then
+            launcher_timers[buf]:stop()
+            launcher_timers[buf]:close()
+            launcher_timers[buf] = nil
+        end
+        vim.cmd('redrawstatus!')
     end
     return buf
 end
@@ -322,6 +332,20 @@ end
 
 function M.setup()
     api.nvim_create_autocmd({'BufRead', 'BufNew'}, {callback = BufMapping})
+    
+    api.nvim_create_autocmd('BufWipeout', {
+        callback = function(args)
+            local buf = args.buf
+            local timer = launcher_timers[buf]
+            if timer then
+                if not timer:is_closing() then
+                    timer:stop()
+                    timer:close()
+                end
+                launcher_timers[buf] = nil
+            end
+        end
+    })
     
     -- Initialize ANSI highlight groups
     local set_hl = vim.api.nvim_set_hl

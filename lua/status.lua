@@ -79,10 +79,11 @@ local function launcher_status_icon(bufnr, winid)
     elseif status == 'terminated' then
         return '✗'
     end
+    return ''
 end
 
 local function grep_status_icon(bufnr, winid)
-    local gs = vim.w[winid].grep_status
+    local gs = vim.w[winid] and vim.w[winid].grep_status
     if gs == 'searching' then
         return spinner_frames[(math.floor(vim.uv.now() / 120) % #spinner_frames) + 1]
     elseif gs == 'done' then
@@ -90,12 +91,14 @@ local function grep_status_icon(bufnr, winid)
     elseif gs == 'killed' then
         return '✗'
     end
+    return ''
 end
 
 local function launcher(bufnr, winid)
     local icon = launcher_status_icon(bufnr, winid)
     local b = bufnr and vim.b[bufnr] or vim.b
-    return string.format('%s%s(%s)', icon and (icon .. ' ') or '', b.prjroot_folder, b.lc_object)
+    local icon_str = (icon and icon ~= '') and (icon .. ' ') or ''
+    return string.format('%s%s(%s)', icon_str, b.prjroot_folder or '?', b.lc_object or '?')
 end
 
 local function quickfix()

@@ -119,8 +119,8 @@ function M.asyncGrep(term, word, wndidforll)
         end
     end
 
-    local onexit = function()
-        local final_status = killed and 'killed' or 'done'
+    local onexit = function(code, signal)
+        local final_status = (killed or signal ~= 0) and 'killed' or 'done'
         killed = true
         if redraw_timer then
             redraw_timer:stop()
@@ -173,6 +173,21 @@ function M.asyncGrep(term, word, wndidforll)
     active_loclist[wndidforll] = qfwinid
     vim.w[qfwinid].grep_status = 'searching'
     filter_chains[qfwinid] = nil
+    
+    -- Start redraw timer for animation
+    redraw_timer = vim.uv.new_timer()
+    redraw_timer:start(0, 120, vim.schedule_wrap(function()
+        if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
+            vim.cmd('redrawstatus!')
+        else
+            if redraw_timer then
+                redraw_timer:stop()
+                redraw_timer:close()
+                redraw_timer = nil
+            end
+        end
+    end))
+    
     M.update_loclist_sl(qfwinid)
     -- QuitPre fires BEFORE Neovim creates the auto-buffer window that normally
     -- appears when the last normal window is quit while a loclist is open.
