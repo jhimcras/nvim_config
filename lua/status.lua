@@ -766,6 +766,8 @@ end
 
 local function make_statusline_text(bufnr, winid, components, sep, ctx)
     sep = sep or ''
+    if components == nil then return '' end
+
     if type(components) == 'string' then
         return components
     elseif type(components) == 'number' then
