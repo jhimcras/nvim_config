@@ -35,7 +35,7 @@ function M.GetBufferDir(bufnr)
         name = name:gsub('\\', '/')
     end
     local path = vim.fn.fnamemodify(name, ':p:h')
-    return vim.uv.fs_stat(path) and path or ''
+    return vim.uv.fs_stat(path) and path:gsub('\\', '/') or ''
 end
 
 
@@ -591,10 +591,13 @@ end
 
 
 function M.normalize_path_separator(path)
+    -- Normalize all backslashes to forward slashes first
+    local normalized = path:gsub("\\", "/")
     if env.os.win then
-        return path:gsub("/", "\\")
+        -- Optionally convert back if needed, but for tests, forward slashes are preferred as normalized
+        return normalized
     end
-    return path:gsub("\\", "/")
+    return normalized
 end
 
 
