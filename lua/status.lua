@@ -800,15 +800,13 @@ local function make_statusline_text(bufnr, winid, components, sep, ctx)
         local pad = components.pad or ''
         local hl = components.hl and ("%%#%s#"):format(components.hl) or ""
         local t = {}
-        for idx, c in ipairs(components) do
-            if c then
+        for _, c in ipairs(components) do
+            -- Only process if it's a type we support as a statusline component
+            if type(c) == 'string' or type(c) == 'number' or type(c) == 'function' or type(c) == 'table' then
                 local c_str = make_statusline_text(bufnr, winid, c, sep, ctx)
                 if c_str and c_str ~= '' then
                     t[#t+1] = c_str
                 end
-            elseif type(c) == 'nil' and idx == 2 then
-                -- This is a diagnostic print to identify the 'nil' component causing the issue
-                print("DEBUG: make_statusline_text encountered nil at index 2 in components table:", vim.inspect(components))
             end
         end
         if #t == 0 then return '' end
