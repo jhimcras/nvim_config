@@ -7,15 +7,14 @@ describe("Launcher error handling", function()
         local buf = launcher.Launch("nonexistent_command", {}, vim.uv.cwd())
         
         -- Access variables directly using the buffer handle
-        local vars = vim.b[buf]
-        local launcher_failed = vars.launcher_failed
-        local this_buf_can_be_closed = vars.this_buf_can_be_closed
+        local success1, launcher_failed = pcall(vim.api.nvim_buf_get_var, buf, 'launcher_failed')
+        local success2, this_buf_can_be_closed = pcall(vim.api.nvim_buf_get_var, buf, 'this_buf_can_be_closed')
         
         -- Assert
-        local is_failed = (launcher_failed == true)
-        local is_closable = (this_buf_can_be_closed == true)
+        local is_failed = (success1 and launcher_failed == true)
+        local is_closable = (success2 and this_buf_can_be_closed == true)
 
-        assert(is_failed or is_closable, "Buffer should have been marked as failed or closable. Got: " .. tostring(launcher_failed) .. ", " .. tostring(this_buf_can_be_closed))
+        assert(is_failed or is_closable, "Buffer should have been marked as failed or closable. Got: launcher_failed=" .. tostring(launcher_failed) .. ", this_buf_can_be_closed=" .. tostring(this_buf_can_be_closed))
     end)
 end)
 
@@ -23,11 +22,7 @@ describe("Launcher encoding", function()
     it("should convert output with specified encoding", function()
         -- Setup: A command that outputs non-utf8 data (simulated with iconv)
         local input = "한글"
-        local cp949_data = vim.iconv(input, 'utf-8', 'cp949')
         
-        -- Use a mock setup to feed cp949 data into onread
-        -- Since launcher.Launch takes a command, we can just test if encoding param is respected
-        -- if we mock or verify the flow.
         -- For this test, we verify that passing an encoding works and doesn't break
         local buf = launcher.Launch("echo", {input}, vim.uv.cwd(), nil, nil, nil, nil, nil, "cp949")
         assert(vim.api.nvim_buf_is_valid(buf), "Buffer should be created")

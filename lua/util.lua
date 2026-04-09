@@ -215,14 +215,17 @@ function M.AsyncProcess(cmd, args, cwd, ev_or_opts, read_func, end_func)
         env = ev,
     }
 
-    handle, pid = vim.uv.spawn(cmd, spawn_options, vim.schedule_wrap(on_exit))
+    local success, err_or_handle, pid_or_err = pcall(vim.uv.spawn, cmd, spawn_options, vim.schedule_wrap(on_exit))
+    if not success then
+        return nil, function() end, function() return "failed" end, nil, err_or_handle
+    end
+    handle, pid = err_or_handle, pid_or_err
     status = 'running'
 
     if read_func then
         vim.uv.read_start(stdout, read_func)
         vim.uv.read_start(stderr, read_func)
     end
-
     local terminate_function = function(signal)
         signal = signal or "sigterm"
         if handle and not handle:is_closing() then

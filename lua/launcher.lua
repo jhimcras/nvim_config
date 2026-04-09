@@ -4,6 +4,7 @@ local pr = require'prjroot'
 local ut = require'util'
 local env = require 'env'
 local api = vim.api
+local buffers_handles = {}
 
 -- TODO: check whether the thread actually processing
 local function CloseLauncherBuffer()
@@ -108,13 +109,12 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     api.nvim_buf_set_var(buf, 'prjroot_folder', prjroot_origin)
     set_launcher_mapping(buf)
     
-    local ok, pid, terminate_fn, get_status, handle = pcall(ut.AsyncProcess, cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
+    local ok, pid, terminate_fn, get_status, handle, err = pcall(ut.AsyncProcess, cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
 
-    if ok and type(pid) == 'number' then
-        api.nvim_buf_set_var(buf, 'launcher_pid', pid)
-        -- Instead of storing the handle directly, we rely on the process being managed by ut.AsyncProcess
+    if ok and handle then
+        buffers_handles[buf] = handle
     else
-        local err_msg = 'Failed to start process: ' .. (type(pid) == 'string' and pid or 'unknown')
+        local err_msg = 'Failed to start process: ' .. tostring(err or pid or 'unknown')
         api.nvim_buf_set_lines(buf, -1, -1, false, {err_msg})
         api.nvim_buf_set_var(buf, 'launcher_failed', true)
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
@@ -162,7 +162,8 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, hi, position)
 end
 
 function M.TerminateCurrentLauncherBuffer()
-    local handle = vim.b.launcher_handle
+    local buf = vim.api.nvim_get_current_buf()
+    local handle = buffers_handles[buf]
     if handle and not handle:is_closing() then
         vim.notify(string.format('Terminating process...'), vim.log.levels.WARN)
         handle:kill(15) -- SIGTERM
@@ -213,7 +214,7 @@ function M.LaunchObject(obj)
             
             if existing_buf then
                 -- Terminate any process currently in that buffer
-                local handle = pcall(vim.api.nvim_buf_get_var, existing_buf, 'launcher_handle') and vim.api.nvim_buf_get_var(existing_buf, 'launcher_handle')
+                local handle = buffers_handles[existing_buf]
                 if handle and not handle:is_closing() then
                     handle:kill(15)
                 end
