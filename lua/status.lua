@@ -809,10 +809,14 @@ local function make_statusline_text(bufnr, winid, components, sep, ctx)
         -- Wrap elements individually if they are not just plain strings/numbers
         local wrapped = {}
         for i, s in ipairs(t) do
-            wrapped[i] = hl .. (i == 1 and pad or '') .. s .. (i == #t and pad or '') .. hl
+            if s ~= nil then
+                wrapped[i] = hl .. (i == 1 and pad or '') .. s .. (i == #t and pad or '') .. hl
+            end
         end
         return table.concat(wrapped, sep)
     end
+    return ''
+end
     return ''
 end
 
