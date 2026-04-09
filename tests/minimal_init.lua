@@ -1,3 +1,4 @@
+vim.g.is_testing = true
 vim.opt.rtp:prepend(vim.fn.getcwd())
 
 -- Dynamically locate plenary.nvim

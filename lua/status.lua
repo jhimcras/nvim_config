@@ -1074,6 +1074,9 @@ function M.statusline_entry()
 end
 
 function M.setup()
+    -- Skip statusline setup in test environment to avoid headless UI errors
+    if vim.g.is_testing then return end
+
     vim.o.laststatus = 2
     vim.o.showtabline = 2
 
