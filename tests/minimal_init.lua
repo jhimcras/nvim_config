@@ -1,8 +1,18 @@
 vim.opt.rtp:prepend(vim.fn.getcwd())
 
--- Dynamically locate plenary.nvim in the standard data directory
+-- Dynamically locate plenary.nvim
 local data_path = vim.fn.stdpath('data')
-local plenary_path = data_path .. '/pckr/plenary.nvim'
-vim.opt.rtp:prepend(plenary_path)
+-- Check common paths for pckr/packer installations
+local potential_paths = {
+    data_path .. '/pckr/plenary.nvim',
+    data_path .. '/site/pack/packer/start/plenary.nvim'
+}
+
+for _, path in ipairs(potential_paths) do
+    if vim.fn.isdirectory(path) == 1 then
+        vim.opt.rtp:prepend(path)
+        break
+    end
+end
 
 require'status'.setup()
