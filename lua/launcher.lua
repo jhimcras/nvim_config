@@ -45,10 +45,10 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
             return
         end
         if data then
-            if encoding and encoding ~= 'utf-8' then
+            if encoding and encoding ~= 'utf-8' and type(data) == 'string' then
                 data = vim.iconv(data, encoding, 'utf-8')
             end
-            local results = vim.split(data, env.new_line_char)
+            local results = vim.split(tostring(data), env.new_line_char)
             local append_result = vim.schedule_wrap(function()
                 if not api.nvim_buf_is_valid(buf) then return end
                 -- (rest of the logic remains the same)
@@ -160,9 +160,10 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, hi, position)
 end
 
 function M.TerminateCurrentLauncherBuffer()
-    if vim.b.launcher_pid then
-        vim.notify(string.format('Process %d has been terminated',  vim.b.launcher_pid), vim.log.levels.WARN)
-        vim.uv.kill(vim.b.launcher_pid, 15) -- terminate process
+    local handle = vim.b.launcher_handle
+    if handle and not handle:is_closing() then
+        vim.notify(string.format('Terminating process...'), vim.log.levels.WARN)
+        handle:kill(15) -- SIGTERM
     end
 end
 
@@ -210,9 +211,9 @@ function M.LaunchObject(obj)
             
             if existing_buf then
                 -- Terminate any process currently in that buffer
-                local pid = pcall(vim.api.nvim_buf_get_var, existing_buf, 'launcher_pid') and vim.api.nvim_buf_get_var(existing_buf, 'launcher_pid')
-                if pid then
-                    pcall(vim.uv.kill, pid, 15)
+                local handle = pcall(vim.api.nvim_buf_get_var, existing_buf, 'launcher_handle') and vim.api.nvim_buf_get_var(existing_buf, 'launcher_handle')
+                if handle and not handle:is_closing() then
+                    handle:kill(15)
                 end
                 
                 -- Clear the buffer content
