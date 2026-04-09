@@ -206,7 +206,7 @@
     - 다음 저장시 기존에 저장했으나 버퍼가 닫힌것은 삭제
 - [x] output의 encoding을 지정 할 수 있어야 함
 - [ ] Lua function 실행 호출도 할 수 있음
-- [ ] 실행 중인 경우 statusline에 spin animation, 끝나면 끝났다고 statusline에 표시.
+- [x] 실행 중인 경우 statusline에 spin animation, 끝나면 끝났다고 statusline에 표시.
 - [x] launcher 실행 과 프로젝트 옵션이 함께 사용 되어 문제가 되고 있음. launcher 는 최상위의 launcher키에서 읽어오도록 수정.
 - [ ] 비동기로 동작중인 프로그램 리스트를 볼 수 있는 기능
 
