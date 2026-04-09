@@ -771,7 +771,9 @@ local function make_statusline_text(bufnr, winid, components, sep, ctx)
     elseif type(components) == 'number' then
         return tostring(components)
     elseif type(components) == 'function' then
-        return make_statusline_text(bufnr, winid, components(bufnr, winid), sep, ctx)
+        local res = components(bufnr, winid)
+        if res == nil then return '' end
+        return make_statusline_text(bufnr, winid, res, sep, ctx)
     elseif type(components) == 'table' and components.__sh then
         if ctx then
             ctx.order = ctx.order + 1
