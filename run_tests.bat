@@ -1,12 +1,12 @@
 @echo off
 
-:: Run tests and capture output
-nvim --headless -u tests/minimal_init.lua ^
+:: Run tests with -i NONE to avoid ShaDa file issues, and capture output
+nvim --headless -u tests/minimal_init.lua -i NONE ^
     -c "lua require('plenary.test_harness').test_directory('tests/spec/', {minimal_init='tests/minimal_init.lua'})" ^
     +qa > test_output.txt 2>&1
 
-:: Print the output file content line by line using findstr to ignore empty lines
-for /f "usebackq delims=" %%a in (`findstr /v /c:"^$" test_output.txt`) do (
+:: Print the output line-by-line, skipping empty lines to prevent echo errors
+for /f "usebackq tokens=* delims=" %%a in (`findstr /v /c:"^$" test_output.txt`) do (
     echo %%a
 )
 
