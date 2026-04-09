@@ -64,7 +64,7 @@ describe('buffer utils', function()
             local dir = vim.fn.getcwd()
             local path = dir .. '/lua/util.lua' -- Known to exist
             vim.api.nvim_buf_set_name(bufnr, path)
-            assert.equals(dir .. '/lua', ut.GetBufferDir(bufnr))
+            assert.equals(ut.normalize_path_separator(dir .. '/lua'), ut.GetBufferDir(bufnr))
         end)
         
         it('returns empty string for non-existent virtual paths (due to fs_stat)', function()
