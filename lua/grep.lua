@@ -276,7 +276,7 @@ function M.asyncGrep(term, word, wndidforll)
             M.update_loclist_sl(qfwinid)
         end
     end))
-    local pid, term_func, status = ut.AsyncProcess('rg', args, '.', { onread = onread, onexit = onexit })
+    local pid, term_func, status, _ = ut.AsyncProcess('rg', args, '.', { onread = onread, onexit = onexit })
 
     ut.nnoremap('<C-c>', function()
         killed = true

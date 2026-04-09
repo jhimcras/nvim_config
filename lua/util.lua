@@ -232,7 +232,7 @@ function M.AsyncProcess(cmd, args, cwd, ev_or_opts, read_func, end_func)
         status = 'terminated'
     end
 
-    return pid, terminate_function, get_status
+    return pid, terminate_function, get_status, handle
 end
 
 function M.SimpleAsyncProcess(cmd, args, on_completed, cwd, ev)

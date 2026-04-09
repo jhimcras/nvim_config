@@ -108,12 +108,14 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     api.nvim_buf_set_var(buf, 'prjroot_folder', prjroot_origin)
     set_launcher_mapping(buf)
     
-    local ok, pid, terminate_fn, get_status = pcall(ut.AsyncProcess, cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
+    local ok, pid, terminate_fn, get_status, handle = pcall(ut.AsyncProcess, cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
 
     if ok and type(pid) == 'number' then
         api.nvim_buf_set_var(buf, 'launcher_pid', pid)
+        -- Instead of storing the handle directly, we rely on the process being managed by ut.AsyncProcess
     else
-        api.nvim_buf_set_lines(buf, -1, -1, false, {'Failed to start process: ' .. tostring(pid)})
+        local err_msg = 'Failed to start process: ' .. (type(pid) == 'string' and pid or 'unknown')
+        api.nvim_buf_set_lines(buf, -1, -1, false, {err_msg})
         api.nvim_buf_set_var(buf, 'launcher_failed', true)
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
     end
