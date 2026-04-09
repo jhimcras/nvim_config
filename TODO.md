@@ -194,7 +194,7 @@
 - [ ] Run (using launcher) program on background (on unix use `&`)
 - [ ] It's very annoying when create a new window from the cursor on most left side of buffer.
       The old window has been shifted to right side.
-- [ ] 결과 Parsing 해서 파일 이동 해주는 기능
+- [ ] 결과 Parsing 해서 에러, 경고 위치 이동 해주는 기능
 - [ ] 윈도우가 만들어지는 위치, 크기를 지정할 수 있는 옵션 (상하좌우, prjroot상에 이미 같은 윈도우가 있으면 해당 윈도우 지우고)
 - [x] 실행하려고 하는 커맨드에 문제가 있어서 실행 못했을때 아무런 메시지가 나오지 않는다. `q`로 창을 없앨수도 없다.
 - [x] 동일한 prjroot에서 생성된 동일한 이름의 Launcher 버퍼 있으면 버퍼 내용만 삭제하고 그대로 사용 (윈도우 유지)
@@ -206,6 +206,9 @@
     - 다음 저장시 기존에 저장했으나 버퍼가 닫힌것은 삭제
 - [x] output의 encoding을 지정 할 수 있어야 함
 - [ ] Lua function 실행 호출도 할 수 있음
+- [ ] 실행 중인 경우 statusline에 spin animation, 끝나면 끝났다고 statusline에 표시.
+- [x] launcher 실행 과 프로젝트 옵션이 함께 사용 되어 문제가 되고 있음. launcher 는 최상위의 launcher키에서 읽어오도록 수정.
+- [ ] 비동기로 동작중인 프로그램 리스트를 볼 수 있는 기능
 
 
 ## Language Server (LSP)

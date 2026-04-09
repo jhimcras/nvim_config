@@ -7,7 +7,7 @@ nvim --headless -u tests/minimal_init.lua -i NONE ^
 
 :: Print the output line-by-line, skipping empty lines to prevent echo errors
 for /f "usebackq tokens=* delims=" %%a in (`findstr /v /c:"^$" test_output.txt`) do (
-    echo %%a
+    echo.%%a
 )
 
 :: Extract failures and errors using findstr
