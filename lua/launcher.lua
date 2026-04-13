@@ -272,6 +272,22 @@ function M.LaunchObject(obj)
                 
                 -- Clear the buffer content
                 api.nvim_buf_set_lines(existing_buf, 0, -1, false, {})
+
+                -- If the buffer is hidden, display it again in the current tab
+                local wins = vim.fn.win_findbuf(existing_buf)
+                if #wins == 0 then
+                    if position and position.orientation == 'vertical' then
+                        vim.cmd((position.size or '') .. ' vsplit')
+                    elseif position and position.orientation == 'horizontal' then
+                        vim.cmd('botright ' .. (position.size or '') .. ' split')
+                    else
+                        vim.cmd('vsplit')
+                    end
+                    vim.api.nvim_set_current_buf(existing_buf)
+                else
+                    -- If it's already visible, focus it (maintains window)
+                    vim.api.nvim_set_current_win(wins[1])
+                end
             end
 
             -- If existing_buf is nil, M.Launch will call ut.NewScratchBuffer internally
