@@ -291,7 +291,26 @@ function M.asyncGrep(term, word, wndidforll)
             M.update_loclist_sl(qfwinid)
         end
     end))
-    local pid, term_func, status, _ = ut.AsyncProcess('rg', args, '.', { onread = onread, onexit = onexit })
+    local proc_key
+    local wrapped_onexit = function(code, signal)
+        if proc_key then
+            require'launcher'.UnregisterProcess(proc_key)
+        end
+        onexit(code, signal)
+    end
+
+    local pid, term_func, status, handle = ut.AsyncProcess('rg', args, '.', { onread = onread, onexit = wrapped_onexit })
+    proc_key = 'grep_' .. (pid or math.random(1000000))
+    require'launcher'.RegisterProcess(proc_key, {
+        type = 'grep',
+        pid = pid,
+        handle = handle,
+        cmd = 'rg',
+        args = args,
+        title = title,
+        onexit = wrapped_onexit,
+        terminate = term_func
+    })
 
     ut.nnoremap('<C-c>', function()
         killed = true

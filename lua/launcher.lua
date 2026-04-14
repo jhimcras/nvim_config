@@ -305,8 +305,15 @@ function M.LaunchObject(obj)
         end
 
         if mode == 'external' then
-            local pid, terminate_fn, get_status, handle = ut.AsyncProcess(cmd, args, cwd, { env = ev })
-            M.running_processes["ext_" .. (pid or "unknown")] = {
+            local proc_key
+            local on_exit = function(code, signal)
+                if proc_key then
+                    M.UnregisterProcess(proc_key)
+                end
+            end
+            local pid, terminate_fn, get_status, handle = ut.AsyncProcess(cmd, args, cwd, { env = ev, onexit = on_exit })
+            proc_key = "ext_" .. (pid or "unknown")
+            M.running_processes[proc_key] = {
                 type = 'external',
                 pid = pid,
                 handle = handle,
@@ -416,12 +423,26 @@ end
 function M.GetRunningProcesses()
     local processes = {}
     for k, v in pairs(M.running_processes) do
-        table.insert(processes, v)
+        local p = vim.tbl_extend('force', v, { key = k })
+        table.insert(processes, p)
     end
     return processes
 end
 
+function M.RegisterProcess(key, proc_info)
+    M.running_processes[key] = proc_info
+end
+
+function M.UnregisterProcess(key)
+    M.running_processes[key] = nil
+end
+
+function M.ShowProcessList()
+    require('process_list').Show()
+end
+
 function M.setup()
+    api.nvim_create_user_command('ProcessList', M.ShowProcessList, {})
     api.nvim_create_autocmd({'BufRead', 'BufNew'}, {callback = BufMapping})
 
     api.nvim_create_autocmd('BufWipeout', {

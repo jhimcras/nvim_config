@@ -25,3 +25,5 @@ if not found then
 end
 
 require'status'.setup()
+require'launcher'.setup()
+require'grep'.setup()

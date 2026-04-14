@@ -163,7 +163,7 @@
 - [x] Add spin animation to the status line during execution.
 - [x] Fix launcher-project option conflicts; ensure launcher reads from top-level keys.
 - [x] Implement execution mode (general, terminal, external)
-- [ ] Implement a list of currently running asynchronous processes.
+- [x] Implement a list of currently running asynchronous processes.
     - It includes launchers, terminals(with something running), asyncronous tasks(searhcing..)
 - [ ] Check the external launcher works.
 - [ ] Keep cursot to the bottom of lines during the execution. (If I moved toward then stop keeping, when I get back to the bottom during the execution, go keeping)
