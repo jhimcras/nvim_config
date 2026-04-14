@@ -154,22 +154,26 @@
 - [x] Store `prjroot` in launcher buffers to ensure keymaps persist.
 - [x] Rename `build.lua` to `launcher.lua`.
 - [x] Rename build plugin to `launcher` and reorganize to manage various builders (msbuild, lua, etc.).
-- [ ] Implement background execution (using `&` on Unix).
-- [ ] Fix UI annoyance when creating windows from the left-most edge.
-- [ ] Parse build results to navigate to errors/warnings.
-- [ ] Add options for window position/size and duplicate handling.
 - [x] Add error messaging for command execution failures; allow closing with `q`.
 - [x] Reuse existing Launcher buffers if the same `prjroot` exists.
 - [x] Automatically vsplit execution results into the current tab if the buffer is hidden.
-- [ ] Add keymap to remove launcher buffers from other buffers in the same `prjroot`.
 - [x] Refactor process killing to use handles instead of just `vim.loop.kill`.
 - [x] Add terminal color parsing for highlighting.
-- [ ] Improve session saving to include launcher state.
 - [x] Allow output encoding specification.
-- [ ] Support direct Lua function execution.
 - [x] Add spin animation to the status line during execution.
 - [x] Fix launcher-project option conflicts; ensure launcher reads from top-level keys.
+- [x] Implement execution mode (general, terminal, external)
 - [ ] Implement a list of currently running asynchronous processes.
+    - It includes launchers, terminals(with something running), asyncronous tasks(searhcing..)
+- [ ] Check the external launcher works.
+- [ ] Keep cursot to the bottom of lines during the execution. (If I moved toward then stop keeping, when I get back to the bottom during the execution, go keeping)
+- [ ] Add options for window position/size and duplicate handling.
+    - positions for vertical, horizontal, bottom, top, left, right, tab, (nvim - new neovim process, defered)
+- [ ] Fix UI annoyance when creating windows from the left-most edge.
+- [ ] Parse build results to navigate to errors/warnings.
+- [ ] Add keymap to remove launcher buffers from other buffers in the same `prjroot`.
+- [ ] Improve session saving to include launcher state.
+- [ ] Support direct Lua function execution.
 
 
 ## Language Server (LSP)
@@ -255,9 +259,9 @@ While snippets are great for statements and function templates, function snippet
 - [x] Implement saving/loading for Quickfix/Location lists in sessions.
 - [x] Fix session saving failure when the directory is missing.
 - [x] Implement auto-saving for sessions.
-- [ ] Handle large/duplicate Quickfix lists in sessions.
 - [x] Warn about unsaved buffers before changing/closing sessions.
 - [ ] Warn if terminal processes are running before session changes.
+- [ ] Handle large/duplicate Quickfix lists in sessions.
 - [ ] Fix `cmdheight` saving issues.
 - [ ] Fix auto-save failure on `:qa` exit.
 
