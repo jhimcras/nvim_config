@@ -48,9 +48,25 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     local onread = function(err, data)
         if err then
             api.nvim_buf_call(buf, function()
+                local line_count = api.nvim_buf_line_count(buf)
+                local wins = vim.fn.win_findbuf(buf)
+                local scroll_wins = {}
+                for _, w in ipairs(wins) do
+                    if api.nvim_win_get_cursor(w)[1] == line_count then
+                        table.insert(scroll_wins, w)
+                    end
+                end
+
                 api.nvim_buf_set_lines(buf, -2, -1, false, {'Error reading output: ' .. err})
                 api.nvim_buf_set_var(buf, 'launcher_failed', true)
                 api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
+
+                local new_line_count = api.nvim_buf_line_count(buf)
+                for _, w in ipairs(scroll_wins) do
+                    if api.nvim_win_is_valid(w) then
+                        api.nvim_win_set_cursor(w, {new_line_count, 0})
+                    end
+                end
             end)
             return
         end
@@ -61,7 +77,16 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
             local results = vim.split(tostring(data), env.new_line_char)
             local append_result = vim.schedule_wrap(function()
                 if not api.nvim_buf_is_valid(buf) then return end
-                -- (rest of the logic remains the same)
+
+                local line_count = api.nvim_buf_line_count(buf)
+                local wins = vim.fn.win_findbuf(buf)
+                local scroll_wins = {}
+                for _, w in ipairs(wins) do
+                    if api.nvim_win_get_cursor(w)[1] == line_count then
+                        table.insert(scroll_wins, w)
+                    end
+                end
+
                 local processed_lines = results
                 local highlight_data = {}
 
@@ -100,8 +125,12 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                     end
                 end
 
-                -- local buf_line_count = api.nvim_buf_line_count(buf)
-                -- api.nvim_win_set_cursor(win, {buf_line_count,0})
+                local new_line_count = api.nvim_buf_line_count(buf)
+                for _, w in ipairs(scroll_wins) do
+                    if api.nvim_win_is_valid(w) then
+                        api.nvim_win_set_cursor(w, {new_line_count, 0})
+                    end
+                end
             end)
             append_result()
         end
@@ -109,6 +138,15 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     local on_exit = function(code, signal)
         M.running_processes[buf] = nil
         if not api.nvim_buf_is_valid(buf) then return end
+
+        local line_count = api.nvim_buf_line_count(buf)
+        local wins = vim.fn.win_findbuf(buf)
+        local scroll_wins = {}
+        for _, w in ipairs(wins) do
+            if api.nvim_win_get_cursor(w)[1] == line_count then
+                table.insert(scroll_wins, w)
+            end
+        end
 
         -- Stop spinner timer
         local timer = launcher_timers[buf]
@@ -125,6 +163,13 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         api.nvim_buf_set_lines(buf, -2, -1, false, {end_text})
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
         vim.cmd('redrawstatus!')
+
+        local new_line_count = api.nvim_buf_line_count(buf)
+        for _, w in ipairs(scroll_wins) do
+            if api.nvim_win_is_valid(w) then
+                api.nvim_win_set_cursor(w, {new_line_count, 0})
+            end
+        end
     end
 
     -- Start spinner timer
@@ -142,6 +187,9 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     launcher_timers[buf] = timer
 
     local win = api.nvim_get_current_win()
+    -- Move cursor to the bottom at the start of execution
+    api.nvim_win_set_cursor(win, {api.nvim_buf_line_count(buf), 0})
+
     if prjroot_origin then
         pr.SetBufferProjectRoot(buf, prjroot_origin)
         api.nvim_buf_set_var(buf, 'prjroot_folder', prjroot_origin)

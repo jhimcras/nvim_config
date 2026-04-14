@@ -166,7 +166,9 @@
 - [x] Implement a list of currently running asynchronous processes.
     - It includes launchers, terminals(with something running), asyncronous tasks(searhcing..)
 - [ ] Check the external launcher works.
-- [ ] Keep cursot to the bottom of lines during the execution. (If I moved toward then stop keeping, when I get back to the bottom during the execution, go keeping)
+- [x] Keep cursor to the bottom of lines during the execution. (If I moved toward then stop keeping, when I get back to the bottom during the execution, go keeping)
+
+- [ ] Prohibit modifying general mode launder buffer.
 - [ ] Add options for window position/size and duplicate handling.
     - positions for vertical, horizontal, bottom, top, left, right, tab, (nvim - new neovim process, defered)
 - [ ] Fix UI annoyance when creating windows from the left-most edge.
