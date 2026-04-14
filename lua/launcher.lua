@@ -8,6 +8,14 @@ local buffers_handles = {}
 local launcher_timers = {}
 M.running_processes = {}
 
+local function SetBufLines(buf, start, end_, strict, lines)
+    if not api.nvim_buf_is_valid(buf) then return end
+    local modifiable = api.nvim_buf_get_option(buf, 'modifiable')
+    api.nvim_buf_set_option(buf, 'modifiable', true)
+    api.nvim_buf_set_lines(buf, start, end_, strict, lines)
+    api.nvim_buf_set_option(buf, 'modifiable', modifiable)
+end
+
 -- TODO: check whether the thread actually processing
 local function CloseLauncherBuffer()
     local buf = vim.api.nvim_get_current_buf()
@@ -38,6 +46,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         buf = ut.NewScratchBuffer(position)
     end
     api.nvim_buf_set_option(buf, 'filetype', 'launcher')
+    api.nvim_buf_set_option(buf, 'modifiable', false)
 
     -- Ensure lc_object is set for statusline
     local success, _ = pcall(api.nvim_buf_get_var, buf, 'lc_object')
@@ -57,7 +66,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                     end
                 end
 
-                api.nvim_buf_set_lines(buf, -2, -1, false, {'Error reading output: ' .. err})
+                SetBufLines(buf, -2, -1, false, {'Error reading output: ' .. err})
                 api.nvim_buf_set_var(buf, 'launcher_failed', true)
                 api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
 
@@ -114,7 +123,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                     end
                 end
 
-                api.nvim_buf_set_lines(buf, -2, -1, false, processed_lines)
+                SetBufLines(buf, -2, -1, false, processed_lines)
 
                 if color_mode == 'use' then
                     for i, line_highlights in ipairs(highlight_data) do
@@ -160,7 +169,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         api.nvim_buf_set_var(buf, 'launcher_status', status)
 
         local end_text = string.format('---- End [code %d] [signal %d]', code, signal)
-        api.nvim_buf_set_lines(buf, -2, -1, false, {end_text})
+        SetBufLines(buf, -2, -1, false, {end_text})
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
         vim.cmd('redrawstatus!')
 
@@ -211,7 +220,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         }
     else
         local err_msg = 'Failed to start process: ' .. tostring(err or pid or 'unknown')
-        api.nvim_buf_set_lines(buf, -1, -1, false, {err_msg})
+        SetBufLines(buf, -1, -1, false, {err_msg})
         api.nvim_buf_set_var(buf, 'launcher_status', 'terminated')
         api.nvim_buf_set_var(buf, 'launcher_failed', true)
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
@@ -388,7 +397,7 @@ function M.LaunchObject(obj)
                 -- Clear the buffer content (only for non-terminal, terminal clears on termopen)
                 local ft = vim.api.nvim_get_option_value('filetype', { buf = existing_buf })
                 if ft ~= 'terminal' then
-                    api.nvim_buf_set_lines(existing_buf, 0, -1, false, {})
+                    SetBufLines(existing_buf, 0, -1, false, {})
                 end
 
                 -- If the buffer is hidden, display it again in the current tab

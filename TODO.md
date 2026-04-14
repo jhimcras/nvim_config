@@ -168,11 +168,23 @@
 - [ ] Check the external launcher works.
 - [x] Keep cursor to the bottom of lines during the execution. (If I moved toward then stop keeping, when I get back to the bottom during the execution, go keeping)
 
-- [ ] Prohibit modifying general mode launder buffer.
+- [x] Prohibit modifying general mode launcher buffer.
 - [ ] Add options for window position/size and duplicate handling.
     - positions for vertical, horizontal, bottom, top, left, right, tab, (nvim - new neovim process, defered)
 - [ ] Fix UI annoyance when creating windows from the left-most edge.
-- [ ] Parse build results to navigate to errors/warnings.
+- [ ] Parse execution results from general mode launcher to navigate.
+    - It acts like quickfix. And it's custormizable.
+    - Use pattern based parsrser from prjroot file.
+    - Example:
+    ```lua
+    launcher = { build = {
+        cmd = 'buildcmd',
+        patterns = {
+            error = { pattern = '(%d+):(%d+):(%d+): (error):', extract = { 'filename', 'row', 'column', '' }, highlight = {[4]='#DD0000'} },
+            warning = { pattern = '(%d+):(%d+):(%d+): (warning):', extract = { 'filename', 'row', 'column', '' }, highlight = {[4]='#00DD00'} },
+        },
+    } }
+    ```
 - [ ] Add keymap to remove launcher buffers from other buffers in the same `prjroot`.
 - [ ] Improve session saving to include launcher state.
 - [ ] Support direct Lua function execution.

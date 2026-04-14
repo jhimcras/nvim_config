@@ -20,4 +20,22 @@ describe('launcher', function()
         
         vim.api.nvim_create_autocmd = original_create_autocmd
     end)
+
+    it('should set launcher buffer to be non-modifiable in M.Launch', function()
+        local mock_buf = vim.api.nvim_create_buf(false, true)
+        local original_new_scratch = require('util').NewScratchBuffer
+        require('util').NewScratchBuffer = function() return mock_buf end
+        
+        -- Mock AsyncProcess to avoid actual process creation
+        local original_async = require('util').AsyncProcess
+        require('util').AsyncProcess = function() return 123, function() end, function() return "running" end, {} end
+        
+        launcher.Launch('ls', {}, '.', nil, nil, nil, 'use', nil, nil, 'test')
+        
+        local modifiable = vim.api.nvim_buf_get_option(mock_buf, 'modifiable')
+        assert.is_false(modifiable)
+        
+        require('util').NewScratchBuffer = original_new_scratch
+        require('util').AsyncProcess = original_async
+    end)
 end)
