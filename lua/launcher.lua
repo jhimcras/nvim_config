@@ -51,6 +51,9 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     -- Initialize matches for navigation
     api.nvim_buf_set_var(buf, 'launcher_matches', {})
 
+    -- Set a unique session token for this launch
+    local session_token = {}
+
     -- Ensure lc_object is set for statusline
     local success, _ = pcall(api.nvim_buf_get_var, buf, 'lc_object')
     if not success then
@@ -58,8 +61,12 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     end
 
     local onread = function(err, data)
+        if not M.running_processes[buf] or M.running_processes[buf].session_token ~= session_token then return end
         if err then
             api.nvim_buf_call(buf, function()
+                if not api.nvim_buf_is_valid(buf) then return end
+                if not M.running_processes[buf] or M.running_processes[buf].session_token ~= session_token then return end
+
                 local line_count = api.nvim_buf_line_count(buf)
                 local wins = vim.fn.win_findbuf(buf)
                 local scroll_wins = {}
@@ -89,6 +96,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
             local results = vim.split(tostring(data), env.new_line_char)
             local append_result = vim.schedule_wrap(function()
                 if not api.nvim_buf_is_valid(buf) then return end
+                if not M.running_processes[buf] or M.running_processes[buf].session_token ~= session_token then return end
 
                 local line_count = api.nvim_buf_line_count(buf)
                 local wins = vim.fn.win_findbuf(buf)
@@ -207,9 +215,10 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         end
     end
     local on_exit = function(code, signal)
-        M.running_processes[buf] = nil
+        if not M.running_processes[buf] or M.running_processes[buf].session_token ~= session_token then return end
         if not api.nvim_buf_is_valid(buf) then return end
 
+        M.running_processes[buf] = nil
         local line_count = api.nvim_buf_line_count(buf)
         local wins = vim.fn.win_findbuf(buf)
         local scroll_wins = {}
@@ -278,7 +287,8 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
             pid = pid,
             obj = obj,
             cmd = cmd,
-            args = args
+            args = args,
+            session_token = session_token
         }
     else
         local err_msg = 'Failed to start process: ' .. tostring(err or pid or 'unknown')
@@ -308,6 +318,10 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, position, obj, existing_buf)
         buf = ut.NewScratchBuffer(position)
     end
     api.nvim_buf_set_option(buf, 'filetype', 'terminal')
+
+    -- Set a unique session token for this terminal launch
+    local session_token = {}
+
     api.nvim_buf_set_var(buf, 'lc_object', obj or cmd)
     api.nvim_buf_set_var(buf, 'launcher_status', 'running')
     if prjroot_origin then
@@ -335,12 +349,13 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, position, obj, existing_buf)
             cwd = cwd,
             env = env_dict,
             on_exit = function(_, code, signal)
+                if not M.running_processes[buf] or M.running_processes[buf].session_token ~= session_token then return end
+                if not api.nvim_buf_is_valid(buf) then return end
+
                 M.running_processes[buf] = nil
-                if api.nvim_buf_is_valid(buf) then
-                    api.nvim_buf_set_var(buf, 'launcher_status', (code == 0) and 'done' or 'terminated')
-                    api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
-                    vim.cmd('redrawstatus!')
-                end
+                api.nvim_buf_set_var(buf, 'launcher_status', (code == 0) and 'done' or 'terminated')
+                api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
+                vim.cmd('redrawstatus!')
             end
         })
     end)
@@ -351,7 +366,8 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, position, obj, existing_buf)
         obj = obj,
         cmd = cmd,
         args = args,
-        buf = buf
+        buf = buf,
+        session_token = session_token
     }
     return buf
 end
@@ -482,7 +498,7 @@ function M.LaunchObject(obj)
                     M.running_processes[existing_buf] = nil
                 end
 
-                -- Clear the buffer content (only for non-terminal, terminal clears on termopen)
+                -- Clear the buffer content
                 local ft = vim.api.nvim_get_option_value('filetype', { buf = existing_buf })
                 if ft ~= 'terminal' then
                     SetBufLines(existing_buf, 0, -1, false, {})

@@ -163,14 +163,11 @@
 - [x] Implement execution mode (general, terminal, external)
 - [x] Implement a list of currently running asynchronous processes.
     - It includes launchers, terminals(with something running), asyncronous tasks(searhcing..)
-- [ ] Check the external launcher works.
-- [ ] Focus option. Focus the buffer when the execution stated if the option has set.
 - [x] Keep cursor to the bottom of lines during the execution. (If I moved toward then stop keeping, when I get back to the bottom during the execution, go keeping)
 - [x] Prohibit modifying general mode launcher buffer.
 - [x] Add options for window position/size and duplicate handling.
     - positions for vertical, horizontal, bottom, top, left, right, tab, (nvim - new neovim process, defered)
-- [ ] Creation window height and width option.
-- [ ] Fix UI annoyance when creating windows from the left-most edge.
+- [x] Creation window height and width option.
 - [x] Parse execution results from general mode launcher to navigate.
     - It acts like quickfix. And it's custormizable.
     - Use pattern based parsrser from prjroot file.
@@ -183,12 +180,16 @@
             warning = { pattern = '(%d+):(%d+):(%d+): (warning):', extract = { 'filename', 'row', 'column', '' }, highlight = {[4]='#00DD00'} },
         },
     } }
+- [ ] Check the external launcher works.
+- [ ] Focus option. Focus the buffer when the execution stated if the option has set.
+- [ ] Fix UI annoyance when creating windows from the left-most edge.
     ```
 - [ ] Add keymap to remove launcher buffers from other buffers in the same `prjroot`.
     - This todo need to be more specific.
 - [ ] Improve session saving to include launcher state.
 - [x] Support direct Lua function execution.
 - [ ] Replacing already running process conflicts its outputs. It should show the new processing output.
+- [ ] Re-organize statusline for launcher
 
 
 ## Language Server (LSP)
