@@ -162,15 +162,15 @@
 - [x] Fix launcher-project option conflicts; ensure launcher reads from top-level keys.
 - [x] Implement execution mode (general, terminal, external)
 - [x] Implement a list of currently running asynchronous processes.
-    - It includes launchers, terminals(with something running), asyncronous tasks(searhcing..)
-- [x] Keep cursor to the bottom of lines during the execution. (If I moved toward then stop keeping, when I get back to the bottom during the execution, go keeping)
-- [x] Prohibit modifying general mode launcher buffer.
-- [x] Add options for window position/size and duplicate handling.
-    - positions for vertical, horizontal, bottom, top, left, right, tab, (nvim - new neovim process, defered)
-- [x] Creation window height and width option.
-- [x] Parse execution results from general mode launcher to navigate.
-    - It acts like quickfix. And it's custormizable.
-    - Use pattern based parsrser from prjroot file.
+    - Includes launchers, terminals with active processes, and asynchronous tasks like Grep.
+- [x] Maintain cursor position at the bottom of the window during execution; if manually moved, stop auto-scrolling until the cursor returns to the bottom.
+- [x] Prohibit modification of general-mode launcher buffers.
+- [x] Add options for window position, size, and duplicate handling.
+    - Positions: vertical, horizontal, bottom, top, left, right, tab, and (new) Nvim instance (deferred).
+- [x] Creation window height and width options.
+- [x] Parse and navigate execution results from general-mode launchers.
+    - Functions like a customizable quickfix window.
+    - Uses pattern-based parsers from the `prjroot` file.
     - Example:
     ```lua
     launcher = { build = {
@@ -180,20 +180,19 @@
             warning = { pattern = '(%d+):(%d+):(%d+): (warning):', extract = { 'filename', 'row', 'column', '' }, highlight = {[4]='#00DD00'} },
         },
     } }
-- [ ] Check the external launcher works.
-- [ ] Focus option. Focus the buffer when the execution stated if the option has set.
-- [ ] Fix UI annoyance when creating windows from the left-most edge.
     ```
-- [ ] Add keymap to remove launcher buffers from other buffers in the same `prjroot`.
-    - This todo need to be more specific.
+- [ ] Verify external launcher functionality.
+- [ ] Add focus option: automatically focus the buffer when execution starts if enabled.
+- [ ] Fix UI issues when creating windows from the left edge.
+- [ ] Add keymap to remove launcher buffers belonging to the same `prjroot`.
+    - Needs further specification.
 - [ ] Improve session saving to include launcher state.
 - [x] Support direct Lua function execution.
-- [x] Replacing already running process conflicts its outputs. It should show the new processing output.
-- [x] Re-organize statusline for launcher
-    - 'Spinner | folder(can compact) | command with args <<gap>> current and total line (as general is)'
-
-- [ ] count pattern matched on the status line
-    - This todo need to be more specific.
+- [x] Handle process replacement conflicts: ensure output displays the latest process.
+- [x] Reorganize launcher status line.
+    - 'Spinner | folder (compactible) | command with args <<gap>> current/total lines'
+- [ ] Display pattern match count on the status line.
+    - Needs further specification.
 
 
 ## Language Server (LSP)
