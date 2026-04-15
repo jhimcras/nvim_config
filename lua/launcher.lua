@@ -54,11 +54,16 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     -- Set a unique session token for this launch
     local session_token = {}
 
-    -- Ensure lc_object is set for statusline
+    -- Ensure lc_object and lc_command are set for statusline
     local success, _ = pcall(api.nvim_buf_get_var, buf, 'lc_object')
     if not success then
         api.nvim_buf_set_var(buf, 'lc_object', obj or cmd)
     end
+    local full_cmd_str = cmd
+    if args and #args > 0 then
+        full_cmd_str = full_cmd_str .. ' ' .. table.concat(args, ' ')
+    end
+    api.nvim_buf_set_var(buf, 'lc_command', full_cmd_str)
 
     local onread = function(err, data)
         if not M.running_processes[buf] or M.running_processes[buf].session_token ~= session_token then return end
@@ -323,6 +328,11 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, position, obj, existing_buf)
     local session_token = {}
 
     api.nvim_buf_set_var(buf, 'lc_object', obj or cmd)
+    local full_cmd_str = cmd
+    if args and #args > 0 then
+        full_cmd_str = full_cmd_str .. ' ' .. table.concat(args, ' ')
+    end
+    api.nvim_buf_set_var(buf, 'lc_command', full_cmd_str)
     api.nvim_buf_set_var(buf, 'launcher_status', 'running')
     if prjroot_origin then
         pr.SetBufferProjectRoot(buf, prjroot_origin)

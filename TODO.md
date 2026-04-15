@@ -188,8 +188,12 @@
     - This todo need to be more specific.
 - [ ] Improve session saving to include launcher state.
 - [x] Support direct Lua function execution.
-- [ ] Replacing already running process conflicts its outputs. It should show the new processing output.
-- [ ] Re-organize statusline for launcher
+- [x] Replacing already running process conflicts its outputs. It should show the new processing output.
+- [x] Re-organize statusline for launcher
+    - 'Spinner | folder(can compact) | command with args <<gap>> current and total line (as general is)'
+
+- [ ] count pattern matched on the status line
+    - This todo need to be more specific.
 
 
 ## Language Server (LSP)

@@ -94,11 +94,27 @@ local function grep_status_icon(bufnr, winid)
     return ''
 end
 
-local function launcher(bufnr, winid)
-    local icon = launcher_status_icon(bufnr, winid)
+
+local function launcher_folder(bufnr)
     local b = bufnr and vim.b[bufnr] or vim.b
+    return b.prjroot_folder or '?'
+end
+
+local function launcher_folder_compact(bufnr)
+    local b = bufnr and vim.b[bufnr] or vim.b
+    local folder = b.prjroot_folder
+    return folder and vim.fn.fnamemodify(folder, ':t') or '?'
+end
+
+local function launcher_command(bufnr)
+    local b = bufnr and vim.b[bufnr] or vim.b
+    return b.lc_command or b.lc_object or '?'
+end
+
+local function launcher_info(bufnr, winid)
+    local icon = launcher_status_icon(bufnr, winid)
     local icon_str = (icon and icon ~= '') and (icon .. ' ') or ''
-    return string.format('%s%s(%s)', icon_str, b.prjroot_folder or '?', b.lc_object or '?')
+    return string.format('%s%s %s', icon_str, launcher_folder_compact(bufnr), launcher_command(bufnr))
 end
 
 local function quickfix()
@@ -108,7 +124,7 @@ end
 local types = {
     { bt = 'terminal', info = terminalinfo },
     { bt = 'help', info = helpinfo },
-    { ft = 'launcher', info = launcher },
+    { ft = 'launcher', info = launcher_info },
     { bt = 'quickfix', info = quickfix },
 }
 
@@ -955,9 +971,19 @@ local function launcher_statusline(activation, mode, winid)
         return 'StatuslineGeneral' .. (activation and ('Active_%d_%s'):format(num, mode) or 'Inactive')
     end
     return {
-        { launcher, hl = hl(1), sep = ' ', pad = ' ' },
+        {
+            launcher_status_icon,
+            sh(launcher_folder, 1, launcher_folder_compact),
+            '│',
+            sh(launcher_command, 2),
+            hl = hl(1), sep = ' ', pad = ' '
+        },
         gap,
-        active_only { search_count, percentage_loc, hl = hl(2), sep = ' ', pad = ' ' },
+        active_only {
+            search_count,
+            sh('%l/%L', 10, '%l'),
+            hl = hl(2), sep = ' ', pad = ' '
+        },
     }
 end
 
