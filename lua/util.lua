@@ -151,21 +151,43 @@ end
 
 
 function M.NewScratchBuffer(position)
-    if position and position.orientation == 'vertical' then
-        if position.size then
-            vim.cmd(position.size ..' vnew')
+    local orientation = 'vertical'
+    local size = ''
+
+    if type(position) == 'string' then
+        orientation = position
+    elseif type(position) == 'table' then
+        orientation = position.orientation or 'vertical'
+        if orientation == 'vertical' or orientation == 'left' or orientation == 'right' then
+            size = tostring(position.width or position.size or '')
+        elseif orientation == 'horizontal' or orientation == 'top' or orientation == 'bottom' then
+            size = tostring(position.height or position.size or '')
         else
-            vim.cmd('vnew')
+            size = tostring(position.size or '')
         end
-    elseif position and position.orientation == 'horizontal' then
-        if position.size then
-            vim.cmd('botright' .. position.size .. 'new')
-        else
-            vim.cmd('botright new')
-        end
-    else
-        vim.cmd('vnew')
     end
+
+    local cmd = ''
+    if orientation == 'vertical' then
+        cmd = size .. ' vnew'
+    elseif orientation == 'horizontal' then
+        cmd = 'botright ' .. size .. ' new'
+    elseif orientation == 'top' then
+        cmd = 'topleft ' .. size .. ' new'
+    elseif orientation == 'bottom' then
+        cmd = 'botright ' .. size .. ' new'
+    elseif orientation == 'left' then
+        cmd = 'topleft ' .. size .. ' vnew'
+    elseif orientation == 'right' then
+        cmd = 'botright ' .. size .. ' vnew'
+    elseif orientation == 'tab' then
+        cmd = 'tabnew'
+    else
+        cmd = 'vnew'
+    end
+
+    vim.cmd(cmd)
+
     local buf = vim.api.nvim_get_current_buf()
     vim.bo.buftype = 'nofile'
     --vim.bo.filetype = 'scratch'

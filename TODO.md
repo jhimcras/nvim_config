@@ -152,8 +152,6 @@
 - [x] Optimize launcher window placement.
 - [x] Implement process termination.
 - [x] Store `prjroot` in launcher buffers to ensure keymaps persist.
-- [x] Rename `build.lua` to `launcher.lua`.
-- [x] Rename build plugin to `launcher` and reorganize to manage various builders (msbuild, lua, etc.).
 - [x] Add error messaging for command execution failures; allow closing with `q`.
 - [x] Reuse existing Launcher buffers if the same `prjroot` exists.
 - [x] Automatically vsplit execution results into the current tab if the buffer is hidden.
@@ -166,13 +164,14 @@
 - [x] Implement a list of currently running asynchronous processes.
     - It includes launchers, terminals(with something running), asyncronous tasks(searhcing..)
 - [ ] Check the external launcher works.
+- [ ] Focus option. Focus the buffer when the execution stated if the option has set.
 - [x] Keep cursor to the bottom of lines during the execution. (If I moved toward then stop keeping, when I get back to the bottom during the execution, go keeping)
-
 - [x] Prohibit modifying general mode launcher buffer.
-- [ ] Add options for window position/size and duplicate handling.
+- [x] Add options for window position/size and duplicate handling.
     - positions for vertical, horizontal, bottom, top, left, right, tab, (nvim - new neovim process, defered)
+- [ ] Creation window height and width option.
 - [ ] Fix UI annoyance when creating windows from the left-most edge.
-- [ ] Parse execution results from general mode launcher to navigate.
+- [x] Parse execution results from general mode launcher to navigate.
     - It acts like quickfix. And it's custormizable.
     - Use pattern based parsrser from prjroot file.
     - Example:
@@ -186,8 +185,10 @@
     } }
     ```
 - [ ] Add keymap to remove launcher buffers from other buffers in the same `prjroot`.
+    - This todo need to be more specific.
 - [ ] Improve session saving to include launcher state.
-- [ ] Support direct Lua function execution.
+- [x] Support direct Lua function execution.
+- [ ] Replacing already running process conflicts its outputs. It should show the new processing output.
 
 
 ## Language Server (LSP)
