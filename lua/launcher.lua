@@ -458,12 +458,32 @@ function M.LaunchObject(obj)
             local full_args = {}
             if env.os.win then
                 full_cmd = 'cmd'
-                full_args = { '/c', 'start', 'cmd', '/k', cmd }
+                full_args = { '/c', 'start', '/WAIT', 'cmd', '/k', cmd }
                 for _, a in ipairs(args or {}) do table.insert(full_args, a) end
             else
-                full_cmd = 'xterm'
-                full_args = { '-e', cmd }
-                for _, a in ipairs(args or {}) do table.insert(full_args, a) end
+                local terms = { 'x-terminal-emulator', 'xterm', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'alacritty', 'kitty' }
+                local term = nil
+                for _, t in ipairs(terms) do
+                    if vim.fn.executable(t) == 1 then
+                        term = t
+                        break
+                    end
+                end
+
+                if term then
+                    full_cmd = term
+                    if term == 'gnome-terminal' then
+                        full_args = { '--wait', '--', cmd }
+                    elseif term == 'konsole' then
+                        full_args = { '--hold', '-e', cmd }
+                    else
+                        full_args = { '-e', cmd }
+                    end
+                    for _, a in ipairs(args or {}) do table.insert(full_args, a) end
+                else
+                    vim.notify("No terminal emulator found for external mode", vim.log.levels.ERROR)
+                    return
+                end
             end
 
             local proc_key
