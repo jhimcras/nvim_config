@@ -180,19 +180,19 @@
             warning = { pattern = '(%d+):(%d+):(%d+): (warning):', extract = { 'filename', 'row', 'column', '' }, highlight = {[4]='#00DD00'} },
         },
     } }
+    ```
 - [ ] Check the external launcher works.
     - [ ] Make leave the prompt at the end of execution on Windows system. → But there is no process on ProccessList.
     - [ ] I cannot find any execution process on the Linux system. The ID at ProccessList "ENOENT: no such file or directory"
 - [ ] Focus option. Focus the buffer when the execution stated if the option has set.
 - [ ] Fix UI annoyance when creating windows from the left-most edge.
-    ```
 - [ ] Add keymap to remove launcher buffers from other buffers in the same `prjroot`.
     - This todo need to be more specific.
 - [ ] Improve session saving to include launcher state.
 - [x] Support direct Lua function execution.
 - [x] Replacing already running process conflicts its outputs. It should show the new processing output.
-- [ ] Re-organize statusline for launcher
-    - 'Spinner | folder(can compact) | command with args <<gap>> current and total line (as general is)'
+- [x] Re-organize statusline for launcher
+    - 'Spinner folder(can compact) | command with args <<gap>> current and total line (as general is)'
 
 
 ## Language Server (LSP)

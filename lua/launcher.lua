@@ -458,7 +458,7 @@ function M.LaunchObject(obj)
             local full_args = {}
             if env.os.win then
                 full_cmd = 'cmd'
-                full_args = { '/c', 'start', '/WAIT', 'cmd', '/k', cmd }
+                full_args = { '/c', 'start', '/WAIT', 'cmd', '/c', cmd }
                 for _, a in ipairs(args or {}) do table.insert(full_args, a) end
             else
                 local terms = { 'x-terminal-emulator', 'xterm', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'alacritty', 'kitty' }
