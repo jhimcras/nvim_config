@@ -182,13 +182,15 @@
     } }
     ```
 - [ ] Check the external launcher works.
-    - [ ] Make leave the prompt at the end of execution on Windows system. → But there is no process on ProccessList.
+    - [x] Make leave the prompt at the end of execution on Windows system.
+    - [ ] There is no process on ProccessList on Windows system.
     - [ ] I cannot find any execution process on the Linux system. The ID at ProccessList "ENOENT: no such file or directory"
 - [ ] Focus option. Focus the buffer when the execution stated if the option has set.
 - [ ] Fix UI annoyance when creating windows from the left-most edge.
 - [ ] Add keymap to remove launcher buffers from other buffers in the same `prjroot`.
     - This todo need to be more specific.
-- [ ] Improve session saving to include launcher state.
+- [x] Enhance session saving to include launcher state by saving launcher output to a file, similar to how location lists are handled.
+- [ ] Save launcher output to session with hightlight and restore it on session loading.
 - [x] Support direct Lua function execution.
 - [x] Replacing already running process conflicts its outputs. It should show the new processing output.
 - [x] Re-organize statusline for launcher

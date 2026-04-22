@@ -3,6 +3,7 @@ local M = {}
 -- Constants for file extensions
 local LIST_EXT_QF = ".qf.lua"
 local LIST_EXT_LOC = ".loc"
+local LIST_EXT_LAUNCHER = ".launcher.lua"
 
 -- Ensure a directory exists (create if missing)
 local function ensure_dir(path)
@@ -42,6 +43,7 @@ local function build_origin_window(origin_winid)
         return nil
     end
 
+    winctx.tab_nr = vim.api.nvim_tabpage_get_number(winctx.tabpage)
     winctx.cursor = nil
     return winctx
 end
@@ -96,6 +98,43 @@ local function save_loclist(winid, path)
 
     return write_list_file(data, path)
 end
+
+local function save_launcher(winid, path)
+    if not winid or not vim.api.nvim_win_is_valid(winid) then
+        return false, "Invalid window id"
+    end
+
+    local bufnr = vim.api.nvim_win_get_buf(winid)
+    ensure_dir(vim.fn.fnamemodify(path, ':h'))
+
+    local data = {
+        kind    = "launcher",
+        origin  = build_origin_window(winid),
+        content = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false),
+        obj      = vim.b[bufnr].lc_object,
+        cmd      = vim.b[bufnr].lc_command,
+        prjroot  = vim.b[bufnr].prjroot_folder,
+        status   = vim.b[bufnr].launcher_status,
+        matches  = vim.b[bufnr].launcher_matches,
+        filetype = vim.bo[bufnr].filetype,
+    }
+
+    return write_list_file(data, path)
+end
+
+local function save_all_launchers(path, session_prefix)
+    ensure_dir(path)
+    for _, tabpage in ipairs(vim.api.nvim_list_tabpages()) do
+        for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+            local bufnr = vim.api.nvim_win_get_buf(winid)
+            local ft = vim.bo[bufnr].filetype
+            if ft == 'launcher' or ft == 'terminal' then
+                save_launcher(winid, string.format("%s/%s%s.%d.lua", path, session_prefix, LIST_EXT_LAUNCHER, winid))
+            end
+        end
+    end
+end
+
 
 local function save_all_loclists(path, session_prefix)
     -- Ensure the directory exists before writing any files
@@ -161,13 +200,17 @@ end
 
 
 local function clear_session_lists(abs_path, session_prefix)
-    -- Remove only our quickfix and location list files, keep the main session script
+    -- Remove only our quickfix, location list, and launcher files, keep the main session script
     local qf_pat = string.format("%s/%s%s", abs_path, session_prefix, LIST_EXT_QF)
     local loc_pat = string.format("%s/%s%s.*.lua", abs_path, session_prefix, LIST_EXT_LOC)
+    local lc_pat = string.format("%s/%s%s.*.lua", abs_path, session_prefix, LIST_EXT_LAUNCHER)
     for _, file in ipairs(vim.fn.glob(qf_pat, false, true)) do
         vim.fn.delete(file)
     end
     for _, file in ipairs(vim.fn.glob(loc_pat, false, true)) do
+        vim.fn.delete(file)
+    end
+    for _, file in ipairs(vim.fn.glob(lc_pat, false, true)) do
         vim.fn.delete(file)
     end
 end
@@ -177,22 +220,40 @@ local function find_target_window(origin)
     if not origin then return nil end
     -- Try to find a window that matches the saved origin context, ignoring quickfix windows.
     local tab_matches = {}
-    for _, winid in ipairs(vim.api.nvim_list_wins()) do
-        local bufnr = vim.api.nvim_win_get_buf(winid)
-        if vim.bo[bufnr].buftype ~= 'quickfix' then
-            local ctx = ut.get_window_context(winid)
-            if ctx and ctx.bufname == origin.bufname then
-                if ctx.tabpage == origin.tabpage then
-                    if ctx.winidx == origin.winidx then
-                        return winid  -- exact tab+position match
+    
+    -- 1. Try to match by buffer name
+    if origin.bufname and origin.bufname ~= '' then
+        for _, winid in ipairs(vim.api.nvim_list_wins()) do
+            local bufnr = vim.api.nvim_win_get_buf(winid)
+            if vim.bo[bufnr].buftype ~= 'quickfix' then
+                local ctx = ut.get_window_context(winid)
+                if ctx and ctx.bufname == origin.bufname then
+                    if ctx.tabpage == origin.tabpage then
+                        if ctx.winidx == origin.winidx then
+                            return winid  -- exact tab+position match
+                        end
+                        table.insert(tab_matches, winid)
                     end
-                    table.insert(tab_matches, winid)
                 end
             end
         end
     end
-    -- Fallback: first same-tab window with matching buffer name.
-    return tab_matches[1]
+
+    if tab_matches[1] then return tab_matches[1] end
+
+    -- 2. Try to match by tab number and window index (for scratch buffers)
+    if origin.tab_nr and origin.winidx then
+        for _, tabpage in ipairs(vim.api.nvim_list_tabpages()) do
+            if vim.api.nvim_tabpage_get_number(tabpage) == origin.tab_nr then
+                local wins = vim.api.nvim_tabpage_list_wins(tabpage)
+                if wins[origin.winidx] then
+                    return wins[origin.winidx]
+                end
+            end
+        end
+    end
+
+    return nil
 end
 
 -- Close any empty quickfix or location list windows (they may be created by mksession)
@@ -210,7 +271,7 @@ end
 -- Returns a table { kind, [target], filter_chain, matches, cursor } or nil on error.
 local function load_qflist_no_open(path)
     local ok, data = pcall(dofile, path)
-    if not ok or type(data) ~= "table" or not data.items then
+    if not ok or type(data) ~= "table" or (not data.items and not data.content) then
         return nil
     end
 
@@ -237,6 +298,14 @@ local function load_qflist_no_open(path)
             vim.fn.setloclist(target, {}, "r", { idx = data.selection })
         end
         return { kind = "loc", title = data.title, target = target, filter_chain = data.filter_chain, matches = data.matches, cursor = data.cursor }
+
+    elseif data.kind == "launcher" then
+        local target = find_target_window(data.origin)
+        local buf = require('launcher').Restore(data)
+        if target and vim.api.nvim_win_is_valid(target) then
+            vim.api.nvim_win_set_buf(target, buf)
+        end
+        return { kind = "launcher", target = target, bufnr = buf }
     end
 
     return nil
@@ -260,6 +329,7 @@ local function save_session(path)
     local dir = vim.fn.fnamemodify(path, ':h')
     clear_session_lists(dir, prefix)
     save_all_loclists(dir, prefix)
+    save_all_launchers(dir, prefix)
     save_quickfix(dir, prefix)
     ensure_dir(dir)
     vim.cmd('mksession! ' .. path)
@@ -282,13 +352,14 @@ function M.OpenSession(session)
     vim.cmd('%bwipeout!')
     local sess_path = string.format('%s/sessions/%s', vim.fn.stdpath('data'), session)
     vim.cmd.source(sess_path)
-    -- Load any saved quickfix or location list files for this session.
+    -- Load any saved quickfix, location list, or launcher files for this session.
     -- Two-pass: set all lists first (so winidx values stay stable), then open windows.
     local prefix = vim.fn.fnamemodify(sess_path, ':t')
     local dir = vim.fn.fnamemodify(sess_path, ':h')
     local patterns = {
         string.format('%s/%s%s', dir, prefix, LIST_EXT_QF),
         string.format('%s/%s%s.*.lua', dir, prefix, LIST_EXT_LOC),
+        string.format('%s/%s%s.*.lua', dir, prefix, LIST_EXT_LAUNCHER),
     }
     local to_open = {}
     for _, pat in ipairs(patterns) do

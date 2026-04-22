@@ -29,12 +29,47 @@ local function CloseLauncherBuffer()
     end
 end
 
-local function set_launcher_mapping(buf)
+function M.set_launcher_mapping(buf)
     ut.nnoremap('gq', CloseLauncherBuffer, { buffer = buf })
     ut.nnoremap(']e', [[<cmd>lua require'launcher'.NextMatch()<cr>]], { buffer = buf })
     ut.nnoremap('[e', [[<cmd>lua require'launcher'.PrevMatch()<cr>]], { buffer = buf })
     ut.nnoremap('<cr>', [[<cmd>lua require'launcher'.Jump()<cr>]], { buffer = buf })
     ut.nnoremap('<c-c>', [[<cmd>lua require'launcher'.TerminateCurrentLauncherBuffer()<cr>]], { buffer = buf })
+end
+
+function M.Restore(data)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].buftype = 'nofile'
+    
+    local lines = data.content or {}
+    api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    
+    api.nvim_buf_set_var(buf, 'lc_object', data.obj)
+    api.nvim_buf_set_var(buf, 'lc_command', data.cmd_full or data.cmd)
+    api.nvim_buf_set_var(buf, 'prjroot_folder', data.prjroot)
+    api.nvim_buf_set_var(buf, 'launcher_status', data.status or 'done')
+    api.nvim_buf_set_var(buf, 'launcher_matches', data.matches or {})
+    api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
+    
+    if data.filetype == 'terminal' then
+        api.nvim_buf_set_option(buf, 'filetype', 'terminal')
+    else
+        api.nvim_buf_set_option(buf, 'filetype', 'launcher')
+    end
+    
+    api.nvim_buf_set_option(buf, 'modifiable', false)
+    
+    if data.prjroot then
+        pr.SetBufferProjectRoot(buf, data.prjroot)
+    end
+    
+    M.set_launcher_mapping(buf)
+    
+    if data.obj then
+        api.nvim_buf_set_name(buf, string.format("(%d) %s", buf, data.obj))
+    end
+    
+    return buf
 end
 
 function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, encoding, obj, patterns)
@@ -279,7 +314,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         pr.SetBufferProjectRoot(buf, prjroot_origin)
         api.nvim_buf_set_var(buf, 'prjroot_folder', prjroot_origin)
     end
-    set_launcher_mapping(buf)
+    M.set_launcher_mapping(buf)
 
     local ok, pid, terminate_fn, get_status, handle, err = pcall(ut.AsyncProcess, cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
 
@@ -338,7 +373,7 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, position, obj, existing_buf)
         pr.SetBufferProjectRoot(buf, prjroot_origin)
         api.nvim_buf_set_var(buf, 'prjroot_folder', prjroot_origin)
     end
-    set_launcher_mapping(buf)
+    M.set_launcher_mapping(buf)
 
     local term_cmd = {cmd}
     for _, a in ipairs(args or {}) do
