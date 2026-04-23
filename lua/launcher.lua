@@ -17,7 +17,7 @@ local function SetBufLines(buf, start, end_, strict, lines)
 end
 
 -- TODO: check whether the thread actually processing
-local function CloseLauncherBuffer()
+function M.CloseLauncherBuffer()
     local buf = vim.api.nvim_get_current_buf()
     local success, failed = pcall(api.nvim_buf_get_var, buf, 'launcher_failed')
     local success2, closed = pcall(api.nvim_buf_get_var, buf, 'this_buf_can_be_closed')
@@ -25,12 +25,18 @@ local function CloseLauncherBuffer()
     if (success2 and closed) or (success and failed) then
         vim.cmd.bwipeout { bang = true }
     else
-        vim.notify('This process is not closed yet.', vim.log.levels.WARN)
+        local choice = vim.fn.confirm('This process is still running. What do you want to do?', "&Stop and Close\n&Close\n&Cancel", 3)
+        if choice == 1 then
+            M.TerminateCurrentLauncherBuffer()
+            vim.cmd.bwipeout { bang = true }
+        elseif choice == 2 then
+            vim.cmd.close()
+        end
     end
 end
 
 function M.set_launcher_mapping(buf)
-    ut.nnoremap('gq', CloseLauncherBuffer, { buffer = buf })
+    ut.nnoremap('gq', [[<cmd>lua require'launcher'.CloseLauncherBuffer()<cr>]], { buffer = buf })
     ut.nnoremap(']e', [[<cmd>lua require'launcher'.NextMatch()<cr>]], { buffer = buf })
     ut.nnoremap('[e', [[<cmd>lua require'launcher'.PrevMatch()<cr>]], { buffer = buf })
     ut.nnoremap('<cr>', [[<cmd>lua require'launcher'.Jump()<cr>]], { buffer = buf })
@@ -119,6 +125,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                 SetBufLines(buf, -2, -1, false, {'Error reading output: ' .. err})
                 api.nvim_buf_set_var(buf, 'launcher_failed', true)
                 api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
+                api.nvim_buf_set_option(buf, 'modified', false)
 
                 local new_line_count = api.nvim_buf_line_count(buf)
                 for _, w in ipairs(scroll_wins) do
@@ -278,6 +285,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
 
         local status = (code == 0 and signal == 0) and 'done' or 'terminated'
         api.nvim_buf_set_var(buf, 'launcher_status', status)
+        api.nvim_buf_set_option(buf, 'modified', false)
 
         local end_text = string.format('---- End [code %d] [signal %d]', code, signal)
         SetBufLines(buf, -2, -1, false, {end_text})
@@ -294,6 +302,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
 
     -- Start spinner timer
     api.nvim_buf_set_var(buf, 'launcher_status', 'running')
+    api.nvim_buf_set_option(buf, 'modified', true)
     local timer = vim.uv.new_timer()
     timer:start(0, 120, vim.schedule_wrap(function()
         if api.nvim_buf_is_valid(buf) then
@@ -336,6 +345,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         api.nvim_buf_set_var(buf, 'launcher_status', 'terminated')
         api.nvim_buf_set_var(buf, 'launcher_failed', true)
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
+        api.nvim_buf_set_option(buf, 'modified', false)
 
         -- Stop timer if failed to start
         if launcher_timers[buf] then
@@ -369,6 +379,7 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, position, obj, existing_buf)
     end
     api.nvim_buf_set_var(buf, 'lc_command', full_cmd_str)
     api.nvim_buf_set_var(buf, 'launcher_status', 'running')
+    api.nvim_buf_set_option(buf, 'modified', true)
     if prjroot_origin then
         pr.SetBufferProjectRoot(buf, prjroot_origin)
         api.nvim_buf_set_var(buf, 'prjroot_folder', prjroot_origin)
@@ -521,21 +532,26 @@ function M.LaunchObject(obj)
                 end
             end
 
-            local proc_key
+            local guard_buf = api.nvim_create_buf(false, true)
+            api.nvim_buf_set_name(guard_buf, string.format("[External Process: %s]", obj or cmd))
+            api.nvim_buf_set_option(guard_buf, 'buftype', 'nofile')
+            api.nvim_buf_set_option(guard_buf, 'modified', true)
+
             local on_exit = function(code, signal)
-                if proc_key then
-                    M.UnregisterProcess(proc_key)
+                if api.nvim_buf_is_valid(guard_buf) then
+                    api.nvim_buf_set_option(guard_buf, 'modified', false)
+                    api.nvim_buf_delete(guard_buf, {force = true})
                 end
             end
             local pid, terminate_fn, get_status, handle = ut.AsyncProcess(full_cmd, full_args, cwd, { env = ev, onexit = on_exit })
-            proc_key = "ext_" .. (pid or "unknown")
-            M.running_processes[proc_key] = {
+            M.running_processes[guard_buf] = {
                 type = 'external',
                 pid = pid,
                 handle = handle,
                 obj = obj,
                 cmd = cmd,
-                args = args
+                args = args,
+                buf = guard_buf
             }
         else
             local parent_win = vim.api.nvim_get_current_win()
@@ -773,6 +789,8 @@ function M.setup()
             if proc then
                 if proc.type == 'terminal' then
                     vim.fn.jobstop(proc.job_id)
+                elseif proc.terminate then
+                    proc.terminate(15)
                 elseif proc.handle and not proc.handle:is_closing() then
                     if type(proc.handle.kill) == 'function' then
                         proc.handle:kill(15)

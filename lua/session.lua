@@ -324,6 +324,46 @@ local function get_unsaved_buffers()
 end
 
 
+function M.get_running_processes()
+    local ok, launcher = pcall(require, 'launcher')
+    if not ok then return {} end
+    local processes = launcher.GetRunningProcesses()
+
+    -- Add terminal buffers not tracked by launcher
+    local tracked_bufs = {}
+    for _, p in ipairs(processes) do
+        local b = p.buf or (type(p.key) == 'number' and p.key)
+        if type(b) == 'number' then
+            tracked_bufs[b] = true
+        end
+    end
+
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_valid(buf) then
+            local buftype = vim.bo[buf].buftype
+            if buftype == 'terminal' then
+                if not tracked_bufs[buf] then
+                    local job_id = vim.b[buf].terminal_job_id or vim.bo[buf].channel
+                    if job_id and job_id > 0 then
+                        if vim.fn.jobwait({job_id}, 0)[1] == -1 then
+                            table.insert(processes, {
+                                type = 'terminal',
+                                buf = buf,
+                                job_id = job_id,
+                                cmd = vim.api.nvim_buf_get_name(buf),
+                                key = buf
+                            })
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return processes
+end
+
+
 local function save_session(path)
     local prefix = vim.fn.fnamemodify(path, ':t')
     local dir = vim.fn.fnamemodify(path, ':h')
@@ -344,11 +384,37 @@ end
 
 function M.OpenSession(session)
     local unsaved = get_unsaved_buffers()
-    if #unsaved > 0 then
-        vim.notify('Unsaved buffers:\n  ' .. table.concat(unsaved, '\n  '), vim.log.levels.WARN)
-        return
+    local processes = M.get_running_processes()
+
+    if #unsaved > 0 or #processes > 0 then
+        local msg = ""
+        if #unsaved > 0 then
+            msg = msg .. "Unsaved buffers:\n  " .. table.concat(unsaved, "\n  ") .. "\n\n"
+        end
+        if #processes > 0 then
+            local proc_names = {}
+            for _, p in ipairs(processes) do
+                table.insert(proc_names, p.obj or p.title or p.cmd or "Unknown")
+            end
+            msg = msg .. "Running processes:\n  " .. table.concat(proc_names, "\n  ") .. "\n\n"
+        end
+        msg = msg .. "Continue?"
+        if vim.fn.confirm(msg, "&Yes\n&No", 2) ~= 1 then
+            return
+        end
     end
+
     auto_save()
+    -- Explicitly terminate processes before wipeout
+    for _, p in ipairs(processes) do
+        if p.terminate then
+            p.terminate(15)
+        elseif p.handle and not p.handle:is_closing() then
+            p.handle:kill(15)
+        elseif p.job_id then
+            vim.fn.jobstop(p.job_id)
+        end
+    end
     vim.cmd('%bwipeout!')
     local sess_path = string.format('%s/sessions/%s', vim.fn.stdpath('data'), session)
     vim.cmd.source(sess_path)
@@ -450,11 +516,37 @@ end
 
 function M.CloseSession()
     local unsaved = get_unsaved_buffers()
-    if #unsaved > 0 then
-        vim.notify('Unsaved buffers:\n  ' .. table.concat(unsaved, '\n  '), vim.log.levels.WARN)
-        return
+    local processes = M.get_running_processes()
+
+    if #unsaved > 0 or #processes > 0 then
+        local msg = ""
+        if #unsaved > 0 then
+            msg = msg .. "Unsaved buffers:\n  " .. table.concat(unsaved, "\n  ") .. "\n\n"
+        end
+        if #processes > 0 then
+            local proc_names = {}
+            for _, p in ipairs(processes) do
+                table.insert(proc_names, p.obj or p.title or p.cmd or "Unknown")
+            end
+            msg = msg .. "Running processes:\n  " .. table.concat(proc_names, "\n  ") .. "\n\n"
+        end
+        msg = msg .. "Continue?"
+        if vim.fn.confirm(msg, "&Yes\n&No", 2) ~= 1 then
+            return
+        end
     end
+
     auto_save()
+    -- Explicitly terminate processes before wipeout
+    for _, p in ipairs(processes) do
+        if p.terminate then
+            p.terminate(15)
+        elseif p.handle and not p.handle:is_closing() then
+            p.handle:kill(15)
+        elseif p.job_id then
+            vim.fn.jobstop(p.job_id)
+        end
+    end
     vim.cmd('%bwipeout!')
     vim.cmd.cd('~')
     vim.v.this_session = ''
@@ -496,6 +588,42 @@ function M.setup()
     vim.api.nvim_create_autocmd("VimLeave", {
         group = vim.api.nvim_create_augroup("SessionAutoSave", { clear = true }),
         callback = auto_save,
+    })
+
+    vim.api.nvim_create_autocmd("QuitPre", {
+        group = vim.api.nvim_create_augroup("ExitGuard", { clear = true }),
+        callback = function()
+            local processes = M.get_running_processes()
+            local unsaved = get_unsaved_buffers()
+
+            if #processes > 0 or #unsaved > 0 then
+                local msg = ""
+                if #unsaved > 0 then
+                    msg = msg .. "Unsaved buffers:\n  " .. table.concat(unsaved, "\n  ") .. "\n\n"
+                end
+                if #processes > 0 then
+                    local names = {}
+                    for _, p in ipairs(processes) do
+                        table.insert(names, p.obj or p.title or p.cmd or "Process")
+                    end
+                    msg = msg .. "Running processes:\n  " .. table.concat(names, "\n  ") .. "\n\n"
+                end
+                msg = msg .. "Continue exit?"
+                
+                vim.cmd('redraw')
+                if vim.fn.confirm(msg, "&Yes\n&No", 2) ~= 1 then
+                    error("Exit cancelled")
+                end
+                
+                -- If we are here, user said Yes. 
+                -- We must ensure nofile buffers don't block the actual exit.
+                for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+                    if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype == 'nofile' then
+                        vim.bo[buf].modified = false
+                    end
+                end
+            end
+        end
     })
 end
 

@@ -56,9 +56,9 @@
 - [ ] Feature to spawn a new Neovim process (using the current GUI), accessible via command or Telescope.
     - [ ] Open a specific session.
     - [ ] Open a specific file/buffer.
+    - [ ] Split tabs or buffers to the other neovim process.
+    - [ ] Split launcher to the other neovim process.
 - [ ] Implement an Outline feature.
-- [ ] Add a Python debugger.
-- [ ] Ensure diff windows are fully unfolded by default.
 - [x] Refactor `GetBufferName`, `GetBufferDir`, and `GetCurrentBufferDir` in `util.lua`.
     - Return names regardless of buffer type (strip protocols like `fugitive://`).
     - Implement `GetBufferProtocol` to return the protocol as a string (e.g., `'fugitive'`).
@@ -195,6 +195,8 @@
 - [x] Replacing already running process conflicts its outputs. It should show the new processing output.
 - [x] Re-organize statusline for launcher
     - 'Spinner folder(can compact) | command with args <<gap>> current and total line (as general is)'
+- [ ] Warn if the launcher buffer is requested closing when it is running.
+    - Close, Cancel, StopAndClose options needed.
 
 
 ## Language Server (LSP)
@@ -249,7 +251,7 @@ While snippets are great for statements and function templates, function snippet
 - [x] Normalize Markdown list-item indentation/codeblock highlighting using Treesitter.
 
 
-## Markdown
+## Markdown (defer to neopp release)
 
 - [x] Adopt a custom Markdown plugin approach instead of `vimwiki`. Use `note/index.md` with custom keymaps.
 - [x] Drop custom Treesitter-based plugin in favor of `plasticboy/vim-markdown`.
@@ -281,7 +283,7 @@ While snippets are great for statements and function templates, function snippet
 - [x] Fix session saving failure when the directory is missing.
 - [x] Implement auto-saving for sessions.
 - [x] Warn about unsaved buffers before changing/closing sessions.
-- [ ] Warn if terminal processes are running before session changes.
+- [ ] Warn if luancher, terminal processes are running before session changing or closing.
 - [ ] Handle large/duplicate Quickfix lists in sessions.
 - [ ] Fix `cmdheight` saving issues.
 - [ ] Fix auto-save failure on `:qa` exit.

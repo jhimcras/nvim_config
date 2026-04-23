@@ -291,17 +291,13 @@ function M.asyncGrep(term, word, wndidforll)
             M.update_loclist_sl(qfwinid)
         end
     end))
-    local proc_key
     local wrapped_onexit = function(code, signal)
-        if proc_key then
-            require'launcher'.UnregisterProcess(proc_key)
-        end
         onexit(code, signal)
     end
 
     local pid, term_func, status, handle = ut.AsyncProcess('rg', args, '.', { onread = onread, onexit = wrapped_onexit })
-    proc_key = 'grep_' .. (pid or math.random(1000000))
-    require'launcher'.RegisterProcess(proc_key, {
+    local qf_buf = vim.api.nvim_win_get_buf(qfwinid)
+    require'launcher'.RegisterProcess(qf_buf, {
         type = 'grep',
         pid = pid,
         handle = handle,
