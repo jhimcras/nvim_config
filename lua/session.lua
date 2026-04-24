@@ -326,8 +326,7 @@ end
 
 function M.get_running_processes()
     local ok, launcher = pcall(require, 'launcher')
-    if not ok then return {} end
-    local processes = launcher.GetRunningProcesses()
+    local processes = ok and launcher.GetRunningProcesses() or {}
 
     -- Add terminal buffers not tracked by launcher
     local tracked_bufs = {}
@@ -382,6 +381,21 @@ local function auto_save()
 end
 
 
+local function terminate_all_processes(processes)
+    for _, p in ipairs(processes) do
+        if p.terminate then
+            p.terminate(15)
+        elseif p.handle and not p.handle:is_closing() then
+            if type(p.handle.kill) == 'function' then
+                p.handle:kill(15)
+            end
+        elseif p.job_id then
+            vim.fn.jobstop(p.job_id)
+        end
+    end
+end
+
+
 function M.OpenSession(session)
     local unsaved = get_unsaved_buffers()
     local processes = M.get_running_processes()
@@ -399,22 +413,14 @@ function M.OpenSession(session)
             msg = msg .. "Running processes:\n  " .. table.concat(proc_names, "\n  ") .. "\n\n"
         end
         msg = msg .. "Continue?"
-        if vim.fn.confirm(msg, "&Yes\n&No", 2) ~= 1 then
+        if vim.fn.confirm(msg, "&Stop and Open Session\n&Cancel", 2) ~= 1 then
             return
         end
     end
 
     auto_save()
     -- Explicitly terminate processes before wipeout
-    for _, p in ipairs(processes) do
-        if p.terminate then
-            p.terminate(15)
-        elseif p.handle and not p.handle:is_closing() then
-            p.handle:kill(15)
-        elseif p.job_id then
-            vim.fn.jobstop(p.job_id)
-        end
-    end
+    terminate_all_processes(processes)
     vim.cmd('%bwipeout!')
     local sess_path = string.format('%s/sessions/%s', vim.fn.stdpath('data'), session)
     vim.cmd.source(sess_path)
@@ -531,22 +537,14 @@ function M.CloseSession()
             msg = msg .. "Running processes:\n  " .. table.concat(proc_names, "\n  ") .. "\n\n"
         end
         msg = msg .. "Continue?"
-        if vim.fn.confirm(msg, "&Yes\n&No", 2) ~= 1 then
+        if vim.fn.confirm(msg, "&Stop and Close Session\n&Cancel", 2) ~= 1 then
             return
         end
     end
 
     auto_save()
     -- Explicitly terminate processes before wipeout
-    for _, p in ipairs(processes) do
-        if p.terminate then
-            p.terminate(15)
-        elseif p.handle and not p.handle:is_closing() then
-            p.handle:kill(15)
-        elseif p.job_id then
-            vim.fn.jobstop(p.job_id)
-        end
-    end
+    terminate_all_processes(processes)
     vim.cmd('%bwipeout!')
     vim.cmd.cd('~')
     vim.v.this_session = ''
@@ -590,37 +588,81 @@ function M.setup()
         callback = auto_save,
     })
 
+    local exit_warned = false
     vim.api.nvim_create_autocmd("QuitPre", {
         group = vim.api.nvim_create_augroup("ExitGuard", { clear = true }),
         callback = function()
-            local processes = M.get_running_processes()
-            local unsaved = get_unsaved_buffers()
+            if exit_warned then return end
 
-            if #processes > 0 or #unsaved > 0 then
-                local msg = ""
-                if #unsaved > 0 then
-                    msg = msg .. "Unsaved buffers:\n  " .. table.concat(unsaved, "\n  ") .. "\n\n"
+            local current_buf = vim.api.nvim_get_current_buf()
+            local processes = M.get_running_processes()
+            
+            -- Check if current buffer is a process
+            local is_process_buf = false
+            for _, p in ipairs(processes) do
+                local p_buf = p.buf or (type(p.key) == 'number' and p.key)
+                if p_buf == current_buf then
+                    is_process_buf = true
+                    break
                 end
-                if #processes > 0 then
-                    local names = {}
-                    for _, p in ipairs(processes) do
-                        table.insert(names, p.obj or p.title or p.cmd or "Process")
-                    end
-                    msg = msg .. "Running processes:\n  " .. table.concat(names, "\n  ") .. "\n\n"
+            end
+
+            -- Check if current buffer is an unsaved nofile (which Neovim won't warn about natively)
+            local is_unsaved_nofile = (vim.bo[current_buf].buftype == 'nofile' and vim.bo[current_buf].modified)
+
+            -- If this isn't a buffer that needs protection, be silent.
+            -- Note: For regular file buffers, Neovim's built-in 'modified' check will handle it.
+            if not is_process_buf and not is_unsaved_nofile then
+                return
+            end
+
+            -- We are closing a "special" buffer that has state. Warn.
+            local msg = ""
+            if is_unsaved_nofile then
+                msg = msg .. "Unsaved changes in: " .. (vim.api.nvim_buf_get_name(current_buf) ~= "" and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(current_buf), ':t') or "[No Name]") .. "\n\n"
+            end
+            if is_process_buf then
+                msg = msg .. "Process is still running in this buffer.\n\n"
+            end
+            
+            -- List all running processes for context if it's a process buffer
+            if #processes > 0 then
+                local names = {}
+                for _, p in ipairs(processes) do
+                    table.insert(names, p.obj or p.title or p.cmd or "Process")
                 end
-                msg = msg .. "Continue exit?"
+                msg = msg .. "Total running processes:\n  " .. table.concat(names, "\n  ") .. "\n\n"
+            end
+            
+            msg = msg .. "Stop process and continue?"
+            
+            vim.cmd('redraw')
+            if vim.fn.confirm(msg, "&Stop and Continue\n&Cancel", 2) ~= 1 then
+                print("Aborting...")
                 
-                vim.cmd('redraw')
-                if vim.fn.confirm(msg, "&Yes\n&No", 2) ~= 1 then
-                    error("Exit cancelled")
-                end
+                -- Blocking buffer hack to stop :qa
+                local buf = vim.api.nvim_create_buf(false, true)
+                vim.api.nvim_buf_set_name(buf, "[CANCELLED EXIT]")
+                vim.api.nvim_buf_set_option(buf, 'modified', true)
                 
-                -- If we are here, user said Yes. 
-                -- We must ensure nofile buffers don't block the actual exit.
-                for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-                    if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype == 'nofile' then
-                        vim.bo[buf].modified = false
+                vim.schedule(function()
+                    if vim.api.nvim_buf_is_valid(buf) then
+                        vim.api.nvim_buf_delete(buf, { force = true })
                     end
+                end)
+
+                vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-c>", true, false, true), 'm', true)
+                return
+            end
+            
+            -- If user said Yes, terminate all processes if we are potentially quitting.
+            exit_warned = true
+            terminate_all_processes(processes)
+
+            -- Ensure nofile buffers don't block exit
+            for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+                if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype == 'nofile' then
+                    vim.bo[buf].modified = false
                 end
             end
         end

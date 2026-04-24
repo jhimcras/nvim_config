@@ -81,6 +81,26 @@ function M.show()
     width = width + 4
     local height = #lines
 
+    -- Resize width if it exceeds editor width
+    if width > vim.o.columns - 2 then
+        width = vim.o.columns - 2
+    end
+
+    local win_pos = vim.api.nvim_win_get_position(winid)
+    local win_width = vim.api.nvim_win_get_width(winid)
+    local win_height = vim.api.nvim_win_get_height(winid)
+
+    local row = math.floor(win_pos[1] + (win_height - height) / 2)
+    local col = math.floor(win_pos[2] + (win_width - width) / 2)
+
+    -- Clipping logic to ensure the window stays within editor boundaries
+    -- We assume a border is used, which adds 1 to each side.
+    -- To keep the border within the screen (0 to vim.o.lines - 1):
+    -- row - 1 >= 0 => row >= 1
+    -- row + height + 1 <= vim.o.lines => row <= vim.o.lines - height - 1
+    row = math.max(1, math.min(row, vim.o.lines - height - 1))
+    col = math.max(1, math.min(col, vim.o.columns - width - 1))
+
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
@@ -88,8 +108,8 @@ function M.show()
         relative = 'editor',
         width = width,
         height = height,
-        row = (vim.o.lines - height) / 2,
-        col = (vim.o.columns - width) / 2,
+        row = row,
+        col = col,
         style = 'minimal',
         border = 'rounded',
         title = ' File Information ',

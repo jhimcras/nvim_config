@@ -381,7 +381,7 @@ function M.ActiveWin()
         -- (env.os.unix) and "%(%#StatusLineMode#%{v:lua.require'status'.fcitx()}%)" or '',
         -- (env.os.win) and "%(%#StatusLineMode#%{v:lua.require'status'.GetIMEStatus()}%)" or '',
         "%(%#StatusLineMode# %{v:lua.require'status'.search_result()}%)",
-        "%(%#StatusLineMode# %p%% %c %)",
+        "%(%#StatusLineMode# %p%% %v %)",
         -- "%{v:lua.require'status'.dur()}",
     }
     return table.concat(sl)
@@ -700,7 +700,7 @@ end
 local function measure_sl_text(s)
     s = s:gsub('%%#[^#]*#', '')   -- strip %#HighlightGroup# codes
     s = s:gsub('%%p%%%%', '100')  -- %p%% -> percentage estimate
-    s = s:gsub('%%c', '999')      -- %c -> column estimate
+    s = s:gsub('%%v', '999')      -- %v -> virtual column estimate
     s = s:gsub('%%[lL]', '9999') -- %l/%L -> line estimate
     s = s:gsub('%%[<=]', '')      -- %< and %= are zero-width separators
     s = s:gsub('%%%%', '%%')      -- %% -> literal %
@@ -708,7 +708,7 @@ local function measure_sl_text(s)
 end
 
 local percentage_loc = '%p%%'
-local column_loc = 'ﮇ %c'
+local column_loc = 'ﮇ %v'
 local gap = '%<%='
 
 

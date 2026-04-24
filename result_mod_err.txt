@@ -1,0 +1,2 @@
+Result: false, Error: vim/_editor.lua:0: nvim_exec2(), line 1: Vim(quit):E37: No write since last change
+Events: QuitPre, ExitPre

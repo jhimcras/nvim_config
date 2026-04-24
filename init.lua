@@ -269,6 +269,14 @@ local function KeyMappings()
     api.nvim_create_user_command('StripTrailingWhitespace', ut.StripTrailingWhitespace, {})
     api.nvim_create_user_command('OpenAllHiddenBuffer', ut.OpenAllHiddenBuffers, {})
     api.nvim_create_user_command('WipeHiddenBuffers', ut.wipeout_hidden_buffers, {})
+    api.nvim_create_user_command('NewInstance', function(opts)
+        local cmd_name = vim.g.neovide and 'neovide' or 'nvim'
+        local args = { cmd_name }
+        if opts.args ~= '' then
+            table.insert(args, opts.args)
+        end
+        vim.fn.jobstart(args, { detach = true })
+    end, { nargs = '?', complete = 'file' })
 
     ut.nnoremap('<leader><leader>', function() vim.notify(os.date("%F %T"), vim.log.levels.INFO) end)
 

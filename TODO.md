@@ -197,6 +197,7 @@
     - 'Spinner folder(can compact) | command with args <<gap>> current and total line (as general is)'
 - [ ] Warn if the launcher buffer is requested closing when it is running.
     - Close, Cancel, StopAndClose options needed.
+- [ ] Make no spinning with session reloaded launcher output.
 
 
 ## Language Server (LSP)

@@ -25,12 +25,10 @@ function M.CloseLauncherBuffer()
     if (success2 and closed) or (success and failed) then
         vim.cmd.bwipeout { bang = true }
     else
-        local choice = vim.fn.confirm('This process is still running. What do you want to do?', "&Stop and Close\n&Close\n&Cancel", 3)
+        local choice = vim.fn.confirm('This process is still running. What do you want to do?', "&Stop and Close Buffer\n&Cancel", 2)
         if choice == 1 then
             M.TerminateCurrentLauncherBuffer()
             vim.cmd.bwipeout { bang = true }
-        elseif choice == 2 then
-            vim.cmd.close()
         end
     end
 end
@@ -612,6 +610,17 @@ function M.LaunchObject(obj)
 
             api.nvim_buf_set_var(buf, 'lc_parent_win', parent_win)
             api.nvim_buf_set_var(buf, 'prjroot_folder', parent_win_prjroot)
+
+            if lcfg.focus == true then
+                local wins = vim.fn.win_findbuf(buf)
+                if #wins > 0 then
+                    api.nvim_set_current_win(wins[1])
+                end
+            else
+                if api.nvim_win_is_valid(parent_win) then
+                    api.nvim_set_current_win(parent_win)
+                end
+            end
         end
     end
 end
