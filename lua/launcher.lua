@@ -377,7 +377,6 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, position, obj, existing_buf)
     end
     api.nvim_buf_set_var(buf, 'lc_command', full_cmd_str)
     api.nvim_buf_set_var(buf, 'launcher_status', 'running')
-    api.nvim_buf_set_option(buf, 'modified', true)
     if prjroot_origin then
         pr.SetBufferProjectRoot(buf, prjroot_origin)
         api.nvim_buf_set_var(buf, 'prjroot_folder', prjroot_origin)
@@ -577,22 +576,28 @@ function M.LaunchObject(obj)
                     M.running_processes[existing_buf] = nil
                 end
 
-                -- Clear the buffer content
-                local ft = vim.api.nvim_get_option_value('filetype', { buf = existing_buf })
-                if ft ~= 'terminal' then
-                    SetBufLines(existing_buf, 0, -1, false, {})
-                end
-
-                -- If the buffer is hidden, display it again in the current tab
-                local wins = vim.fn.win_findbuf(existing_buf)
-                if #wins == 0 then
-                    local buf = ut.NewScratchBuffer(position)
-                    vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), existing_buf)
-                    -- Close the scratch buffer that was just created but not needed because we're reusing existing_buf
-                    vim.api.nvim_buf_delete(buf, {force = true})
+                -- Terminal buffers cannot be converted back to regular buffers
+                -- And termopen() requires an empty unmodified buffer.
+                local old_buftype = vim.api.nvim_get_option_value('buftype', { buf = existing_buf })
+                if old_buftype == 'terminal' or mode == 'terminal' then
+                    vim.api.nvim_buf_delete(existing_buf, { force = true })
+                    existing_buf = nil
                 else
-                    -- If it's already visible, focus it (maintains window)
-                    vim.api.nvim_set_current_win(wins[1])
+                    -- Clear the buffer content for non-terminal reuse
+                    SetBufLines(existing_buf, 0, -1, false, {})
+                    -- Ensure it's not marked as modified so next launch is clean
+                    vim.api.nvim_buf_set_option(existing_buf, 'modified', false)
+
+                    -- If the buffer is hidden, display it again
+                    local wins = vim.fn.win_findbuf(existing_buf)
+                    if #wins == 0 then
+                        local temp_buf = ut.NewScratchBuffer(position)
+                        vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), existing_buf)
+                        vim.api.nvim_buf_delete(temp_buf, { force = true })
+                    else
+                        -- If it's already visible, focus it
+                        vim.api.nvim_set_current_win(wins[1])
+                    end
                 end
             end
 
@@ -621,6 +626,7 @@ function M.LaunchObject(obj)
                     api.nvim_set_current_win(parent_win)
                 end
             end
+            return buf
         end
     end
 end

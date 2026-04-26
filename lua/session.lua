@@ -589,81 +589,114 @@ function M.setup()
     })
 
     local exit_warned = false
+    local exit_guard_group = vim.api.nvim_create_augroup("ExitGuard", { clear = true })
+
+    local function abort_exit()
+        print("Aborting exit...")
+        -- Blocking buffer hack to stop :qa
+        -- MUST be modified to stop Neovim from quitting
+        local abort_buf = vim.api.nvim_create_buf(false, true)
+        local unique_id = math.random(1000, 9999)
+        pcall(vim.api.nvim_buf_set_name, abort_buf, "[CANCELLED EXIT " .. unique_id .. "]")
+        vim.api.nvim_buf_set_option(abort_buf, 'modified', true)
+        
+        -- Use a timer to clean it up, so it exists long enough for Neovim to see it
+        local timer = vim.uv.new_timer()
+        timer:start(50, 0, vim.schedule_wrap(function()
+            if vim.api.nvim_buf_is_valid(abort_buf) then
+                vim.api.nvim_buf_delete(abort_buf, { force = true })
+            end
+            timer:close()
+        end))
+
+        -- C-c might help interrupt the command line
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-c>", true, false, true), 'm', true)
+        error("Exit cancelled")
+    end
+
+    -- Handle buffer closure and global exit
     vim.api.nvim_create_autocmd("QuitPre", {
-        group = vim.api.nvim_create_augroup("ExitGuard", { clear = true }),
+        group = exit_guard_group,
         callback = function()
             if exit_warned then return end
 
-            local current_buf = vim.api.nvim_get_current_buf()
-            local processes = M.get_running_processes()
+            local buf = vim.api.nvim_get_current_buf()
+            local wins = vim.api.nvim_list_wins()
+            local is_last_win = (#wins <= 1)
             
-            -- Check if current buffer is a process
-            local is_process_buf = false
+            local processes = M.get_running_processes()
+            local unsaved = get_unsaved_buffers()
+            
+            -- Case 1: Individual buffer closure warning
+            local current_proc = nil
             for _, p in ipairs(processes) do
                 local p_buf = p.buf or (type(p.key) == 'number' and p.key)
-                if p_buf == current_buf then
-                    is_process_buf = true
+                if p_buf == buf then
+                    current_proc = p
                     break
                 end
             end
 
-            -- Check if current buffer is an unsaved nofile (which Neovim won't warn about natively)
-            local is_unsaved_nofile = (vim.bo[current_buf].buftype == 'nofile' and vim.bo[current_buf].modified)
+            local is_unsaved_nofile = (vim.bo[buf].buftype == 'nofile' and vim.bo[buf].modified)
 
-            -- If this isn't a buffer that needs protection, be silent.
-            -- Note: For regular file buffers, Neovim's built-in 'modified' check will handle it.
-            if not is_process_buf and not is_unsaved_nofile then
+            -- If it's not the last window AND not a special buffer being closed, we are silent
+            if not is_last_win and not current_proc and not is_unsaved_nofile then
                 return
             end
 
-            -- We are closing a "special" buffer that has state. Warn.
+            -- Build the warning message
             local msg = ""
+            
+            -- Part A: Current buffer specific warnings (always show if closing)
             if is_unsaved_nofile then
-                msg = msg .. "Unsaved changes in: " .. (vim.api.nvim_buf_get_name(current_buf) ~= "" and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(current_buf), ':t') or "[No Name]") .. "\n\n"
+                msg = msg .. "Unsaved changes in scratch buffer: " .. 
+                           (vim.api.nvim_buf_get_name(buf) ~= "" and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ':t') or "[No Name]") .. "\n"
             end
-            if is_process_buf then
-                msg = msg .. "Process is still running in this buffer.\n\n"
+            if current_proc then
+                msg = msg .. "Process [" .. (current_proc.obj or current_proc.title or "Launcher") .. "] is still running in this buffer.\n"
             end
-            
-            -- List all running processes for context if it's a process buffer
-            if #processes > 0 then
-                local names = {}
-                for _, p in ipairs(processes) do
-                    table.insert(names, p.obj or p.title or p.cmd or "Process")
+
+            -- Part B: Global warnings (only if it's the last window)
+            if is_last_win then
+                if #unsaved > 0 then
+                    msg = msg .. "\nGlobal Unsaved buffers:\n  " .. table.concat(unsaved, "\n  ") .. "\n"
                 end
-                msg = msg .. "Total running processes:\n  " .. table.concat(names, "\n  ") .. "\n\n"
+                -- Only list other processes if there are any besides the current one
+                local other_processes = {}
+                for _, p in ipairs(processes) do
+                    if p ~= current_proc then
+                        table.insert(other_processes, p.obj or p.title or p.cmd or "Process")
+                    end
+                end
+                if #other_processes > 0 then
+                    msg = msg .. "\nOther running processes:\n  " .. table.concat(other_processes, "\n  ") .. "\n"
+                end
             end
-            
-            msg = msg .. "Stop process and continue?"
+
+            if msg == "" then return end
+            msg = msg .. "\nStop and Continue?"
             
             vim.cmd('redraw')
             if vim.fn.confirm(msg, "&Stop and Continue\n&Cancel", 2) ~= 1 then
-                print("Aborting...")
-                
-                -- Blocking buffer hack to stop :qa
-                local buf = vim.api.nvim_create_buf(false, true)
-                vim.api.nvim_buf_set_name(buf, "[CANCELLED EXIT]")
-                vim.api.nvim_buf_set_option(buf, 'modified', true)
-                
-                vim.schedule(function()
-                    if vim.api.nvim_buf_is_valid(buf) then
-                        vim.api.nvim_buf_delete(buf, { force = true })
-                    end
-                end)
-
-                vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-c>", true, false, true), 'm', true)
-                return
+                abort_exit()
             end
-            
-            -- If user said Yes, terminate all processes if we are potentially quitting.
-            exit_warned = true
-            terminate_all_processes(processes)
 
-            -- Ensure nofile buffers don't block exit
-            for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-                if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype == 'nofile' then
-                    vim.bo[buf].modified = false
+            -- User said Yes.
+            if is_last_win then
+                exit_warned = true
+                terminate_all_processes(processes)
+                -- Ensure nofile buffers don't block exit
+                for _, b in ipairs(vim.api.nvim_list_bufs()) do
+                    if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buftype == 'nofile' then
+                        vim.bo[b].modified = false
+                    end
                 end
+            else
+                -- Just terminating the current one if it was an individual :q
+                if current_proc then
+                    terminate_all_processes({current_proc})
+                end
+                vim.bo[buf].modified = false
             end
         end
     })
