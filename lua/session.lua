@@ -640,8 +640,10 @@ function M.setup()
             local is_unsaved_nofile = (vim.bo[buf].buftype == 'nofile' and vim.bo[buf].modified)
 
             -- If it's not the last window AND not a special buffer being closed, we are silent
-            if not is_last_win and not current_proc and not is_unsaved_nofile then
-                return
+            if not is_last_win and not is_unsaved_nofile then
+                if not current_proc or vim.bo[buf].filetype == 'launcher' then
+                    return
+                end
             end
 
             -- Build the warning message
@@ -652,7 +654,7 @@ function M.setup()
                 msg = msg .. "Unsaved changes in scratch buffer: " .. 
                            (vim.api.nvim_buf_get_name(buf) ~= "" and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ':t') or "[No Name]") .. "\n"
             end
-            if current_proc then
+            if current_proc and vim.bo[buf].filetype ~= 'launcher' then
                 msg = msg .. "Process [" .. (current_proc.obj or current_proc.title or "Launcher") .. "] is still running in this buffer.\n"
             end
 
@@ -665,7 +667,10 @@ function M.setup()
                 local other_processes = {}
                 for _, p in ipairs(processes) do
                     if p ~= current_proc then
-                        table.insert(other_processes, p.obj or p.title or p.cmd or "Process")
+                        local p_buf = p.buf or (type(p.key) == 'number' and p.key)
+                        if not p_buf or not vim.api.nvim_buf_is_valid(p_buf) or vim.bo[p_buf].filetype ~= 'launcher' then
+                            table.insert(other_processes, p.obj or p.title or p.cmd or "Process")
+                        end
                     end
                 end
                 if #other_processes > 0 then
