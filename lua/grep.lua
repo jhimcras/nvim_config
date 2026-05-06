@@ -78,10 +78,28 @@ function M.asyncGrep(term, word, wndidforll)
         return
     end
 
+    -- Check for existing grep process for this window
+    local launcher = require'launcher'
+    local processes = launcher.GetRunningProcesses()
+    for _, p in ipairs(processes) do
+        if p.type == 'grep' and p.wndidforll == wndidforll then
+            local msg = string.format("Search [%s] is still running for this window. Stop it?", p.title or p.cmd)
+            if vim.fn.confirm(msg, "&Yes\n&No", 1) == 1 then
+                if p.terminate then p.terminate() end
+                launcher.UnregisterProcess(p.key)
+            else
+                -- If they say No, we could either cancel or run in parallel.
+                -- Parallel runs are safer now with loclist_nr, but might be confusing.
+                -- User said "ask if there might be other search request", so we ask.
+            end
+        end
+    end
+
     local killed = false
     local remain = ""
     local qfwinid
     local redraw_timer
+    local loclist_nr
 
     local onread = function(err, data)
         if killed then return end
@@ -112,13 +130,15 @@ function M.asyncGrep(term, word, wndidforll)
             if #results > 0 then
                 vim.schedule(function()
                     if not killed then
-                        vim.fn.setloclist(wndidforll, {}, 'a', {lines = results})
+                        -- Use loclist_nr to ensure results go to the right list
+                        vim.fn.setloclist(wndidforll, {}, 'a', {nr = loclist_nr, lines = results})
                     end
                 end)
             end
         end
     end
 
+    local qf_buf
     local onexit = function(code, signal)
         local final_status = (killed or signal ~= 0) and 'killed' or 'done'
         killed = true
@@ -131,6 +151,9 @@ function M.asyncGrep(term, word, wndidforll)
             vim.w[qfwinid].grep_status = final_status
             M.update_loclist_sl(qfwinid)
             vim.cmd 'redrawstatus!'
+        end
+        if qf_buf and vim.api.nvim_buf_is_valid(qf_buf) then
+            require'launcher'.UnregisterProcess(qf_buf)
         end
     end
 
@@ -153,12 +176,14 @@ function M.asyncGrep(term, word, wndidforll)
     local title = string.format("Search: %s │ %s", term, prjroot)
     search_info[title] = {term = term, word = word == true}
     vim.fn.setloclist(wndidforll, {}, ' ', {title = title, items = {}, nr = '$'})
+    loclist_nr = vim.fn.getloclist(wndidforll, {nr = '$'}).nr
     vim.cmd.lopen()
     qfwinid = vim.fn.getloclist(wndidforll, { winid = 0 }).winid
     if not qfwinid or qfwinid == 0 then
         qfwinid = vim.fn.win_getid()
     end
     vim.api.nvim_set_current_win(qfwinid)
+    qf_buf = vim.api.nvim_win_get_buf(qfwinid)
     -- Clear any window-local statusline Neovim set for the new loclist window
     -- so the global %!statusline_entry() is used instead.
     vim.api.nvim_set_option_value('statusline', '', { win = qfwinid })
@@ -296,7 +321,6 @@ function M.asyncGrep(term, word, wndidforll)
     end
 
     local pid, term_func, status, handle = ut.AsyncProcess('rg', args, '.', { onread = onread, onexit = wrapped_onexit })
-    local qf_buf = vim.api.nvim_win_get_buf(qfwinid)
     require'launcher'.RegisterProcess(qf_buf, {
         type = 'grep',
         pid = pid,
@@ -305,7 +329,8 @@ function M.asyncGrep(term, word, wndidforll)
         args = args,
         title = title,
         onexit = wrapped_onexit,
-        terminate = term_func
+        terminate = term_func,
+        wndidforll = wndidforll
     })
 
     ut.nnoremap('<C-c>', function()

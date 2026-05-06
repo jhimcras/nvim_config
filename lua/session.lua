@@ -641,7 +641,7 @@ function M.setup()
 
             -- If it's not the last window AND not a special buffer being closed, we are silent
             if not is_last_win and not is_unsaved_nofile then
-                if not current_proc or vim.bo[buf].filetype == 'launcher' then
+                if not current_proc or vim.bo[buf].filetype == 'launcher' or vim.bo[buf].filetype == 'qf' then
                     return
                 end
             end
