@@ -1,22 +1,6 @@
 local env = require 'env'
 local M = {}
 
-local function bootstrap_pckr()
-    local pckr_path = vim.fn.stdpath'data' .. '/pckr/pckr.nvim'
-    if not vim.uv.fs_stat(pckr_path) then
-        vim.fn.system {
-            'git',
-            'clone',
-            '--filter=blob:nonesdfadfasdf',
-            'https://github.com/lewis6991/pckr.nvim',
-            pckr_path
-        }
-    end
-    vim.opt.rtp:prepend(pckr_path)
-end
-
-bootstrap_pckr()
-
 local function LoupeSetting()
     vim.g.LoupeCenterResults = 0
     local ut = require'util'
@@ -83,17 +67,7 @@ local function SlimeSetting()
 end
 
 local function VsnipSetting()
-    -- local ut = require'util'
     vim.g.vsnip_snippet_dir = vim.fn.stdpath('config') .. '/vsnip'
-    -- ut.imap('<c-space>', "vsnip#jumpable(1) ? '<Plug>(vsnip-jump-next)' : vsnip#expandable()  ? '<Plug>(vsnip-expand)' : ''", {'expr'})
-    -- ut.smap('<c-space>', "vsnip#jumpable(1) ? '<Plug>(vsnip-jump-next)' : vsnip#expandable()  ? '<Plug>(vsnip-expand)' : ''", {'expr'})
-    -- ut.imap('<c-bs>', "vsnip#jumpable(-1) ? '<Plug>(vsnip-jump-prev)' : ''", {'expr'})
-    -- ut.smap('<c-bs>', "vsnip#jumpable(-1) ? '<Plug>(vsnip-jump-prev)' : ''", {'expr'})
-
-    -- Select or cut text to use as $TM_SELECTED_TEXT in the next snippet.
-    -- See https://github.com/hrsh7th/vim-vsnip/pull/50
-    -- ut.nmap('<c-cr>', '<Plug>(vsnip-cut-text)', {'expr'})
-    -- ut.xmap('<c-cr>', '<Plug>(vsnip-cut-text)', {'expr'})
 end
 
 local function MatchupSetting()
@@ -288,42 +262,6 @@ function M.setup()
             ft = { 'markdown' },
         },
         { 'norcalli/nvim-colorizer.lua' },
-
-        -- { 'nvim-lualine/lualine.nvim', config = function() require'lualine'.setup{ extensions = {'fugitive'} } end },
-
-        -- { 'kevinhwang91/nvim-bqf', ft='qf' },
-
-        -- { 'folke/trouble.nvim', config = function() require'trouble'.setup() end },
-
-        -- Disabled
-        -- { 'mfussenegger/nvim-dap' },
-        -- { 'jose-elias-alvarez/null-ls.nvim', config = function() require'null-ls'.setup() end, requires = { 'nvim-lua/plenary.nvim' } },
-        -- { 'chrisbra/csv.vim', ft = { 'csv' } },
-        -- { 'puremourning/vimspector', disable = not env.os.unix },
-        -- { 'glepnir/lspsaga.nvim' },
-        -- { 'unblevable/quick-scope' },
-        -- { 'arcticicestudio/nord-vim' },
-        -- { 'drmikehenry/vim-fontsize' },
-        -- { 'ervandew/supertab' },
-        -- { 'godlygeek/tabular' },
-        -- { 'itchyny/calendar.vim' },
-        -- { 'itchyny/vim-cursorword' },
-        -- { 'nelstrom/vim-visual-star-search' },
-        -- { 'gabrielelana/vim-markdown' },
-        -- { 'tpope/vim-vinegar' },
-        -- { 'rhysd/clever-f.vim' },
-        -- { 'kana/vim-textobj-lastpat' },
-        -- { 'wellle/targets.vim' },
-        -- { 'vim-pandoc/vim-pandoc-syntax' },
-        -- { 'vim-utils/vim-man' },
-        -- { 'vim-scripts/utl.vim' },
-        -- { 'justinmk/vim-gtfo' },
-        -- { 'md-map', { dir=vim.fn.stdpath('config') .. '/plugin/md-map' } },
-        -- { 'dstein64/nvim-scrollview' } -- TODO: this plugin has session problem
-        -- { 'hrsh7th/vim-vsnip-integ' },
-        -- { 'vimwiki/vimwiki' },
-        -- { 'jghauser/follow-md-links.nvim' },
-        -- { 'lambdalisue/vim-fullscreen' }
     }
 
     require'prjroot'.setup()

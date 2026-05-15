@@ -1,3 +1,0 @@
-QuitPre (exiting=vim.NIL)
-ExitPre (exiting=vim.NIL)
-VimLeavePre (exiting=0)

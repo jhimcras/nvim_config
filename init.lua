@@ -32,7 +32,6 @@ local function BasicSettings()
     vim.o.sidescrolloff = 5
     vim.o.showmatch = true
     vim.o.splitright = true
-    -- vim.o.switchbuf = 'useopen'
     vim.o.title = true
     vim.opt.path:append('**')
     vim.opt.wildignore:append { '*/.git/*', '*/.hg/*', '*/.svn/*', '*/.sass-cache/*', '*/x64/*', '*/.vs/*', '*/.clangd/*' }
@@ -120,30 +119,6 @@ local function SetTabAndIndent()
     end})
 end
 
--- local function SetColorsAndHighlighting()
---     require('nvim-tundra').setup {
---         transparent_background = true,
---         overwrite = {
---             highlights = {
---                 SpecialKey = { link = 'Normal' }
---             },
---         },
---         -- plugins = {
---         --     telescope = true,
---         -- },
---     }
---     cmd.colorscheme 'tundra'
---     vim.o.pumblend = 10
---     -- ut.set_highlight('Pmenu', { ctermbg=238 })
---     cmd.let '$TERM="xterm-256color"'
---     if not env.os.win then
---         vim.o.termguicolors = true
---     end
---     api.nvim_create_autocmd('TextYankPost', { callback = function()
---         vim.hl.on_yank { timeout = 200 }
---     end } )
--- end
-
 local function KeyMappings()
     ut.nnoremap('<Up>', '<C-y>')
     ut.nnoremap('<Down>', '<C-e>')
@@ -173,9 +148,6 @@ local function KeyMappings()
     -- Insert blank line
     ut.nnoremap('[<space>', 'O<c-[>')
     ut.nnoremap(']<space>', 'o<c-[>')
-
-    -- ut.nnoremap('[s', '<cmd>lprevious<cr>')
-    -- ut.nnoremap(']s', '<cmd>lnext<cr>')
 
     -- Start a new Undo group before making changes in INSERT mode.
     ut.inoremap('<C-W>', '<C-G>u<C-W>')
@@ -239,19 +211,12 @@ local function KeyMappings()
     ut.nnoremap('<leader>v', '`[v`]')
     ut.nnoremap('<leader>V', '`[V`]')
 
-    -- Search in selected region
-    --vnoremap('/', ':<C-U>call feedkeys('/\%>'.(line("'<")-1).'l\%<'.(line("'>")+1)."l")<CR>')
-
     -- Move lines up and down
     ut.vnoremap('K', ":m '<-2<CR>gv=gv")
     ut.vnoremap('J', ":m '>+1<CR>gv=gv")
 
     -- Convinients
     ut.nnoremap('<m-cr>', '<cmd>buffer #<cr><cmd>vertical sbuffer #<cr>')
-    -- cmd.cnoreabbrev 'h vert help'
-    -- cmd.cnoreabbrev 'he vert help'
-    -- cmd.cnoreabbrev 'hel vert help'
-    -- cmd.cnoreabbrev 'help vert help'
     cmd.cnoreabbrev 'W w'
     cmd.cnoreabbrev 'Wa wa'
     cmd.cnoreabbrev 'Q q'
@@ -376,7 +341,6 @@ FoldSetting()
 TerminalSetting()
 SetAutoChangedFileReloading()
 SetTabAndIndent()
--- SetColorsAndHighlighting()
 require'plugins'.setup()
 KeyMappings()
 QuickFixSetting()
