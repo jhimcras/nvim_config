@@ -16,6 +16,17 @@ local function SetBufLines(buf, start, end_, strict, lines)
     api.nvim_buf_set_option(buf, 'modifiable', modifiable)
 end
 
+local function SafeCloseTimer(buf)
+    local timer = launcher_timers[buf]
+    if timer then
+        if not timer:is_closing() then
+            timer:stop()
+            timer:close()
+        end
+        launcher_timers[buf] = nil
+    end
+end
+
 -- TODO: check whether the thread actually processing
 function M.CloseLauncherBuffer(force_wipe)
     local buf = vim.api.nvim_get_current_buf()
@@ -280,12 +291,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         end
 
         -- Stop spinner timer
-        local timer = launcher_timers[buf]
-        if timer then
-            timer:stop()
-            timer:close()
-            launcher_timers[buf] = nil
-        end
+        SafeCloseTimer(buf)
 
         local status = (code == 0 and signal == 0) and 'done' or 'terminated'
         api.nvim_buf_set_var(buf, 'launcher_status', status)
@@ -312,8 +318,10 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         if api.nvim_buf_is_valid(buf) then
             vim.cmd('redrawstatus!')
         else
-            timer:stop()
-            timer:close()
+            if not timer:is_closing() then
+                timer:stop()
+                timer:close()
+            end
             launcher_timers[buf] = nil
         end
     end))
@@ -352,11 +360,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         api.nvim_buf_set_option(buf, 'modified', false)
 
         -- Stop timer if failed to start
-        if launcher_timers[buf] then
-            launcher_timers[buf]:stop()
-            launcher_timers[buf]:close()
-            launcher_timers[buf] = nil
-        end
+        SafeCloseTimer(buf)
         M.running_processes[buf] = nil
         vim.cmd('redrawstatus!')
     end
@@ -827,14 +831,7 @@ function M.setup()
                 M.running_processes[buf] = nil
             end
 
-            local timer = launcher_timers[buf]
-            if timer then
-                if not timer:is_closing() then
-                    timer:stop()
-                    timer:close()
-                end
-                launcher_timers[buf] = nil
-            end
+            SafeCloseTimer(buf)
         end
     })
 
