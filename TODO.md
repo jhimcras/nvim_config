@@ -52,10 +52,10 @@
     - Shows all components from the status line.
     - Allows adding extra metadata.
     - Provides a keymap/command to view details if the window is too narrow.
-- [ ] Center the file info floating window over its owner buffer. If the window would be clipped by the screen edges, adjust its position first; if it still won't fit, resize it to accommodate.
+- [x] Center the file info floating window over its owner buffer. If the window would be clipped by the screen edges, adjust its position first; if it still won't fit, resize it to accommodate.
 - [ ] Feature to spawn a new Neovim process (using the current GUI), accessible via command or Telescope.
     - [ ] Open a specific session.
-    - [ ] Open a specific file/buffer.
+    - [x] Open a specific file/buffer.
     - [ ] Split tabs or buffers to the other neovim process.
     - [ ] Split launcher to the other neovim process.
 - [ ] Implement an Outline feature.
@@ -82,7 +82,7 @@
 - [ ] Customize status line based on buffer/file types.
     - [x] `checkhealth`: Use simple "CHECK HEALTH" text.
     - [x] `man pager`: Display MAN page name, search count, and cursor position.
-- [ ] Fix status line column miscalculation when `<tab>` characters are present.
+- [x] Fix status line column miscalculation when `<tab>` characters are present.
 - [x] Prevent floating window info from appearing in the tabline.
 - [x] Manage tabline overflow: when full, show "<" on the left and allow scrolling.
     - Scroll via keymap (`<leader>t` for right, `<leader>T` for left).
@@ -284,10 +284,10 @@ While snippets are great for statements and function templates, function snippet
 - [x] Fix session saving failure when the directory is missing.
 - [x] Implement auto-saving for sessions.
 - [x] Warn about unsaved buffers before changing/closing sessions.
-- [ ] Warn if luancher, terminal processes are running before session changing or closing.
+- [x] Warn if luancher, terminal processes are running before session changing or closing.
 - [ ] Handle large/duplicate Quickfix lists in sessions.
 - [ ] Fix `cmdheight` saving issues.
-- [ ] Fix auto-save failure on `:qa` exit.
+- [x] Fix auto-save failure on `:qa` exit.
 
 
 ## File Manager

@@ -15,8 +15,11 @@ describe('status', function()
         vim.go = {}
         vim.g.is_testing = nil -- Temporarily allow setup to run
         
-        -- Mock set_highlight to avoid errors
-        package.loaded['util'] = { set_highlight = function() end }
+        -- Mock util functions to avoid errors
+        package.loaded['util'] = {
+            set_highlight = function() end,
+            nnoremap = function() end,
+        }
         
         status.setup()
         

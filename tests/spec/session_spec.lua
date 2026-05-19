@@ -90,3 +90,38 @@ describe('session.SessionList', function()
         assert.truthy(vim.tbl_contains(names, '__test__x'))
     end)
 end)
+
+describe('session.SaveSession', function()
+    it('saves a session and updates tabline without error', function()
+        local session_name = '__test__new_session'
+        local sessions_dir = vim.fn.stdpath('data') .. '/sessions'
+        vim.fn.mkdir(sessions_dir, 'p')
+        local session_path = sessions_dir .. '/' .. session_name
+
+        -- Mock vim.cmd and vim.notify to avoid side effects
+        local original_cmd = vim.cmd
+        local original_notify = vim.notify
+        local original_go = vim.go
+        vim.cmd = function() end
+        vim.notify = function() end
+        vim.go = { tabline = '' }
+
+        -- Ensure tabline module is loaded and has TabLine function
+        package.loaded['tabline'] = package.loaded['tabline'] or {
+            TabLine = function() return 'mock_tabline' end
+        }
+
+        local status, err = pcall(session.SaveSession, session_name)
+        
+        -- Restore originals
+        vim.cmd = original_cmd
+        vim.notify = original_notify
+        vim.go = original_go
+
+        if not status then
+            error('SaveSession failed: ' .. tostring(err))
+        end
+        
+        assert.is_true(status)
+    end)
+end)

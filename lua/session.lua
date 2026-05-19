@@ -489,7 +489,7 @@ function M.SaveSession(session_name)
         vim.log.levels.INFO
     )
 
-    vim.go.tabline = require('status').TabLine()
+    vim.go.tabline = require('tabline').TabLine()
 end
 
 
@@ -516,7 +516,7 @@ function M.RemoveSession(session_name)
     else
         vim.notify('No session name to remove.', vim.log.levels.ERROR)
     end
-    vim.o.tabline = require'status'.TabLine()
+    vim.o.tabline = require('tabline').TabLine()
 end
 
 
