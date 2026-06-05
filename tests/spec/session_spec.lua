@@ -1,4 +1,13 @@
 local session = require('session')
+local original_stdpath = vim.fn.stdpath
+local test_data_dir = vim.fn.tempname()
+vim.fn.mkdir(test_data_dir, 'p')
+vim.fn.stdpath = function(what)
+    if what == 'data' then
+        return test_data_dir
+    end
+    return original_stdpath(what)
+end
 
 local function make_sessions_dir()
     local dir = vim.fn.stdpath('data') .. '/sessions'
@@ -123,5 +132,172 @@ describe('session.SaveSession', function()
         end
         
         assert.is_true(status)
+    end)
+end)
+
+describe('session QuitPre exit guard', function()
+    local original_confirm
+    local original_get_running_processes
+    local original_cmd
+    local confirm_msg
+    local confirm_choices
+    local confirm_default
+    local confirm_result
+
+    local function cleanup_buffers()
+        for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_is_loaded(bufnr) then
+                pcall(function()
+                    vim.bo[bufnr].modified = false
+                end)
+            end
+        end
+        for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_valid(bufnr) and bufnr ~= vim.api.nvim_get_current_buf() then
+                pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+            end
+        end
+    end
+
+    local function setup_exit_guard()
+        pcall(vim.api.nvim_del_user_command, 'SaveSession')
+        pcall(vim.api.nvim_del_user_command, 'RemoveSession')
+        pcall(vim.api.nvim_del_user_command, 'CloseSession')
+        pcall(vim.api.nvim_del_user_command, 'SessionQuitAll')
+        session.setup()
+
+        for _, au in ipairs(vim.api.nvim_get_autocmds({ event = 'QuitPre', group = 'ExitGuard' })) do
+            if au.callback then
+                return au.callback
+            end
+        end
+        error('ExitGuard QuitPre callback not found')
+    end
+
+    local function make_modified_unnamed_buffer()
+        local bufnr = vim.api.nvim_create_buf(true, false)
+        vim.api.nvim_set_current_buf(bufnr)
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'draft' })
+        vim.bo[bufnr].modified = true
+        return bufnr
+    end
+
+    before_each(function()
+        cleanup_buffers()
+        confirm_msg = nil
+        confirm_choices = nil
+        confirm_default = nil
+        confirm_result = 1
+        original_confirm = vim.fn.confirm
+        original_get_running_processes = session.get_running_processes
+        original_cmd = vim.cmd
+        vim.fn.confirm = function(msg, choices, default)
+            confirm_msg = msg
+            confirm_choices = choices
+            confirm_default = default
+            return confirm_result
+        end
+        session.get_running_processes = function()
+            return {}
+        end
+        vim.cmd = function(cmd)
+            if cmd ~= 'redraw' then
+                original_cmd(cmd)
+            end
+        end
+    end)
+
+    after_each(function()
+        vim.fn.confirm = original_confirm
+        session.get_running_processes = original_get_running_processes
+        vim.cmd = original_cmd
+        cleanup_buffers()
+    end)
+
+    it('clears a modified unnamed buffer when Ignore is selected for :qa', function()
+        local callback = setup_exit_guard()
+        local bufnr = make_modified_unnamed_buffer()
+
+        callback()
+
+        assert.is_false(vim.bo[bufnr].modified)
+        assert.truthy(confirm_msg:find('Global Unsaved buffers:\n  %[No Name%]', 1))
+        assert.truthy(confirm_msg:find('Ignore and Continue?', 1, true))
+        assert.same('&Ignore\n&Cancel', confirm_choices)
+        assert.same(2, confirm_default)
+    end)
+
+    it('preserves a modified unnamed buffer after Cancel and guards the next quit attempt', function()
+        local callback = setup_exit_guard()
+        local bufnr = make_modified_unnamed_buffer()
+
+        confirm_result = 2
+        local ok = pcall(callback)
+
+        assert.is_false(ok)
+        assert.is_true(vim.bo[bufnr].modified)
+        assert.same('&Ignore\n&Cancel', confirm_choices)
+
+        confirm_result = 1
+        callback()
+
+        assert.is_false(vim.bo[bufnr].modified)
+    end)
+
+    it('SessionQuitAll returns cleanly on Cancel and preserves changes', function()
+        setup_exit_guard()
+        local bufnr = make_modified_unnamed_buffer()
+
+        confirm_result = 2
+        local ok = pcall(vim.cmd, 'SessionQuitAll')
+
+        assert.is_true(ok)
+        assert.is_true(vim.bo[bufnr].modified)
+        assert.same('&Ignore\n&Cancel', confirm_choices)
+    end)
+
+    it('uses stop-oriented confirmation and terminates running processes', function()
+        local terminated = false
+        session.get_running_processes = function()
+            return {
+                {
+                    obj = 'Build',
+                    terminate = function(signal)
+                        terminated = signal == 15
+                    end,
+                },
+            }
+        end
+        local callback = setup_exit_guard()
+
+        callback()
+
+        assert.is_true(terminated)
+        assert.truthy(confirm_msg:find('Other running processes:\n  Build', 1, true))
+        assert.truthy(confirm_msg:find('Stop and Continue?', 1, true))
+        assert.same('&Stop and Continue\n&Cancel', confirm_choices)
+        assert.same(2, confirm_default)
+    end)
+
+    it('uses combined wording for running processes and unsaved buffers', function()
+        session.get_running_processes = function()
+            return {
+                {
+                    obj = 'Build',
+                    terminate = function() end,
+                },
+            }
+        end
+        local callback = setup_exit_guard()
+        local bufnr = make_modified_unnamed_buffer()
+
+        callback()
+
+        assert.is_false(vim.bo[bufnr].modified)
+        assert.truthy(confirm_msg:find('Other running processes:\n  Build', 1, true))
+        assert.truthy(confirm_msg:find('Global Unsaved buffers:\n  %[No Name%]', 1))
+        assert.truthy(confirm_msg:find('Stop processes, ignore unsaved changes, and continue?', 1, true))
+        assert.same('&Stop and Ignore\n&Cancel', confirm_choices)
+        assert.same(2, confirm_default)
     end)
 end)

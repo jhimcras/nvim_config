@@ -362,6 +362,47 @@ function M.get_running_processes()
     return processes
 end
 
+local function get_modified_buffers()
+    local buffers = {}
+    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_loaded(bufnr) and vim.bo[bufnr].modified then
+            local name = vim.api.nvim_buf_get_name(bufnr)
+            table.insert(buffers, {
+                bufnr = bufnr,
+                label = name ~= '' and vim.fn.fnamemodify(name, ':~:.') or '[No Name]',
+            })
+        end
+    end
+    return buffers
+end
+
+local function buffer_labels(buffers)
+    local labels = {}
+    for _, b in ipairs(buffers) do
+        table.insert(labels, b.label)
+    end
+    return labels
+end
+
+local function clear_modified_buffers(buffers)
+    for _, item in ipairs(buffers) do
+        local bufnr = item.bufnr
+        if vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_is_loaded(bufnr) then
+            vim.bo[bufnr].modified = false
+        end
+    end
+end
+
+local function exit_confirm_text(has_processes, has_unsaved)
+    if has_processes and has_unsaved then
+        return "Stop processes, ignore unsaved changes, and continue?", "&Stop and Ignore\n&Cancel"
+    elseif has_processes then
+        return "Stop and Continue?", "&Stop and Continue\n&Cancel"
+    else
+        return "Ignore and Continue?", "&Ignore\n&Cancel"
+    end
+end
+
 
 local function save_session(path)
     local prefix = vim.fn.fnamemodify(path, ':t')
@@ -614,95 +655,113 @@ function M.setup()
         error("Exit cancelled")
     end
 
+    local function handle_quit_guard(cancel_mode, force_global)
+        if exit_warned then return true end
+
+        local buf = vim.api.nvim_get_current_buf()
+        local wins = vim.api.nvim_list_wins()
+        local is_last_win = force_global or (#wins <= 1)
+        
+        local processes = M.get_running_processes()
+        local modified_buffers = get_modified_buffers()
+        
+        -- Case 1: Individual buffer closure warning
+        local current_proc = nil
+        for _, p in ipairs(processes) do
+            local p_buf = p.buf or (type(p.key) == 'number' and p.key)
+            if p_buf == buf then
+                current_proc = p
+                break
+            end
+        end
+
+        local is_unsaved_nofile = (vim.bo[buf].buftype == 'nofile' and vim.bo[buf].modified)
+
+        -- If it's not the last window AND not a special buffer being closed, we are silent
+        if not is_last_win and not is_unsaved_nofile then
+            if not current_proc or vim.bo[buf].filetype == 'launcher' or vim.bo[buf].filetype == 'qf' then
+                return true
+            end
+        end
+
+        -- Build the warning message
+        local msg = ""
+        
+        -- Part A: Current buffer specific warnings (always show if closing)
+        if is_unsaved_nofile then
+            msg = msg .. "Unsaved changes in scratch buffer: " .. 
+                       (vim.api.nvim_buf_get_name(buf) ~= "" and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ':t') or "[No Name]") .. "\n"
+        end
+        if current_proc and vim.bo[buf].filetype ~= 'launcher' then
+            msg = msg .. "Process [" .. (current_proc.obj or current_proc.title or "Launcher") .. "] is still running in this buffer.\n"
+        end
+
+        -- Part B: Global warnings (only if it's the last window)
+        local other_processes = {}
+        if is_last_win then
+            if #modified_buffers > 0 then
+                msg = msg .. "\nGlobal Unsaved buffers:\n  " .. table.concat(buffer_labels(modified_buffers), "\n  ") .. "\n"
+            end
+            -- Only list other processes if there are any besides the current one
+            for _, p in ipairs(processes) do
+                if p ~= current_proc then
+                    local p_buf = p.buf or (type(p.key) == 'number' and p.key)
+                    if not p_buf or not vim.api.nvim_buf_is_valid(p_buf) or vim.bo[p_buf].filetype ~= 'launcher' then
+                        table.insert(other_processes, p.obj or p.title or p.cmd or "Process")
+                    end
+                end
+            end
+            if #other_processes > 0 then
+                msg = msg .. "\nOther running processes:\n  " .. table.concat(other_processes, "\n  ") .. "\n"
+            end
+        end
+
+        if msg == "" then return true end
+        local has_processes = (current_proc and vim.bo[buf].filetype ~= 'launcher') or (is_last_win and #other_processes > 0)
+        local has_unsaved = is_unsaved_nofile or (is_last_win and #modified_buffers > 0)
+        local prompt, choices = exit_confirm_text(has_processes, has_unsaved)
+        msg = msg .. "\n" .. prompt
+        
+        vim.cmd('redraw')
+        if vim.fn.confirm(msg, choices, 2) ~= 1 then
+            if cancel_mode == 'abort' then
+                abort_exit()
+            end
+            return false
+        end
+
+        -- User said Yes.
+        if is_last_win then
+            exit_warned = true
+            terminate_all_processes(processes)
+            clear_modified_buffers(modified_buffers)
+        else
+            -- Just terminating the current one if it was an individual :q
+            if current_proc then
+                terminate_all_processes({current_proc})
+            end
+            vim.bo[buf].modified = false
+        end
+        return true
+    end
+
+    api.nvim_create_user_command('SessionQuitAll', function()
+        if handle_quit_guard('return', true) == false then
+            return
+        end
+        vim.cmd('qa')
+    end, {})
+
+    vim.cmd([[cnoreabbrev <expr> qa (getcmdtype() == ':' && getcmdline() ==# 'qa' ? 'SessionQuitAll' : 'qa')]])
+    vim.cmd([[cnoreabbrev <expr> qall (getcmdtype() == ':' && getcmdline() ==# 'qall' ? 'SessionQuitAll' : 'qall')]])
+    vim.cmd([[cnoreabbrev <expr> quita (getcmdtype() == ':' && getcmdline() ==# 'quita' ? 'SessionQuitAll' : 'quita')]])
+    vim.cmd([[cnoreabbrev <expr> quitall (getcmdtype() == ':' && getcmdline() ==# 'quitall' ? 'SessionQuitAll' : 'quitall')]])
+
     -- Handle buffer closure and global exit
     vim.api.nvim_create_autocmd("QuitPre", {
         group = exit_guard_group,
         callback = function()
-            if exit_warned then return end
-
-            local buf = vim.api.nvim_get_current_buf()
-            local wins = vim.api.nvim_list_wins()
-            local is_last_win = (#wins <= 1)
-            
-            local processes = M.get_running_processes()
-            local unsaved = get_unsaved_buffers()
-            
-            -- Case 1: Individual buffer closure warning
-            local current_proc = nil
-            for _, p in ipairs(processes) do
-                local p_buf = p.buf or (type(p.key) == 'number' and p.key)
-                if p_buf == buf then
-                    current_proc = p
-                    break
-                end
-            end
-
-            local is_unsaved_nofile = (vim.bo[buf].buftype == 'nofile' and vim.bo[buf].modified)
-
-            -- If it's not the last window AND not a special buffer being closed, we are silent
-            if not is_last_win and not is_unsaved_nofile then
-                if not current_proc or vim.bo[buf].filetype == 'launcher' or vim.bo[buf].filetype == 'qf' then
-                    return
-                end
-            end
-
-            -- Build the warning message
-            local msg = ""
-            
-            -- Part A: Current buffer specific warnings (always show if closing)
-            if is_unsaved_nofile then
-                msg = msg .. "Unsaved changes in scratch buffer: " .. 
-                           (vim.api.nvim_buf_get_name(buf) ~= "" and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ':t') or "[No Name]") .. "\n"
-            end
-            if current_proc and vim.bo[buf].filetype ~= 'launcher' then
-                msg = msg .. "Process [" .. (current_proc.obj or current_proc.title or "Launcher") .. "] is still running in this buffer.\n"
-            end
-
-            -- Part B: Global warnings (only if it's the last window)
-            if is_last_win then
-                if #unsaved > 0 then
-                    msg = msg .. "\nGlobal Unsaved buffers:\n  " .. table.concat(unsaved, "\n  ") .. "\n"
-                end
-                -- Only list other processes if there are any besides the current one
-                local other_processes = {}
-                for _, p in ipairs(processes) do
-                    if p ~= current_proc then
-                        local p_buf = p.buf or (type(p.key) == 'number' and p.key)
-                        if not p_buf or not vim.api.nvim_buf_is_valid(p_buf) or vim.bo[p_buf].filetype ~= 'launcher' then
-                            table.insert(other_processes, p.obj or p.title or p.cmd or "Process")
-                        end
-                    end
-                end
-                if #other_processes > 0 then
-                    msg = msg .. "\nOther running processes:\n  " .. table.concat(other_processes, "\n  ") .. "\n"
-                end
-            end
-
-            if msg == "" then return end
-            msg = msg .. "\nStop and Continue?"
-            
-            vim.cmd('redraw')
-            if vim.fn.confirm(msg, "&Stop and Continue\n&Cancel", 2) ~= 1 then
-                abort_exit()
-            end
-
-            -- User said Yes.
-            if is_last_win then
-                exit_warned = true
-                terminate_all_processes(processes)
-                -- Ensure nofile buffers don't block exit
-                for _, b in ipairs(vim.api.nvim_list_bufs()) do
-                    if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buftype == 'nofile' then
-                        vim.bo[b].modified = false
-                    end
-                end
-            else
-                -- Just terminating the current one if it was an individual :q
-                if current_proc then
-                    terminate_all_processes({current_proc})
-                end
-                vim.bo[buf].modified = false
-            end
+            handle_quit_guard('abort', false)
         end
     })
 end

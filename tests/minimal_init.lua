@@ -1,5 +1,8 @@
 vim.g.is_testing = true
 vim.opt.rtp:prepend(vim.fn.getcwd())
+local test_state_dir = vim.fn.tempname()
+vim.fn.mkdir(test_state_dir, 'p')
+vim.opt.directory = test_state_dir
 
 -- Dynamically locate plenary.nvim
 local data_path = vim.fn.stdpath('data')
