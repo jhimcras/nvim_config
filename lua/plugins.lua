@@ -158,9 +158,9 @@ local function MarkdownConfig()
             icons = { '  ' },
             signs = { ' ' },
             width = 'block',
-            border = true,
-            left_pad = 2,
-            right_pad = 2,
+            -- border = true,
+            -- left_pad = 2,
+            -- right_pad = 2,
         },
         checkbox = {
             unchecked = { icon = ' ' },
@@ -182,6 +182,15 @@ local function MarkdownConfig()
                 wikipedia = { pattern = 'wikipedia%.org', icon = '  ' },
                 youtube   = { pattern = 'youtube%.com',   icon = '󰗃 '  },
             },
+        },
+        code = {
+            language = true,
+            position = 'right',
+            width = 'block',
+            left_pad = 1,
+            right_pad = 1,
+            min_width = 50,
+            border = 'thin',
         },
     }
 end

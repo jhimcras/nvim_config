@@ -52,6 +52,9 @@ local function BasicSettings()
     vim.g.loaded_netrwPlugin = 1
     vim.g.loaded_matchit = 1
     vim.g.loaded_matchparen = 1
+    vim.opt.sessionoptions:remove("terminal")
+
+    vim.o.guifont = 'D2Coding:h15'
 
     api.nvim_create_autocmd('BufEnter', { callback = function()
         vim.opt_local.formatoptions:append('j')
