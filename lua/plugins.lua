@@ -148,7 +148,7 @@ local function MarkdownConfig()
             },
         },
         indent = {
-            enabled = true,
+            enabled = false,
             render_modes = true,
             per_level = 4,
             skip_level = 0,
@@ -273,6 +273,7 @@ function M.setup()
     require'smart_colorcolumn'.setup(120)
     require'smart_cursorline'.setup()
     require'lsp_setting'.setup()
+    require'wrap'.setup()
     -- require'treesitter_setting'.setup()
     -- require'complete'.setup()
     -- require'md'.setup()

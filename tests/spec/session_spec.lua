@@ -234,7 +234,7 @@ describe('session QuitPre exit guard', function()
         confirm_result = 2
         local ok = pcall(callback)
 
-        assert.is_false(ok)
+        assert.is_true(ok)
         assert.is_true(vim.bo[bufnr].modified)
         assert.same('&Ignore\n&Cancel', confirm_choices)
 

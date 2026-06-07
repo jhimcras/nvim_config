@@ -652,7 +652,6 @@ function M.setup()
 
         -- C-c might help interrupt the command line
         vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-c>", true, false, true), 'm', true)
-        error("Exit cancelled")
     end
 
     local function handle_quit_guard(cancel_mode, force_global)
