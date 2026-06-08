@@ -488,6 +488,48 @@ function M.setup()
         end
     end
 
+    M.sort_list = function()
+        local winid = vim.api.nvim_get_current_win()
+        if vim.w[winid].grep_status == 'searching' or vim.w[winid].sorting then
+            vim.notify("List is being updated. Please wait.", vim.log.levels.WARN)
+            return
+        end
+
+        local info = vim.fn.getwininfo(winid)[1]
+        local is_loclist = info.loclist == 1
+        local get_items = is_loclist and function() return vim.fn.getloclist(0) end or function() return vim.fn.getqflist() end
+        local set_items = is_loclist and function(items) vim.fn.setloclist(0, {}, 'r', { items = items }) end or function(items) vim.fn.setqflist({}, 'r', { items = items }) end
+
+        local items = get_items()
+        if #items == 0 then return end
+
+        vim.w[winid].sorting = true
+        local current_order = vim.w[winid].sort_order or 'desc' -- toggle logic below will make first press 'asc'
+        local new_order = current_order == 'asc' and 'desc' or 'asc'
+        vim.w[winid].sort_order = new_order
+
+        table.sort(items, function(a, b)
+            local a_name = vim.fn.bufname(a.bufnr)
+            local b_name = vim.fn.bufname(b.bufnr)
+            if a_name ~= b_name then
+                if new_order == 'asc' then
+                    return a_name < b_name
+                else
+                    return a_name > b_name
+                end
+            end
+            if new_order == 'asc' then
+                return a.lnum < b.lnum
+            else
+                return a.lnum > b.lnum
+            end
+        end)
+
+        set_items(items)
+        vim.w[winid].sorting = false
+        vim.notify(string.format("Sorted by name (%s)", new_order))
+    end
+
     M.delete_operator = function(_type)
         delete_lines(vim.fn.line("'["), vim.fn.line("']"))
     end
@@ -503,6 +545,10 @@ function M.setup()
                 vim.o.operatorfunc = "v:lua.require'grep'.delete_operator"
                 return 'g@'
             end, { buffer = true, expr = true, silent = true })
+
+            vim.keymap.set('n', 'sn', function()
+                require'grep'.sort_list()
+            end, { buffer = true, silent = true })
 
             local filter_cword = function()
                 local word = vim.fn.expand('<cword>')

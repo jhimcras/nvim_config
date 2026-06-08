@@ -133,6 +133,7 @@
 - [x] Fix bug where LocList titles swap when multiple windows are open.
     - Switched from `%!expr` to pre-rendered format strings in window-local status lines.
 - [x] Ensure color tags disappear when LocList is closed and reappear upon reopening.
+- [x] Feature of 'Odered by'.
 
 
 ## Project Root
