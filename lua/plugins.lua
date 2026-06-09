@@ -273,6 +273,28 @@ function M.setup()
         { 'norcalli/nvim-colorizer.lua' },
     }
 
+    if env.os.unix then
+        require'pckr'.add {
+            { 'andythigpen/nvim-coverage',
+              requires = 'nvim-lua/plenary.nvim',
+              config = function()
+                  require('coverage').setup({
+                      lang = {
+                          cpp = { coverage_file = vim.fn.getcwd() .. '/build/coverage.info' },
+                          c   = { coverage_file = vim.fn.getcwd() .. '/build/coverage.info' },
+                      },
+                  })
+                  local map = vim.keymap.set
+                  map('n', '<leader>cl', '<cmd>CoverageLoad<cr>')
+                  map('n', '<leader>cs', '<cmd>CoverageShow<cr>')
+                  map('n', '<leader>ch', '<cmd>CoverageHide<cr>')
+                  map('n', '<leader>ct', '<cmd>CoverageToggle<cr>')
+                  map('n', '<leader>cS', '<cmd>CoverageSummary<cr>')
+              end,
+            },
+        }
+    end
+
     require'prjroot'.setup()
     require'launcher'.setup()
     require'grep'.setup()
@@ -282,7 +304,7 @@ function M.setup()
     require'smart_colorcolumn'.setup(120)
     require'smart_cursorline'.setup()
     require'lsp_setting'.setup()
-    require'wrap'.setup()
+    -- require'wrap'.setup()
     -- require'treesitter_setting'.setup()
     -- require'complete'.setup()
     -- require'md'.setup()
