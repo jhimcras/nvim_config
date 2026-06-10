@@ -35,6 +35,16 @@ local function dw(s)
     return vim.fn.strdisplaywidth(s)
 end
 
+local code_query -- lazily compiled treesitter query for markdown code blocks
+local function get_code_query()
+    if code_query == nil then
+        local ok, q = pcall(vim.treesitter.query.parse, 'markdown',
+            '[(fenced_code_block) (indented_code_block)] @cb')
+        code_query = ok and q or false
+    end
+    return code_query or nil
+end
+
 -- Continuation indent (display columns) for a logical line, so wrapped rows hang
 -- under the line's text the way a browser renders it.
 function M.compute_indent(text)
@@ -194,8 +204,26 @@ function M.refresh(win)
         return config.hl and { s, config.hl } or { s }
     end
 
+    -- Code blocks are read verbatim, so exempt their lines from wrapping. Detect
+    -- them with treesitter over the visible range only (the parser is cached).
+    local in_code = {}
+    local ts_ok, parser = pcall(vim.treesitter.get_parser, buf, 'markdown')
+    local query = get_code_query()
+    if ts_ok and parser and query then
+        local tree = parser:parse({ first, last })[1]
+        if tree then
+            for _, node in query:iter_captures(tree:root(), buf, first, last) do
+                local r1, _, r2, c2 = node:range()
+                if c2 == 0 then r2 = r2 - 1 end -- node ends at start of r2: exclude r2
+                for l = r1, r2 do
+                    in_code[l] = true
+                end
+            end
+        end
+    end
+
     for lnum = first, last - 1 do
-        if lnum + 1 ~= cursor_row then
+        if lnum + 1 ~= cursor_row and not in_code[lnum] then
             local text = vim.api.nvim_buf_get_lines(buf, lnum, lnum + 1, false)[1]
             if text and #text > 0 then
                 local indent = M.compute_indent(text)

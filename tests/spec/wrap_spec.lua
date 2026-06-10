@@ -120,6 +120,23 @@ describe('wrap behavior', function()
         assert.is_true(#restored > 0) -- restored when leftcol returns to 0
     end)
 
+    it('does not wrap lines inside fenced code blocks', function()
+        wrap.setup({ left_pad = 0, right_pad = 0 })
+        local width = vim.api.nvim_win_get_width(0)
+        local long = string.rep('word ', math.ceil(width / 5) + 20)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { long, '```lua', long, '```' })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.api.nvim_win_set_cursor(0, { 4, 0 }) -- cursor off both long lines
+        wrap.refresh(0)
+
+        local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
+        local prose = vim.api.nvim_buf_get_extmarks(0, ns, { 0, 0 }, { 0, -1 }, {})
+        local in_code = vim.api.nvim_buf_get_extmarks(0, ns, { 2, 0 }, { 2, -1 }, {})
+        assert.is_true(#prose > 0)    -- prose line wrapped
+        assert.are.equal(0, #in_code) -- code line untouched
+    end)
+
     it('MarkdownWrapToggle flips the global flag', function()
         wrap.setup()
         assert.is_true(vim.g.markdown_visual_wrap_enabled)
