@@ -304,7 +304,7 @@ function M.setup()
     require'smart_colorcolumn'.setup(120)
     require'smart_cursorline'.setup()
     require'lsp_setting'.setup()
-    -- require'wrap'.setup()
+    require'wrap'.setup{ max_width = 120 }
     -- require'treesitter_setting'.setup()
     -- require'complete'.setup()
     -- require'md'.setup()
