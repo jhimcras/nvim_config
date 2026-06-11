@@ -13,11 +13,12 @@
 local ut = require 'util'
 local M = {}
 
-local saved_guicursor = nil      -- 'guicursor' before the first READ enter
-local saved_modifiable = {}      -- buf -> previous 'modifiable'
-local saved_relativenumber = {}  -- buf -> previous 'relativenumber'
-local saved_scrolloff = {}       -- buf -> previous 'scrolloff'
-local cursor_au = {}             -- buf -> CursorMoved autocmd id
+local saved_guicursor = nil          -- 'guicursor' before the first READ enter
+local saved_concealcursor = nil      -- render-markdown concealcursor.rendered before READ
+local saved_modifiable = {}          -- buf -> previous 'modifiable'
+local saved_relativenumber = {}      -- buf -> previous 'relativenumber'
+local saved_scrolloff = {}           -- buf -> previous 'scrolloff'
+local cursor_au = {}                 -- buf -> CursorMoved autocmd id
 
 -- Toggle render-markdown anti-conceal. Mirrors the plugin's own runtime mutation
 -- (render-markdown/state.lua:modify_anti_conceal) then forces a re-render. This is
@@ -32,6 +33,34 @@ local function set_anti_conceal(enabled)
         if cfg.anti_conceal then
             cfg.anti_conceal.enabled = enabled
         end
+    end
+    pcall(function() require('render-markdown.api').set(true) end)
+end
+
+-- Force render-markdown to conceal the cursor's own line too. By default it sets
+-- the 'concealcursor' win option to '' on render, so the line under the cursor
+-- shows raw concealed syntax (e.g. '- [ ]' keeps its '-'/'[ ]' instead of the
+-- single checkbox glyph). Passing 'nvic' conceals in all modes; nil restores the
+-- saved render value. Mutates state.config + every cached buffer config, like
+-- set_anti_conceal, then forces a re-render.
+local function set_conceal_cursor(value)
+    local ok, state = pcall(require, 'render-markdown.state')
+    if not ok or not state.config or not state.config.win_options
+        or not state.config.win_options.concealcursor then
+        return
+    end
+    if saved_concealcursor == nil and value ~= nil then
+        saved_concealcursor = state.config.win_options.concealcursor.rendered
+    end
+    local rendered = value ~= nil and value or (saved_concealcursor or '')
+    state.config.win_options.concealcursor.rendered = rendered
+    for _, cfg in pairs(state.cache or {}) do
+        if cfg.win_options and cfg.win_options.concealcursor then
+            cfg.win_options.concealcursor.rendered = rendered
+        end
+    end
+    if value == nil then
+        saved_concealcursor = nil
     end
     pcall(function() require('render-markdown.api').set(true) end)
 end
@@ -96,6 +125,7 @@ function M.enter(buf, win)
     vim.wo[win].scrolloff = 0
     hide_cursor()
     set_anti_conceal(false)
+    set_conceal_cursor('nvic')
 
     vim.b[buf].markdown_read_mode = true
     pcall(function() require('wrap').refresh(win) end)
@@ -131,6 +161,7 @@ function M.exit(buf, win)
     vim.b[buf].markdown_read_mode = false
     pcall(function() require('wrap').refresh(win) end)
     set_anti_conceal(true)
+    set_conceal_cursor(nil)
 
     if saved_modifiable[buf] ~= nil then
         vim.bo[buf].modifiable = saved_modifiable[buf]
