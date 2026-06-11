@@ -192,6 +192,8 @@ local function MarkdownConfig()
             min_width = 50,
             border = 'thin',
         },
+        -- Tables are rendered by lua/wrap.lua (wrapped cells + proportional widths).
+        pipe_table = { enabled = false },
     }
 end
 

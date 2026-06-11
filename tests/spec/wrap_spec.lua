@@ -42,6 +42,58 @@ describe('wrap.wrap_line', function()
     end)
 end)
 
+describe('wrap.split_cells', function()
+    it('splits rows with and without outer pipes', function()
+        assert.are.same({ 'a', 'b', 'c' }, wrap.split_cells('| a | b | c |'))
+        assert.are.same({ 'a', 'b' }, wrap.split_cells('a | b'))
+    end)
+
+    it('keeps a genuinely empty cell and unescapes \\|', function()
+        assert.are.same({ '', 'b' }, wrap.split_cells('|  | b |'))
+        assert.are.same({ 'a|b', 'c' }, wrap.split_cells('| a\\|b | c |'))
+    end)
+end)
+
+describe('wrap.parse_aligns', function()
+    it('reads alignment markers from the delimiter row', function()
+        assert.are.same({ 'left', 'right', 'center' },
+            wrap.parse_aligns('| :--- | ---: | :--: |'))
+        assert.are.same({ 'left', 'left' }, wrap.parse_aligns('| --- | --- |'))
+    end)
+end)
+
+describe('wrap.wrap_cell', function()
+    it('wraps at spaces within the cell width', function()
+        assert.are.same({ 'aaaa', 'bbbb', 'cccc' }, wrap.wrap_cell('aaaa bbbb cccc', 4))
+    end)
+
+    it('hard-breaks CJK by display width', function()
+        local r = wrap.wrap_cell(string.rep('가', 6), 4) -- 2 cols each -> 2 per row
+        assert.are.equal(3, #r)
+    end)
+
+    it('returns a single empty row for empty text', function()
+        assert.are.same({ '' }, wrap.wrap_cell('', 10))
+    end)
+end)
+
+describe('wrap.compute_table_layout', function()
+    it('keeps natural widths and distributes leftover when there is room', function()
+        local rows = { { 'ab', string.rep('x', 50) } } -- col1 natural 2, col2 natural 50
+        local w = wrap.compute_table_layout(rows, 80, 30, 5)
+        assert.are.equal(2, w[1])          -- short column stays at its content width
+        assert.is_true(w[2] > 30)          -- capped column grew past the 30 cap with leftover
+        assert.is_true(w[1] + w[2] + 7 <= 80) -- fits the budget (overhead 3N+1 = 7)
+    end)
+
+    it('shrinks columns proportionally when over budget', function()
+        local rows = { { string.rep('a', 40), string.rep('b', 40) } }
+        local w = wrap.compute_table_layout(rows, 30, 30, 5)
+        assert.is_true(w[1] >= 5 and w[2] >= 5) -- respects the min floor
+        assert.is_true(w[1] + w[2] + 7 <= 30)
+    end)
+end)
+
 describe('wrap behavior', function()
     before_each(function()
         pcall(vim.api.nvim_del_augroup_by_name, 'markdown_visual_wrap')
@@ -135,6 +187,39 @@ describe('wrap behavior', function()
         local in_code = vim.api.nvim_buf_get_extmarks(0, ns, { 2, 0 }, { 2, -1 }, {})
         assert.is_true(#prose > 0)    -- prose line wrapped
         assert.are.equal(0, #in_code) -- code line untouched
+    end)
+
+    it('renders a table as a grid and leaves the cursor row raw', function()
+        wrap.setup({ left_pad = 0, right_pad = 0 })
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+            'prose',
+            '| Name | Description |',
+            '| :--- | :---------- |',
+            '| a | a fairly long description that wraps inside the cell here |',
+            '| b | short |',
+        })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- cursor off the table
+        wrap.refresh(0)
+
+        local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
+        -- every table row carries decorations (conceal/overlay/virt_lines)
+        for _, lnum in ipairs({ 1, 2, 3, 4 }) do
+            local marks = vim.api.nvim_buf_get_extmarks(0, ns, { lnum, 0 }, { lnum, -1 }, {})
+            assert.is_true(#marks > 0)
+        end
+
+        -- park the cursor on a data row: that row is left raw (no conceal extmark)
+        vim.api.nvim_win_set_cursor(0, { 4, 0 })
+        wrap.refresh(0)
+        local on_cursor = vim.api.nvim_buf_get_extmarks(0, ns, { 3, 0 }, { 3, -1 },
+            { details = true })
+        local has_conceal = false
+        for _, m in ipairs(on_cursor) do
+            if m[4] and m[4].conceal ~= nil then has_conceal = true end
+        end
+        assert.is_false(has_conceal)
     end)
 
     it('MarkdownWrapToggle flips the global flag', function()
