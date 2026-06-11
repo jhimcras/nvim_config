@@ -114,6 +114,29 @@ describe('wrap behavior', function()
         assert.is_false(vim.wo.wrap)
     end)
 
+    it('keeps line numbers visible in the custom statuscolumn', function()
+        wrap.setup({ left_pad = 2 })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        -- The reading margin must not blank out the number column.
+        assert.is_truthy(vim.wo.statuscolumn:find('v:lnum'))
+        assert.is_truthy(vim.wo.statuscolumn:find('v:relnum'))
+    end)
+
+    it('restores statuscolumn when the window switches to a non-markdown buffer', function()
+        wrap.setup({ left_pad = 2 })
+        vim.wo.statuscolumn = '' -- window-local; normalize any leak from a prior test
+        local original = vim.wo.statuscolumn
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        assert.are_not.equal(original, vim.wo.statuscolumn) -- applied
+
+        -- Same window, now showing a non-markdown buffer.
+        vim.bo.filetype = ''
+        vim.api.nvim_exec_autocmds('WinEnter', {})
+        assert.are.equal(original, vim.wo.statuscolumn) -- restored, numbers return
+    end)
+
     it('decorates non-cursor long lines and skips the cursor line', function()
         wrap.setup()
         local width = vim.api.nvim_win_get_width(0)

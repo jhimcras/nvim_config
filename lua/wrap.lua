@@ -615,6 +615,14 @@ local function schedule_refresh(win)
     end)
 end
 
+-- A non-empty 'statuscolumn' replaces the default number column entirely, so we
+-- rebuild signs + number/relativenumber ourselves and append the reading margin.
+-- Numbers render only on real lines (v:virtnum == 0), not on wrapped/virtual ones.
+local function build_statuscolumn(pad)
+    local num = "%{(&nu||&rnu) ? (v:virtnum==0 ? (v:relnum==0 ? v:lnum : v:relnum) : '') : ''}"
+    return '%s%=' .. num .. string.rep(' ', pad)
+end
+
 function M.apply(win)
     win = win or 0
     local w = win == 0 and vim.api.nvim_get_current_win() or win
@@ -633,7 +641,7 @@ function M.apply(win)
     vim.wo[w].linebreak = false
     vim.wo[w].breakindent = false
     if config.left_pad > 0 then
-        vim.wo[w].statuscolumn = string.rep(' ', config.left_pad)
+        vim.wo[w].statuscolumn = build_statuscolumn(config.left_pad)
     end
     if vim.wo[w].conceallevel < 2 then
         vim.wo[w].conceallevel = 2
@@ -673,6 +681,10 @@ local function apply_current_window()
     end
     if is_markdown_buffer(0) then
         M.apply(0)
+    elseif saved_state[vim.api.nvim_get_current_win()] then
+        -- The window's 'statuscolumn' (window-local) leaks to non-markdown
+        -- buffers shown in the same window; restore it when leaving markdown.
+        M.disable(0)
     end
 end
 
