@@ -307,6 +307,7 @@ function M.setup()
     require'smart_cursorline'.setup()
     require'lsp_setting'.setup()
     require'wrap'.setup{ max_width = 120 }
+    require'read_mode'.setup()
     -- require'treesitter_setting'.setup()
     -- require'complete'.setup()
     -- require'md'.setup()

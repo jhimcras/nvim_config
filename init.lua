@@ -252,8 +252,6 @@ local function KeyMappings()
     ut.nnoremap('<c-->', function() vim.g.neovide_scale_factor = vim.g.neovide_scale_factor * (1/1.25) end)
     ut.nnoremap('<c-0>', function() vim.g.neovide_scale_factor = 1.0 end)
 
-    ut.nnoremap('<leader>r', function() if vim.o.relativenumber == true then vim.o.relativenumber = false else vim.o.relativenumber = true end end)
-
     local function GetIMEStatus()
         local output = vim.fn.system('D:\\temp\\immcheck\\main.exe')
         if vim.v.shell_error ~= 0 then
