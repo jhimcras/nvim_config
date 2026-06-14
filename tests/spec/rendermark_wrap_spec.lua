@@ -1,4 +1,4 @@
-local wrap = require('wrap')
+local wrap = require('rendermark.wrap')
 
 describe('wrap.compute_indent', function()
     it('returns hanging indent for list/quote/paragraph lines', function()
@@ -40,6 +40,29 @@ describe('wrap.wrap_line', function()
         assert.is_truthy(r.first_end_byte)
         assert.are.equal(4, #r.lines) -- 2 chars/row -> 5 rows total -> 4 continuations
     end)
+
+    it('reports raw byte spans for continuation rows', function()
+        local text = 'aaaa bbbb cccc'
+        local r = wrap.wrap_line(text, 9, 9, 0)
+        assert.are.same({ { 10, 14 } }, r.spans)
+        assert.are.equal('cccc', text:sub(r.spans[1][1] + 1, r.spans[1][2]))
+    end)
+
+    it('reports CJK byte spans matching the continuation rows', function()
+        local text = string.rep('가', 10) -- 3 bytes per char, 2 chars per row
+        local r = wrap.wrap_line(text, 4, 4, 0)
+        assert.are.equal(#r.lines, #r.spans)
+        for k, span in ipairs(r.spans) do
+            assert.are.equal(r.lines[k], text:sub(span[1] + 1, span[2]))
+        end
+    end)
+
+    it('excludes trimmed trailing spaces from the span', function()
+        local text = 'xxxx yyyy  '
+        local r = wrap.wrap_line(text, 4, 4, 0)
+        assert.are.same({ 'yyyy' }, r.lines)
+        assert.are.same({ { 5, 9 } }, r.spans)
+    end)
 end)
 
 describe('wrap.split_cells', function()
@@ -51,6 +74,30 @@ describe('wrap.split_cells', function()
     it('keeps a genuinely empty cell and unescapes \\|', function()
         assert.are.same({ '', 'b' }, wrap.split_cells('|  | b |'))
         assert.are.same({ 'a|b', 'c' }, wrap.split_cells('| a\\|b | c |'))
+    end)
+end)
+
+describe('wrap.split_cells_pos', function()
+    it('returns per-char source byte positions', function()
+        local cells = wrap.split_cells_pos('| a | b |')
+        assert.are.equal('a', cells[1].text)
+        assert.are.same({ { c = 'a', b = 2 } }, cells[1].chars)
+        assert.are.equal('b', cells[2].text)
+        assert.are.same({ { c = 'b', b = 6 } }, cells[2].chars)
+    end)
+
+    it('maps an escaped pipe to the pipe byte', function()
+        local cells = wrap.split_cells_pos('| a\\|b | c |')
+        assert.are.equal('a|b', cells[1].text)
+        assert.are.same({
+            { c = 'a', b = 2 }, { c = '|', b = 4 }, { c = 'b', b = 5 },
+        }, cells[1].chars)
+    end)
+
+    it('tracks multibyte cell content positions', function()
+        local cells = wrap.split_cells_pos('| 가 | b |')
+        assert.are.same({ { c = '가', b = 2 } }, cells[1].chars)
+        assert.are.same({ { c = 'b', b = 8 } }, cells[2].chars)
     end)
 end)
 
@@ -74,6 +121,48 @@ describe('wrap.wrap_cell', function()
 
     it('returns a single empty row for empty text', function()
         assert.are.same({ '' }, wrap.wrap_cell('', 10))
+    end)
+end)
+
+describe('wrap.flatten_runs', function()
+    it('splits overlapping intervals into stacked runs', function()
+        local runs = wrap.flatten_runs({
+            { s = 0, e = 10, hl = 'A', priority = 100, seq = 1 },
+            { s = 4, e = 6, hl = 'B', priority = 100, seq = 2 },
+        }, 10)
+        assert.are.same({
+            { s = 0, e = 4, hl = { 'A' } },
+            { s = 4, e = 6, hl = { 'A', 'B' } },
+            { s = 6, e = 10, hl = { 'A' } },
+        }, runs)
+    end)
+
+    it('orders the hl stack by priority before capture order', function()
+        local runs = wrap.flatten_runs({
+            { s = 0, e = 2, hl = 'High', priority = 110, seq = 1 },
+            { s = 0, e = 2, hl = 'Low', priority = 100, seq = 2 },
+        }, 2)
+        assert.are.same({ { s = 0, e = 2, hl = { 'Low', 'High' } } }, runs)
+    end)
+
+    it('keeps conceal and its anchor on every slice of the interval', function()
+        local runs = wrap.flatten_runs({
+            { s = 2, e = 4, conceal = '', priority = 100, seq = 1 },
+            { s = 3, e = 6, hl = 'A', priority = 100, seq = 2 },
+        }, 8)
+        assert.are.same({
+            { s = 2, e = 3, conceal = '', conceal_anchor = 2 },
+            { s = 3, e = 4, hl = { 'A' }, conceal = '', conceal_anchor = 2 },
+            { s = 4, e = 6, hl = { 'A' } },
+        }, runs)
+    end)
+
+    it('lets a higher-priority conceal win', function()
+        local runs = wrap.flatten_runs({
+            { s = 0, e = 2, conceal = 'x', priority = 100, seq = 1 },
+            { s = 0, e = 2, conceal = '', priority = 110, seq = 2 },
+        }, 2)
+        assert.are.equal('', runs[1].conceal)
     end)
 end)
 
@@ -112,6 +201,15 @@ describe('wrap behavior', function()
         vim.bo.filetype = 'markdown'
         vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
         assert.is_false(vim.wo.wrap)
+    end)
+
+    it('starts the treesitter highlighter on markdown buffers', function()
+        wrap.setup()
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'some **bold** text' })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        local buf = vim.api.nvim_get_current_buf()
+        assert.is_truthy(vim.treesitter.highlighter.active[buf])
     end)
 
     it('keeps line numbers visible in the custom statuscolumn', function()
@@ -212,6 +310,34 @@ describe('wrap behavior', function()
         assert.are.equal(0, #in_code) -- code line untouched
     end)
 
+    it('styles and conceals inline markup in continuation rows', function()
+        wrap.setup({ left_pad = 0, right_pad = 0 })
+        local width = vim.api.nvim_win_get_width(0)
+        local long = string.rep('x', width) .. ' **bold** end'
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { long, 'short' })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.api.nvim_win_set_cursor(0, { 2, 0 }) -- cursor off the long line
+        wrap.refresh(0)
+
+        local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
+        local marks = vim.api.nvim_buf_get_extmarks(0, ns, { 0, 0 }, { 0, -1 },
+            { details = true })
+        local joined, bold_hl = {}, nil
+        for _, m in ipairs(marks) do
+            for _, row in ipairs(m[4].virt_lines or {}) do
+                for _, chunk in ipairs(row) do
+                    joined[#joined + 1] = chunk[1]
+                    if chunk[1] == 'bold' then bold_hl = chunk[2] end
+                end
+            end
+        end
+        local text = table.concat(joined)
+        assert.is_truthy(text:find('bold', 1, true)) -- content kept
+        assert.is_falsy(text:find('*', 1, true))     -- ** markers concealed
+        assert.is_truthy(vim.inspect(bold_hl):find('markup%.strong'))
+    end)
+
     it('renders a table as a grid and leaves the cursor row raw', function()
         wrap.setup({ left_pad = 0, right_pad = 0 })
         vim.api.nvim_buf_set_lines(0, 0, -1, false, {
@@ -243,6 +369,52 @@ describe('wrap behavior', function()
             if m[4] and m[4].conceal ~= nil then has_conceal = true end
         end
         assert.is_false(has_conceal)
+    end)
+
+    it('styles table cells, conceals markers, and keeps the grid aligned', function()
+        wrap.setup({ left_pad = 0, right_pad = 0 })
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+            'prose',
+            '| **Head** | Other |',
+            '| :------- | :---- |',
+            '| `code` cell | plain |',
+        })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- cursor off the table
+        wrap.refresh(0)
+
+        local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
+        local marks = vim.api.nvim_buf_get_extmarks(0, ns, { 0, 0 }, { -1, -1 },
+            { details = true })
+        local rows, hls = {}, {}
+        local function take(chunks)
+            local t = {}
+            for _, ch in ipairs(chunks) do
+                t[#t + 1] = ch[1]
+                hls[#hls + 1] = vim.inspect(ch[2])
+            end
+            rows[#rows + 1] = table.concat(t)
+        end
+        for _, m in ipairs(marks) do
+            if m[4].virt_text and m[4].virt_text_pos == 'overlay' then
+                take(m[4].virt_text)
+            end
+            for _, row in ipairs(m[4].virt_lines or {}) do
+                take(row)
+            end
+        end
+
+        assert.is_true(#rows >= 5) -- top border, header, sep, data row, bottom
+        local grid_w = vim.fn.strdisplaywidth(rows[1])
+        for _, r in ipairs(rows) do
+            assert.are.equal(grid_w, vim.fn.strdisplaywidth(r)) -- aligned grid
+            assert.is_falsy(r:find('*', 1, true)) -- ** concealed
+            assert.is_falsy(r:find('`', 1, true)) -- backticks concealed
+        end
+        local blob = table.concat(hls)
+        assert.is_truthy(blob:find('markup%.strong'))
+        assert.is_truthy(blob:find('markup%.raw'))
     end)
 
     it('MarkdownWrapToggle flips the global flag', function()

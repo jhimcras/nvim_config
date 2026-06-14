@@ -270,6 +270,15 @@ While snippets are great for statements and function templates, function snippet
 - [ ] Use dimming for checked tasks instead of strikethrough.
 - [x] Fix LSP floating window rendering (using `override-buftype-nofile`).
 
+### `rendermark` plugin (replacing `render-markdown.nvim`)
+- [x] Consolidate markdown rendering into a `lua/rendermark/` plugin (soft-wrap engine `wrap.lua`, READ mode `read.lua`). All coupling to the external `render-markdown.nvim` is isolated in `rendermark/rm_compat.lua` — its setup plus the anti-conceal/concealcursor pokes.
+- [ ] Take over rendering from `render-markdown.nvim` incrementally, then drop the dependency:
+    - [ ] Headings (icons, block-width background).
+    - [ ] Checkbox glyphs (unchecked/checked/custom todo).
+    - [ ] Link icons (web/github/google/reddit/wikipedia/youtube, wiki/image/email).
+    - [ ] Code block backgrounds, borders, language labels.
+    - [ ] Once the above land in `rendermark`, delete `rm_compat.lua` and remove `render-markdown.nvim` from `plugins.lua`.
+
 
 ## Session
 

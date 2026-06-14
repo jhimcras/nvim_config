@@ -4,66 +4,26 @@
 -- representation regardless of where the (hidden) cursor sits. This requires
 -- neutralising the two raw fallbacks that exist in normal editing:
 --   * render-markdown "anti-conceal" (reveals raw syntax on the cursor line)
---   * wrap.lua leaving the cursor line unwrapped on a single row
+--   * the wrap engine leaving the cursor line unwrapped on a single row
 -- Navigation is pure scrolling; editing is blocked via 'nomodifiable'.
 --
 -- Markdown opens in READ mode by default. <leader>r enters from Normal mode and
 -- <Esc> returns to Normal.
 
 local ut = require 'util'
+local wrap = require 'rendermark.wrap'
+local rm = require 'rendermark.rm_compat'
 local M = {}
 
 local saved_guicursor = nil          -- 'guicursor' before the first READ enter
-local saved_concealcursor = nil      -- render-markdown concealcursor.rendered before READ
 local saved_modifiable = {}          -- buf -> previous 'modifiable'
-local saved_relativenumber = {}      -- buf -> previous 'relativenumber'
-local saved_scrolloff = {}           -- buf -> previous 'scrolloff'
+local saved_relativenumber = {}      -- win -> previous 'relativenumber'
+local saved_scrolloff = {}           -- win -> previous 'scrolloff'
 local cursor_au = {}                 -- buf -> CursorMoved autocmd id
+local visuals_active = {}            -- win -> true while READ window/global visuals applied
 
--- Toggle render-markdown anti-conceal. Mirrors the plugin's own runtime mutation
--- (render-markdown/state.lua:modify_anti_conceal) then forces a re-render. This is
--- global but restored on exit, so normal editing keeps anti-conceal.
-local function set_anti_conceal(enabled)
-    local ok, state = pcall(require, 'render-markdown.state')
-    if not ok or not state.config or not state.config.anti_conceal then
-        return
-    end
-    state.config.anti_conceal.enabled = enabled
-    for _, cfg in pairs(state.cache or {}) do
-        if cfg.anti_conceal then
-            cfg.anti_conceal.enabled = enabled
-        end
-    end
-    pcall(function() require('render-markdown.api').set(true) end)
-end
-
--- Force render-markdown to conceal the cursor's own line too. By default it sets
--- the 'concealcursor' win option to '' on render, so the line under the cursor
--- shows raw concealed syntax (e.g. '- [ ]' keeps its '-'/'[ ]' instead of the
--- single checkbox glyph). Passing 'nvic' conceals in all modes; nil restores the
--- saved render value. Mutates state.config + every cached buffer config, like
--- set_anti_conceal, then forces a re-render.
-local function set_conceal_cursor(value)
-    local ok, state = pcall(require, 'render-markdown.state')
-    if not ok or not state.config or not state.config.win_options
-        or not state.config.win_options.concealcursor then
-        return
-    end
-    if saved_concealcursor == nil and value ~= nil then
-        saved_concealcursor = state.config.win_options.concealcursor.rendered
-    end
-    local rendered = value ~= nil and value or (saved_concealcursor or '')
-    state.config.win_options.concealcursor.rendered = rendered
-    for _, cfg in pairs(state.cache or {}) do
-        if cfg.win_options and cfg.win_options.concealcursor then
-            cfg.win_options.concealcursor.rendered = rendered
-        end
-    end
-    if value == nil then
-        saved_concealcursor = nil
-    end
-    pcall(function() require('render-markdown.api').set(true) end)
-end
+-- Anti-conceal / concealcursor toggles live in rendermark.rm_compat (the sole
+-- render-markdown.nvim contact point): rm.set_anti_conceal / rm.set_conceal_cursor.
 
 -- Point the cursor highlight at the editor background so the cursor is invisible.
 -- GUI/Neovide-targeted; this is the spot most likely to need per-terminal tuning.
@@ -89,7 +49,7 @@ local function restore_cursor()
 end
 
 -- Keep the hidden cursor pinned to column 0 with no horizontal scroll: leftcol > 0
--- makes wrap.lua bail out and show raw text (wrap.lua:508).
+-- makes the wrap engine bail out and show raw text (rendermark/wrap.lua refresh).
 local function pin_cursor(buf)
     return vim.api.nvim_create_autocmd('CursorMoved', {
         buffer = buf,
@@ -104,6 +64,64 @@ local function pin_cursor(buf)
     })
 end
 
+-- Window-local + global READ visuals. Kept separate from the persistent
+-- per-buffer read_mode flag so they can be suspended when a non-READ buffer is
+-- shown in the window (e.g. a <C-o> jump) and resumed on return. Idempotent via
+-- visuals_active[win].
+local function apply_visuals(buf, win)
+    if visuals_active[win] then
+        return
+    end
+    visuals_active[win] = true
+    vim.wo[win].cursorline = false
+    -- No cursor in READ mode, so relative numbers are meaningless: force them off
+    -- (number stays as configured). Restored on suspend/exit.
+    saved_relativenumber[win] = vim.wo[win].relativenumber
+    vim.wo[win].relativenumber = false
+    -- scrolloff keeps the (hidden, pinned) cursor a margin from the edge, which
+    -- fights <C-e>/<C-y> when a wrapped line sits at the window edge (k snaps back).
+    saved_scrolloff[win] = vim.wo[win].scrolloff
+    vim.wo[win].scrolloff = 0
+    hide_cursor()
+    rm.set_anti_conceal(false)
+    rm.set_conceal_cursor('nvic')
+    pcall(function() wrap.refresh(win) end)
+end
+
+local function clear_visuals(win)
+    if not visuals_active[win] then
+        return
+    end
+    visuals_active[win] = nil
+    if vim.api.nvim_win_is_valid(win) then
+        vim.wo[win].cursorline = true
+        if saved_relativenumber[win] ~= nil then
+            vim.wo[win].relativenumber = saved_relativenumber[win]
+        end
+        if saved_scrolloff[win] ~= nil then
+            vim.wo[win].scrolloff = saved_scrolloff[win]
+        end
+    end
+    saved_relativenumber[win] = nil
+    saved_scrolloff[win] = nil
+    restore_cursor()
+    rm.set_anti_conceal(true)
+    rm.set_conceal_cursor(nil)
+end
+
+-- Reconcile the window's visuals with whether its current buffer is in READ
+-- mode. Fires on buffer/window switches so a same-window <C-o> jump to a
+-- non-markdown buffer suspends the visuals, and a <C-i> back resumes them.
+local function sync()
+    local win = vim.api.nvim_get_current_win()
+    local buf = vim.api.nvim_get_current_buf()
+    if vim.b[buf].read_mode then
+        apply_visuals(buf, win)
+    else
+        clear_visuals(win)
+    end
+end
+
 function M.enter(buf, win)
     buf = buf or vim.api.nvim_get_current_buf()
     win = win or vim.api.nvim_get_current_win()
@@ -114,21 +132,9 @@ function M.enter(buf, win)
 
     saved_modifiable[buf] = vim.bo[buf].modifiable
     vim.bo[buf].modifiable = false
-    vim.wo[win].cursorline = false
-    -- No cursor in READ mode, so relative numbers are meaningless: force them off
-    -- (number stays as configured). Restored on exit.
-    saved_relativenumber[buf] = vim.wo[win].relativenumber
-    vim.wo[win].relativenumber = false
-    -- scrolloff keeps the (hidden, pinned) cursor a margin from the edge, which
-    -- fights <C-e>/<C-y> when a wrapped line sits at the window edge (k snaps back).
-    saved_scrolloff[buf] = vim.wo[win].scrolloff
-    vim.wo[win].scrolloff = 0
-    hide_cursor()
-    set_anti_conceal(false)
-    set_conceal_cursor('nvic')
 
     vim.b[buf].markdown_read_mode = true
-    pcall(function() require('wrap').refresh(win) end)
+    apply_visuals(buf, win)
 
     ut.nnoremap('j', '<C-e>', { buffer = buf })
     ut.nnoremap('k', '<C-y>', { buffer = buf })
@@ -159,9 +165,7 @@ function M.exit(buf, win)
     pcall(vim.keymap.del, 'n', '<esc>', { buffer = buf })
 
     vim.b[buf].markdown_read_mode = false
-    pcall(function() require('wrap').refresh(win) end)
-    set_anti_conceal(true)
-    set_conceal_cursor(nil)
+    pcall(function() wrap.refresh(win) end)
 
     if saved_modifiable[buf] ~= nil then
         vim.bo[buf].modifiable = saved_modifiable[buf]
@@ -169,16 +173,8 @@ function M.exit(buf, win)
     else
         vim.bo[buf].modifiable = true
     end
-    if saved_relativenumber[buf] ~= nil then
-        vim.wo[win].relativenumber = saved_relativenumber[buf]
-        saved_relativenumber[buf] = nil
-    end
-    if saved_scrolloff[buf] ~= nil then
-        vim.wo[win].scrolloff = saved_scrolloff[buf]
-        saved_scrolloff[buf] = nil
-    end
-    vim.wo[win].cursorline = true
-    restore_cursor()
+
+    clear_visuals(win)
 end
 
 function M.toggle(buf, win)
@@ -191,12 +187,19 @@ function M.toggle(buf, win)
 end
 
 function M.setup()
+    -- Suspend/resume READ visuals when the window's current buffer changes.
+    -- BufEnter catches same-window <C-o>/<C-i> jumps (no WinEnter fires there);
+    -- WinEnter catches window switches.
+    vim.api.nvim_create_autocmd({ 'BufEnter', 'WinEnter' }, {
+        callback = sync,
+    })
+
     vim.api.nvim_create_autocmd('FileType', {
         pattern = 'markdown',
         callback = function(args)
             local buf = args.buf
             ut.nnoremap('<leader>r', function() M.enter() end, { buffer = buf })
-            -- Markdown opens in READ mode by default. Defer so wrap.lua and
+            -- Markdown opens in READ mode by default. Defer so the wrap engine and
             -- render-markdown have finished attaching to the buffer.
             vim.schedule(function()
                 if vim.api.nvim_buf_is_valid(buf)

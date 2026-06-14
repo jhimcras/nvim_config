@@ -28,6 +28,7 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 | `lua/grep.lua` | RipGrep integration |
 | `lua/msbuild.lua` | MSBuild integration |
 | `lua/util.lua` | Shared utilities (memoize, serialize, keymaps, …) |
+| `lua/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables, distraction-free READ mode |
 
 ## Plugins
 
@@ -59,7 +60,7 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 **UI**
 - `sam4llis/nvim-tundra` — colorscheme
 - `norcalli/nvim-colorizer.lua` — color preview
-- `MeanderingProgrammer/render-markdown.nvim` — rendered markdown in buffer
+- `MeanderingProgrammer/render-markdown.nvim` — rendered markdown in buffer (configured via `lua/rendermark/`; headings/checkboxes/links/code blocks, slated to be superseded by the `rendermark` plugin)
 
 **Misc**
 - `weirongxu/plantuml-previewer.vim` — PlantUML preview
@@ -72,4 +73,4 @@ Tests use [plenary.nvim](https://github.com/nvim-lua/plenary.nvim).
 bash run_tests.sh
 ```
 
-Specs in `tests/spec/`: `util_spec.lua`, `prjroot_spec.lua`, `git_spec.lua`.
+Specs in `tests/spec/`: `util_spec.lua`, `prjroot_spec.lua`, `git_spec.lua`, `rendermark_wrap_spec.lua`.
