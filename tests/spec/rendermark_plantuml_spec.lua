@@ -8,6 +8,20 @@ local function make_buf(lines)
     return buf
 end
 
+local function plantuml_marks(buf)
+    return vim.api.nvim_buf_get_extmarks(buf, plantuml._test.namespace, 0, -1, { details = true })
+end
+
+local function concealed_rows(buf)
+    local rows = {}
+    for _, mark in ipairs(plantuml_marks(buf)) do
+        if mark[4].conceal == '' then
+            rows[mark[2]] = true
+        end
+    end
+    return rows
+end
+
 describe('rendermark.plantuml', function()
     local orig_exepath
     local orig_filereadable
@@ -142,7 +156,7 @@ describe('rendermark.plantuml', function()
 
         plantuml.refresh(buf)
         vim.wait(1000, function()
-            local marks = vim.api.nvim_buf_get_extmarks(buf, plantuml._test.namespace, 0, -1, { details = true })
+            local marks = plantuml_marks(buf)
             for _, mark in ipairs(marks) do
                 local vt = mark[4].virt_text
                 if vt and vt[1] and vt[1][1]:find('!%[plantuml%]%(.*%.png%)') then
@@ -153,12 +167,17 @@ describe('rendermark.plantuml', function()
         end)
 
         local found = false
-        local marks = vim.api.nvim_buf_get_extmarks(buf, plantuml._test.namespace, 0, -1, { details = true })
+        local marks = plantuml_marks(buf)
         for _, mark in ipairs(marks) do
             local vt = mark[4].virt_text
             found = found or (vt and vt[1] and vt[1][1]:find('!%[plantuml%]%(.*%.png%)') ~= nil)
         end
         assert.is_true(found)
+        local rows = concealed_rows(buf)
+        for row = 1, 5 do
+            assert.is_true(rows[row])
+        end
+        assert.is_true(vim.wo[0].conceallevel >= 2)
     end)
 
     it('reports render status in debug output', function()
@@ -289,11 +308,12 @@ describe('rendermark.plantuml', function()
             '```',
         })
         vim.b[buf].markdown_read_mode = true
+        vim.wo[0].concealcursor = ''
         vim.api.nvim_win_set_cursor(0, { 2, 0 })
 
         plantuml.refresh(buf)
         vim.wait(1000, function()
-            local marks = vim.api.nvim_buf_get_extmarks(buf, plantuml._test.namespace, 0, -1, { details = true })
+            local marks = plantuml_marks(buf)
             for _, mark in ipairs(marks) do
                 local vt = mark[4].virt_text
                 if vt and vt[1] and vt[1][1]:find('!%[plantuml%]%(.*%.png%)') then
@@ -304,12 +324,21 @@ describe('rendermark.plantuml', function()
         end)
 
         local found = false
-        local marks = vim.api.nvim_buf_get_extmarks(buf, plantuml._test.namespace, 0, -1, { details = true })
+        local marks = plantuml_marks(buf)
         for _, mark in ipairs(marks) do
             local vt = mark[4].virt_text
             found = found or (vt and vt[1] and vt[1][1]:find('!%[plantuml%]%(.*%.png%)') ~= nil)
         end
         assert.is_true(found)
+        local rows = concealed_rows(buf)
+        for row = 0, 4 do
+            assert.is_true(rows[row])
+        end
+        assert.are.equal('nvic', vim.wo[0].concealcursor)
+
+        vim.b[buf].markdown_read_mode = false
+        plantuml.refresh(buf)
+        assert.are.equal('', vim.wo[0].concealcursor)
     end)
 
     it('cleans buffer temp files', function()

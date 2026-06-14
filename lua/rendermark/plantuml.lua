@@ -262,6 +262,38 @@ local function image_link(path)
     return '![plantuml](' .. path:gsub('\\', '/') .. ')'
 end
 
+local function ensure_conceal_windows(buf, conceal_cursor)
+    local st = states[buf]
+    if st then
+        st.saved_concealcursor = st.saved_concealcursor or {}
+    end
+    local visible = {}
+    for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+        if vim.api.nvim_win_is_valid(win) then
+            visible[win] = true
+            if vim.wo[win].conceallevel < 2 then
+                vim.wo[win].conceallevel = 2
+            end
+            if conceal_cursor then
+                if st and st.saved_concealcursor[win] == nil and vim.wo[win].concealcursor ~= 'nvic' then
+                    st.saved_concealcursor[win] = vim.wo[win].concealcursor
+                end
+                vim.wo[win].concealcursor = 'nvic'
+            elseif st and st.saved_concealcursor[win] ~= nil then
+                vim.wo[win].concealcursor = st.saved_concealcursor[win]
+                st.saved_concealcursor[win] = nil
+            end
+        end
+    end
+    if st and st.saved_concealcursor then
+        for win in pairs(st.saved_concealcursor) do
+            if not visible[win] or not vim.api.nvim_win_is_valid(win) then
+                st.saved_concealcursor[win] = nil
+            end
+        end
+    end
+end
+
 local function set_spinner(st, buf, block)
     local frames = config.spinner
     local frame = frames[((st.spinner or 1) - 1) % #frames + 1]
@@ -281,7 +313,8 @@ local function conceal_line(buf, row)
     })
 end
 
-local function set_image_link(buf, block, path)
+local function set_image_link(buf, block, path, conceal_cursor)
+    ensure_conceal_windows(buf, conceal_cursor)
     for row = block.start_row, block.end_row do
         conceal_line(buf, row)
     end
@@ -525,6 +558,9 @@ function M.refresh(buf)
     local read_mode = vim.b[buf].markdown_read_mode or vim.b[buf].read_mode
     local st = state_for(buf)
     local active_still_present = false
+    if not read_mode then
+        ensure_conceal_windows(buf, false)
+    end
 
     for _, block in ipairs(blocks) do
         local is_active = active
@@ -544,7 +580,7 @@ function M.refresh(buf)
                 set_error(buf, block, entry.error)
             end
         elseif entry.status == 'ready' then
-            set_image_link(buf, block, entry.png)
+            set_image_link(buf, block, entry.png, read_mode)
         elseif entry.status == 'pending' then
             set_spinner(st, buf, block)
         elseif entry.status == 'error' then
