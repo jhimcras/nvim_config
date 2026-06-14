@@ -140,63 +140,6 @@ local function LspStatusConfig()
     }
 end
 
-local function MarkdownConfig()
-    require'render-markdown'.setup{
-        overrides = {
-            buftype = {
-                nofile = { enabled = false },
-            },
-        },
-        indent = {
-            enabled = false,
-            render_modes = true,
-            per_level = 4,
-            skip_level = 0,
-            skip_heading = true,
-        },
-        heading = {
-            icons = { '  ' },
-            signs = { ' ' },
-            width = 'block',
-            -- border = true,
-            -- left_pad = 2,
-            -- right_pad = 2,
-        },
-        checkbox = {
-            unchecked = { icon = ' ' },
-            checked   = { icon = ' ' },
-            custom = {
-                todo = { raw = '[-]', rendered = ' ', highlight = 'RenderMarkdownTodo', scope_highlight = nil },
-            },
-        },
-        link = {
-            image     = ' ',
-            email     = ' ',
-            hyperlink = ' ',
-            wiki      = { icon = ' ' },
-            custom = {
-                web       = { pattern = '^http',          icon = ' '  },
-                github    = { pattern = 'github%.com',    icon = '  ' },
-                google    = { pattern = 'google%.com',    icon = '  ' },
-                reddit    = { pattern = 'reddit%.com',    icon = '  ' },
-                wikipedia = { pattern = 'wikipedia%.org', icon = '  ' },
-                youtube   = { pattern = 'youtube%.com',   icon = '󰗃 '  },
-            },
-        },
-        code = {
-            language = true,
-            position = 'right',
-            width = 'block',
-            left_pad = 1,
-            right_pad = 1,
-            min_width = 50,
-            border = 'thin',
-        },
-        -- Tables are rendered by lua/wrap.lua (wrapped cells + proportional widths).
-        pipe_table = { enabled = false },
-    }
-end
-
 local function bootstrap_pckr()
     local pckr_path = vim.fn.stdpath("data") .. "/pckr/pckr.nvim"
     if not (vim.uv or vim.loop).fs_stat(pckr_path) then
@@ -269,7 +212,7 @@ function M.setup()
         {
             'MeanderingProgrammer/render-markdown.nvim',
             requires = {'nvim-treesitter/nvim-treesitter'},
-            config = MarkdownConfig,
+            config = function() require'rendermark.rm_compat'.setup() end,
             ft = { 'markdown' },
         },
         { 'norcalli/nvim-colorizer.lua' },
@@ -306,8 +249,7 @@ function M.setup()
     require'smart_colorcolumn'.setup(120)
     require'smart_cursorline'.setup()
     require'lsp_setting'.setup()
-    require'wrap'.setup{ max_width = 120 }
-    require'read_mode'.setup()
+    require'rendermark'.setup{ max_width = 120 }
     -- require'treesitter_setting'.setup()
     -- require'complete'.setup()
     -- require'md'.setup()
