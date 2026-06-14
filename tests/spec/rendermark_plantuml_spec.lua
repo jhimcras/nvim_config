@@ -19,6 +19,7 @@ describe('rendermark.plantuml', function()
         pcall(vim.api.nvim_del_user_command, 'RendermarkPlantumlRefresh')
         pcall(vim.api.nvim_del_user_command, 'RendermarkPlantumlClean')
         vim.g.rendermark_plantuml_jar = nil
+        vim.env.RENDERMARK_PLANTUML_JAR = nil
         vim.env.PLANTUML_JAR = nil
         orig_exepath = vim.fn.exepath
         orig_filereadable = vim.fn.filereadable
@@ -34,6 +35,7 @@ describe('rendermark.plantuml', function()
         vim.system = orig_system
         vim.notify = orig_notify
         vim.g.rendermark_plantuml_jar = nil
+        vim.env.RENDERMARK_PLANTUML_JAR = nil
         vim.env.PLANTUML_JAR = nil
     end)
 
@@ -71,6 +73,21 @@ describe('rendermark.plantuml', function()
         local cmd, args = plantuml.resolve_command()
         assert.are.equal('/bin/java', cmd)
         assert.are.same({ '-jar', '/tmp/plantuml.jar', '-tpng' }, args)
+    end)
+
+    it('uses the dedicated jar environment variable', function()
+        vim.fn.exepath = function(name)
+            return name == 'java' and '/bin/java' or ''
+        end
+        vim.fn.filereadable = function(path)
+            return path == '/private/plantuml.jar' and 1 or 0
+        end
+        vim.env.RENDERMARK_PLANTUML_JAR = '/private/plantuml.jar'
+        plantuml.setup({ enabled = false })
+
+        local cmd, args = plantuml.resolve_command()
+        assert.are.equal('/bin/java', cmd)
+        assert.are.same({ '-jar', '/private/plantuml.jar', '-tpng' }, args)
     end)
 
     it('falls back to plantuml wrapper', function()

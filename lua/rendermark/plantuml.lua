@@ -37,16 +37,23 @@ local function file_exists(path)
     return path and vim.fn.filereadable(path) == 1
 end
 
+local function configured_jar_path()
+    return config.jar_path
+        or vim.g.rendermark_plantuml_jar
+        or vim.env.RENDERMARK_PLANTUML_JAR
+        or vim.env.PLANTUML_JAR
+end
+
 local function shell_error_text()
-    local jar = config.jar_path or vim.g.rendermark_plantuml_jar or vim.env.PLANTUML_JAR
+    local jar = configured_jar_path()
     if jar and jar ~= '' then
-        return 'PlantUML disabled: Java or PlantUML jar not found. Check g:rendermark_plantuml_jar / PLANTUML_JAR.'
+        return 'PlantUML disabled: Java or PlantUML jar not found. Check RENDERMARK_PLANTUML_JAR / PLANTUML_JAR.'
     end
-    return 'PlantUML disabled: install plantuml or set g:rendermark_plantuml_jar to the official plantuml.jar.'
+    return 'PlantUML disabled: install plantuml or set RENDERMARK_PLANTUML_JAR to the official plantuml.jar.'
 end
 
 function M.resolve_command()
-    local jar = normalize_path(config.jar_path or vim.g.rendermark_plantuml_jar or vim.env.PLANTUML_JAR)
+    local jar = normalize_path(configured_jar_path())
     if jar and file_exists(jar) then
         local java = vim.fn.exepath('java')
         if java ~= '' then
@@ -558,7 +565,7 @@ end
 
 function M.setup(opts)
     config = vim.tbl_deep_extend('force', vim.deepcopy(defaults), opts or {})
-    config.jar_path = config.jar_path or vim.g.rendermark_plantuml_jar or vim.env.PLANTUML_JAR
+    config.jar_path = config.jar_path or vim.g.rendermark_plantuml_jar or vim.env.RENDERMARK_PLANTUML_JAR or vim.env.PLANTUML_JAR
     missing_notified = false
 
     group = vim.api.nvim_create_augroup('rendermark_plantuml', { clear = true })
