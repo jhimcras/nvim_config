@@ -18,6 +18,7 @@ describe('rendermark.plantuml', function()
         pcall(vim.api.nvim_del_augroup_by_name, 'rendermark_plantuml')
         pcall(vim.api.nvim_del_user_command, 'RendermarkPlantumlRefresh')
         pcall(vim.api.nvim_del_user_command, 'RendermarkPlantumlClean')
+        pcall(vim.api.nvim_del_user_command, 'RendermarkPlantumlDebug')
         vim.g.rendermark_plantuml_jar = nil
         vim.env.RENDERMARK_PLANTUML_JAR = nil
         vim.env.PLANTUML_JAR = nil
@@ -90,6 +91,20 @@ describe('rendermark.plantuml', function()
         assert.are.same({ '-jar', '/private/plantuml.jar', '-tpng' }, args)
     end)
 
+    it('explains invalid executable PlantUML jars', function()
+        vim.env.RENDERMARK_PLANTUML_JAR = '/private/bad.jar'
+        plantuml.setup({ enabled = false })
+
+        local message = plantuml._test.render_error_text(
+            'Error: Could not find or load main class net.sourceforge.plantuml.Run\0' ..
+            'Caused by: java.lang.ClassNotFoundException: net.sourceforge.plantuml.Run'
+        )
+
+        assert.is_truthy(message:find('Invalid PlantUML jar', 1, true))
+        assert.is_truthy(message:find('/private/bad.jar', 1, true))
+        assert.is_nil(message:find('%z'))
+    end)
+
     it('falls back to plantuml wrapper', function()
         vim.fn.exepath = function(name)
             if name == 'plantuml' then return 'C:/tools/plantuml.cmd' end
@@ -144,6 +159,37 @@ describe('rendermark.plantuml', function()
             found = found or (vt and vt[1] and vt[1][1]:find('!%[plantuml%]%(.*%.png%)') ~= nil)
         end
         assert.is_true(found)
+    end)
+
+    it('reports render status in debug output', function()
+        vim.fn.exepath = function(name)
+            return name == 'plantuml' and '/bin/plantuml' or ''
+        end
+        vim.system = function(argv, _, on_exit)
+            local png = argv[#argv]:gsub('%.puml$', '.png')
+            vim.fn.writefile({ 'png' }, png)
+            vim.schedule(function() on_exit({ code = 0, stderr = '' }) end)
+            return { kill = function() end }
+        end
+        plantuml.setup({ debounce_ms = 10 })
+        local buf = make_buf({ '```plantuml', '@startuml', '@enduml', '```' })
+
+        plantuml.refresh(buf)
+        vim.wait(1000, function()
+            local st = plantuml._test.states[buf]
+            if not st then return false end
+            for _, entry in pairs(st.cache) do
+                if entry.status == 'ready' then return true end
+            end
+            return false
+        end)
+
+        local output = table.concat(plantuml._test.debug_lines(buf), '\n')
+        assert.is_truthy(output:find('temp dir:', 1, true))
+        assert.is_truthy(output:find('command: /bin/plantuml -tpng', 1, true))
+        assert.is_truthy(output:find('status: ready', 1, true))
+        assert.is_truthy(output:find('png:', 1, true))
+        assert.is_truthy(output:find('exists=true', 1, true))
     end)
 
     it('does not inline-transform the active block outside READ mode', function()

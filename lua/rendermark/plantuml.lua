@@ -21,7 +21,15 @@ local config = vim.deepcopy(defaults)
 local states = {}
 local missing_notified = false
 
+local function normalize_bufnr(buf)
+    if not buf or buf == 0 then
+        return vim.api.nvim_get_current_buf()
+    end
+    return buf
+end
+
 local function is_markdown_buffer(buf)
+    buf = normalize_bufnr(buf)
     local ft = vim.bo[buf or 0].filetype
     return ft == 'markdown' or ft == 'markdown.mdx'
 end
@@ -37,6 +45,14 @@ local function file_exists(path)
     return path and vim.fn.filereadable(path) == 1
 end
 
+local function file_size(path)
+    if not path or not file_exists(path) then
+        return nil
+    end
+    local size = vim.fn.getfsize(path)
+    return size >= 0 and size or nil
+end
+
 local function configured_jar_path()
     return config.jar_path
         or vim.g.rendermark_plantuml_jar
@@ -50,6 +66,27 @@ local function shell_error_text()
         return 'PlantUML disabled: Java or PlantUML jar not found. Check RENDERMARK_PLANTUML_JAR / PLANTUML_JAR.'
     end
     return 'PlantUML disabled: install plantuml or set RENDERMARK_PLANTUML_JAR to the official plantuml.jar.'
+end
+
+local function sanitize_error_text(text)
+    if not text or text == '' then
+        return 'render failed'
+    end
+    text = text:gsub('%z', '\n'):gsub('\r\n', '\n'):gsub('\r', '\n'):gsub('%s+$', '')
+    if text == '' then
+        return 'render failed'
+    end
+    return text
+end
+
+local function render_error_text(stderr)
+    local text = sanitize_error_text(stderr)
+    if text:find('ClassNotFoundException:%s*net%.sourceforge%.plantuml%.Run')
+        or text:find('Could not find or load main class net%.sourceforge%.plantuml%.Run') then
+        local jar = normalize_path(configured_jar_path()) or '<unset>'
+        return 'Invalid PlantUML jar: ' .. jar .. '. Set RENDERMARK_PLANTUML_JAR to the official executable plantuml.jar.'
+    end
+    return text
 end
 
 function M.resolve_command()
@@ -170,7 +207,7 @@ local function is_closing_fence(line, fence)
 end
 
 function M.find_blocks(buf)
-    buf = buf or vim.api.nvim_get_current_buf()
+    buf = normalize_bufnr(buf)
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local blocks = {}
     local i = 1
@@ -381,11 +418,9 @@ local function finish_render(buf, hash, code, stderr, preview)
             entry.error = nil
         else
             entry.status = 'error'
-            entry.error = stderr and stderr:gsub('%s+$', '') or 'render failed'
-            if entry.error == '' then
-                entry.error = 'render failed'
-            end
+            entry.error = render_error_text(stderr)
         end
+        entry.exit_code = code
         M.refresh(buf)
     end)
 end
@@ -401,10 +436,11 @@ local function run_command(buf, hash, puml, png, preview)
     vim.fn.writefile(vim.split(st.cache[hash].text, '\n', { plain = true, trimempty = false }), puml, 'b')
     local args = vim.deepcopy(base_args)
     args[#args + 1] = puml
+    local argv = vim.list_extend({ cmd }, vim.deepcopy(args))
+    st.cache[hash].argv = argv
 
     local stderr = {}
     if vim.system then
-        local argv = vim.list_extend({ cmd }, args)
         local job = vim.system(argv, { text = true, stderr = true }, function(obj)
             finish_render(buf, hash, obj.code, obj.stderr, preview)
         end)
@@ -467,7 +503,7 @@ local function current_block(buf, blocks)
 end
 
 function M.refresh(buf)
-    buf = buf or vim.api.nvim_get_current_buf()
+    buf = normalize_bufnr(buf)
     if not vim.api.nvim_buf_is_valid(buf) or not is_markdown_buffer(buf) then
         return
     end
@@ -556,11 +592,82 @@ local function schedule_active_preview(buf)
 end
 
 function M.clean(buf)
-    buf = buf or vim.api.nvim_get_current_buf()
+    buf = normalize_bufnr(buf)
     if vim.api.nvim_buf_is_valid(buf) then
         vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
     end
     cleanup_buf(buf)
+end
+
+local function quoted_argv(argv)
+    if not argv then
+        return '<not started>'
+    end
+    local parts = {}
+    for _, item in ipairs(argv) do
+        if item:find('%s') then
+            parts[#parts + 1] = '"' .. item .. '"'
+        else
+            parts[#parts + 1] = item
+        end
+    end
+    return table.concat(parts, ' ')
+end
+
+local function debug_lines(buf)
+    buf = normalize_bufnr(buf)
+    local cmd, args, err = M.resolve_command()
+    local blocks = vim.api.nvim_buf_is_valid(buf) and M.find_blocks(buf) or {}
+    local st = states[buf]
+    local lines = {
+        'rendermark PlantUML debug',
+        '',
+        'buffer: ' .. tostring(buf),
+        'filetype: ' .. (vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].filetype or '<invalid>'),
+        'configured jar: ' .. tostring(normalize_path(configured_jar_path()) or '<unset>'),
+        'resolved command: ' .. (cmd and quoted_argv(vim.list_extend({ cmd }, vim.deepcopy(args or {}))) or tostring(err)),
+        'temp dir: ' .. tostring(st and st.temp_dir or '<not created>'),
+        'blocks: ' .. tostring(#blocks),
+    }
+
+    if st and st.float then
+        lines[#lines + 1] = 'float path: ' .. tostring(st.float.path or '<none>')
+    end
+
+    for i, block in ipairs(blocks) do
+        local hash = block_hash(block)
+        local entry = st and st.cache[hash] or nil
+        local puml, png = st and render_paths(st, hash) or '<not created>', '<not created>'
+        if st then
+            puml, png = render_paths(st, hash)
+        end
+        lines[#lines + 1] = ''
+        lines[#lines + 1] = ('block %d: rows %d-%d lang=%s'):format(i, block.start_row + 1, block.end_row + 1, block.lang)
+        lines[#lines + 1] = '  hash: ' .. hash
+        lines[#lines + 1] = '  status: ' .. tostring(entry and entry.status or '<not rendered>')
+        lines[#lines + 1] = '  command: ' .. quoted_argv(entry and entry.argv or nil)
+        lines[#lines + 1] = '  exit code: ' .. tostring(entry and entry.exit_code or '<none>')
+        lines[#lines + 1] = '  puml: ' .. puml .. ' exists=' .. tostring(file_exists(puml)) .. ' size=' .. tostring(file_size(puml) or '<none>')
+        lines[#lines + 1] = '  png: ' .. png .. ' exists=' .. tostring(file_exists(png)) .. ' size=' .. tostring(file_size(png) or '<none>')
+        if entry and entry.error then
+            lines[#lines + 1] = '  error: ' .. entry.error
+        end
+    end
+
+    return lines
+end
+
+function M.debug(buf)
+    buf = normalize_bufnr(buf)
+    M.refresh(buf)
+    local out = vim.api.nvim_create_buf(false, true)
+    vim.bo[out].buftype = 'nofile'
+    vim.bo[out].bufhidden = 'wipe'
+    vim.bo[out].filetype = 'text'
+    vim.api.nvim_buf_set_lines(out, 0, -1, false, debug_lines(buf))
+    vim.bo[out].modifiable = false
+    vim.cmd('botright split')
+    vim.api.nvim_win_set_buf(0, out)
 end
 
 function M.setup(opts)
@@ -572,11 +679,15 @@ function M.setup(opts)
 
     pcall(vim.api.nvim_del_user_command, 'RendermarkPlantumlRefresh')
     pcall(vim.api.nvim_del_user_command, 'RendermarkPlantumlClean')
+    pcall(vim.api.nvim_del_user_command, 'RendermarkPlantumlDebug')
     vim.api.nvim_create_user_command('RendermarkPlantumlRefresh', function()
         M.refresh(0)
     end, {})
     vim.api.nvim_create_user_command('RendermarkPlantumlClean', function()
         M.clean(0)
+    end, {})
+    vim.api.nvim_create_user_command('RendermarkPlantumlDebug', function()
+        M.debug(0)
     end, {})
 
     if config.enabled == false then
@@ -636,9 +747,11 @@ end
 
 M._test = {
     cleanup_buf = cleanup_buf,
+    debug_lines = debug_lines,
     float_config_for_block = float_config_for_block,
     image_link = image_link,
     namespace = ns,
+    render_error_text = render_error_text,
     states = states,
 }
 
