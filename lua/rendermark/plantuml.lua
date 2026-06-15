@@ -20,6 +20,7 @@ local defaults = {
 local config = vim.deepcopy(defaults)
 local states = {}
 local missing_notified = false
+local foldtext_expr = 'v:lua.RendermarkPlantumlFoldText()'
 
 local function normalize_bufnr(buf)
     if not buf or buf == 0 then
@@ -132,6 +133,9 @@ local function state_for(buf)
         debounce = nil,
         spinner_timer = nil,
         float = nil,
+        folds = {},
+        fold_windows = {},
+        saved_fold_options = {},
     }
     states[buf] = st
     return st
@@ -158,6 +162,150 @@ local function close_float(st)
     end
 end
 
+local function restore_fold_options(st, win)
+    if not st or not st.saved_fold_options then
+        return
+    end
+    local saved = st.saved_fold_options[win]
+    if saved and vim.api.nvim_win_is_valid(win) then
+        vim.wo[win].foldmethod = saved.foldmethod
+        vim.wo[win].foldenable = saved.foldenable
+        vim.wo[win].foldtext = saved.foldtext
+    end
+    st.saved_fold_options[win] = nil
+    if st.fold_windows then
+        st.fold_windows[win] = nil
+    end
+end
+
+local function with_preserved_view(win, fn)
+    if not vim.api.nvim_win_is_valid(win) then
+        return
+    end
+    return vim.api.nvim_win_call(win, function()
+        local view = vim.fn.winsaveview()
+        local ok, result = pcall(fn)
+        pcall(vim.fn.winrestview, view)
+        if not ok then
+            return nil, result
+        end
+        return result
+    end)
+end
+
+local function ensure_fold_options(st, win)
+    if st.saved_fold_options[win] == nil then
+        st.saved_fold_options[win] = {
+            foldmethod = vim.wo[win].foldmethod,
+            foldenable = vim.wo[win].foldenable,
+            foldtext = vim.wo[win].foldtext,
+        }
+    end
+    vim.wo[win].foldmethod = 'manual'
+    vim.wo[win].foldenable = true
+    vim.wo[win].foldtext = foldtext_expr
+    st.fold_windows[win] = true
+end
+
+local function delete_fold_at(win, fold)
+    with_preserved_view(win, function()
+        local line_count = vim.api.nvim_buf_line_count(0)
+        local lnum = fold.start_row + 1
+        if lnum < 1 or lnum > line_count then
+            return
+        end
+        if vim.fn.foldclosed(lnum) ~= -1 or vim.fn.foldlevel(lnum) > 0 then
+            vim.api.nvim_win_set_cursor(win, { lnum, 0 })
+            vim.cmd('silent! normal! zd')
+        end
+    end)
+end
+
+local function ensure_fold(win, st, fold)
+    with_preserved_view(win, function()
+        local line_count = vim.api.nvim_buf_line_count(0)
+        local start_lnum = fold.start_row + 1
+        local end_lnum = math.min(fold.end_row + 1, line_count)
+        if start_lnum < 1 or start_lnum >= end_lnum then
+            return
+        end
+
+        ensure_fold_options(st, win)
+        local closed_start = vim.fn.foldclosed(start_lnum)
+        local closed_end = vim.fn.foldclosedend(start_lnum)
+        if closed_start ~= start_lnum or closed_end ~= end_lnum then
+            delete_fold_at(win, fold)
+            vim.cmd(('silent! %d,%dfold'):format(start_lnum, end_lnum))
+        end
+    end)
+end
+
+local function fold_key(fold)
+    return tostring(fold.start_row)
+end
+
+local function visible_or_touched_windows(buf, st)
+    local wins = {}
+    for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+        wins[win] = true
+    end
+    if st and st.fold_windows then
+        for win in pairs(st.fold_windows) do
+            wins[win] = true
+        end
+    end
+    return wins
+end
+
+local function reconcile_folds(buf, desired)
+    local st = states[buf]
+    if not st then
+        return
+    end
+
+    desired = desired or {}
+    local previous = st.folds or {}
+    local any_desired = next(desired) ~= nil
+    local wins = visible_or_touched_windows(buf, st)
+
+    for win in pairs(wins) do
+        if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+            for key, old in pairs(previous) do
+                local new = desired[key]
+                if not new or new.end_row ~= old.end_row then
+                    delete_fold_at(win, old)
+                end
+            end
+            for _, fold in pairs(desired) do
+                ensure_fold(win, st, fold)
+            end
+            if not any_desired then
+                restore_fold_options(st, win)
+            end
+        else
+            restore_fold_options(st, win)
+        end
+    end
+
+    st.folds = desired
+end
+
+local function clear_folds(buf, st)
+    if not st then
+        return
+    end
+    local wins = visible_or_touched_windows(buf, st)
+    for win in pairs(wins) do
+        if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+            for _, fold in pairs(st.folds or {}) do
+                delete_fold_at(win, fold)
+            end
+        end
+        restore_fold_options(st, win)
+    end
+    st.folds = {}
+end
+
 local function cleanup_buf(buf)
     local st = states[buf]
     if not st then
@@ -166,6 +314,7 @@ local function cleanup_buf(buf)
     close_timer(st.debounce)
     close_timer(st.spinner_timer)
     close_float(st)
+    clear_folds(buf, st)
     for _, job in pairs(st.jobs) do
         if job.kill then
             pcall(job.kill)
@@ -262,6 +411,31 @@ local function image_link(path)
     return '![plantuml](' .. path:gsub('\\', '/') .. ')'
 end
 
+local function fallback_foldtext()
+    if type(_G.FoldText) == 'function' then
+        local ok, text = pcall(_G.FoldText)
+        if ok and text ~= nil then
+            return text
+        end
+    end
+    return vim.fn.getline(vim.v.foldstart)
+end
+
+function M.foldtext()
+    local buf = vim.api.nvim_get_current_buf()
+    local st = states[buf]
+    local start_row = vim.v.foldstart - 1
+    local fold = st and st.folds and st.folds[tostring(start_row)] or nil
+    if fold and fold.end_row == vim.v.foldend - 1 and fold.text then
+        return fold.text
+    end
+    return fallback_foldtext()
+end
+
+_G.RendermarkPlantumlFoldText = function()
+    return M.foldtext()
+end
+
 local function ensure_conceal_windows(buf, conceal_cursor)
     local st = states[buf]
     if st then
@@ -313,13 +487,22 @@ local function conceal_line(buf, row)
     })
 end
 
-local function set_image_link(buf, block, path, conceal_cursor)
+local function set_image_link(buf, block, path, conceal_cursor, desired_folds)
+    local text = image_link(path)
     ensure_conceal_windows(buf, conceal_cursor)
     for row = block.start_row, block.end_row do
         conceal_line(buf, row)
     end
+    if desired_folds then
+        local fold = {
+            start_row = block.start_row,
+            end_row = block.end_row,
+            text = text,
+        }
+        desired_folds[fold_key(fold)] = fold
+    end
     vim.api.nvim_buf_set_extmark(buf, ns, block.start_row, 0, {
-        virt_text = { { image_link(path), 'Normal' } },
+        virt_text = { { text, 'Normal' } },
         virt_text_pos = 'overlay',
         priority = 260,
         right_gravity = false,
@@ -550,6 +733,7 @@ function M.refresh(buf)
         local st = states[buf]
         if st then
             close_float(st)
+            reconcile_folds(buf, {})
         end
         return
     end
@@ -557,6 +741,7 @@ function M.refresh(buf)
     local active = current_block(buf, blocks)
     local read_mode = vim.b[buf].markdown_read_mode or vim.b[buf].read_mode
     local st = state_for(buf)
+    local desired_folds = {}
     local active_still_present = false
     if not read_mode then
         ensure_conceal_windows(buf, false)
@@ -580,13 +765,15 @@ function M.refresh(buf)
                 set_error(buf, block, entry.error)
             end
         elseif entry.status == 'ready' then
-            set_image_link(buf, block, entry.png, read_mode)
+            set_image_link(buf, block, entry.png, read_mode, desired_folds)
         elseif entry.status == 'pending' then
             set_spinner(st, buf, block)
         elseif entry.status == 'error' then
             set_error(buf, block, entry.error)
         end
     end
+
+    reconcile_folds(buf, desired_folds)
 
     if not active_still_present then
         close_float(st)

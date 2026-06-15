@@ -22,6 +22,16 @@ local function concealed_rows(buf)
     return rows
 end
 
+local function assert_closed_fold(start_row, end_row)
+    local start_lnum = start_row + 1
+    assert.are.equal(start_lnum, vim.fn.foldclosed(start_lnum))
+    assert.are.equal(end_row + 1, vim.fn.foldclosedend(start_lnum))
+end
+
+local function assert_no_closed_fold(start_row)
+    assert.are.equal(-1, vim.fn.foldclosed(start_row + 1))
+end
+
 describe('rendermark.plantuml', function()
     local orig_exepath
     local orig_filereadable
@@ -178,6 +188,8 @@ describe('rendermark.plantuml', function()
             assert.is_true(rows[row])
         end
         assert.is_true(vim.wo[0].conceallevel >= 2)
+        assert_closed_fold(1, 5)
+        assert.is_truthy(vim.fn.foldtextresult(2):find('!%[plantuml%]%(.*%.png%)'))
     end)
 
     it('reports render status in debug output', function()
@@ -247,6 +259,7 @@ describe('rendermark.plantuml', function()
             local vt = mark[4].virt_text
             assert.is_false(vt and vt[1] and vt[1][1]:find('!%[plantuml%]%(.*%.png%)') ~= nil)
         end
+        assert_no_closed_fold(0)
     end)
 
     it('places preview floats below a block when there is room', function()
@@ -268,6 +281,40 @@ describe('rendermark.plantuml', function()
 
         assert.are.equal('win', config.relative)
         assert.is_true(config.row > 4)
+    end)
+
+    it('creates preview floats as a markdown scratch buffer with one image link', function()
+        vim.fn.exepath = function(name)
+            return name == 'plantuml' and '/bin/plantuml' or ''
+        end
+        vim.system = function(argv, _, on_exit)
+            local png = argv[#argv]:gsub('%.puml$', '.png')
+            vim.fn.writefile({ 'png' }, png)
+            vim.schedule(function() on_exit({ code = 0, stderr = '' }) end)
+            return { kill = function() end }
+        end
+        plantuml.setup({ debounce_ms = 10 })
+        local buf = make_buf({
+            '```plantuml',
+            '@startuml',
+            '@enduml',
+            '```',
+        })
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+        plantuml.refresh(buf)
+        vim.wait(1000, function()
+            local st = plantuml._test.states[buf]
+            return st and st.float and st.float.win and vim.api.nvim_win_is_valid(st.float.win)
+        end)
+
+        local st = plantuml._test.states[buf]
+        assert.is_truthy(st and st.float and st.float.win)
+        local float_win = st.float.win
+        local float_buf = vim.api.nvim_win_get_buf(float_win)
+        assert.are.equal('markdown', vim.bo[float_buf].filetype)
+        local lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
+        assert.are.same({ '![plantuml](' .. st.float.path .. ')' }, lines)
     end)
 
     it('places preview floats above a block when the block is near the bottom', function()
@@ -334,11 +381,46 @@ describe('rendermark.plantuml', function()
         for row = 0, 4 do
             assert.is_true(rows[row])
         end
+        assert_closed_fold(0, 4)
+        assert.is_truthy(vim.fn.foldtextresult(1):find('!%[plantuml%]%(.*%.png%)'))
         assert.are.equal('nvic', vim.wo[0].concealcursor)
 
         vim.b[buf].markdown_read_mode = false
         plantuml.refresh(buf)
         assert.are.equal('', vim.wo[0].concealcursor)
+    end)
+
+    it('removes the collapsed fold when a rendered block becomes active outside READ mode', function()
+        vim.fn.exepath = function(name)
+            return name == 'plantuml' and '/bin/plantuml' or ''
+        end
+        vim.system = function(argv, _, on_exit)
+            local png = argv[#argv]:gsub('%.puml$', '.png')
+            vim.fn.writefile({ 'png' }, png)
+            vim.schedule(function() on_exit({ code = 0, stderr = '' }) end)
+            return { kill = function() end }
+        end
+        plantuml.setup({ debounce_ms = 10 })
+        local buf = make_buf({
+            'cursor here',
+            '```plantuml',
+            '@startuml',
+            'Alice -> Bob',
+            '@enduml',
+            '```',
+        })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+        plantuml.refresh(buf)
+        vim.wait(1000, function()
+            return vim.fn.foldclosed(2) == 2
+        end)
+        assert_closed_fold(1, 5)
+
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+        plantuml.refresh(buf)
+
+        assert_no_closed_fold(1)
     end)
 
     it('cleans buffer temp files', function()
