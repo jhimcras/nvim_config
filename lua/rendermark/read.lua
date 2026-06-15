@@ -115,6 +115,11 @@ end
 local function sync()
     local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_get_current_buf()
+    for active_win in pairs(visuals_active) do
+        if active_win ~= win then
+            clear_visuals(active_win)
+        end
+    end
     if vim.b[buf].read_mode then
         apply_visuals(buf, win)
     else
