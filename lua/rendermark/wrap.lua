@@ -75,6 +75,10 @@ function M.compute_indent(text)
     if marker ~= '' then
         return dw(marker)
     end
+    local heading = text:match('^%s*#+%s+')
+    if heading then
+        return dw(heading)
+    end
     local quote = text:match('^%s*>[%s>]*')
     if quote then
         return dw(quote)
@@ -162,7 +166,11 @@ local function with_base(hl)
     end
     local stack = { config.hl }
     if hl then
-        vim.list_extend(stack, hl)
+        if type(hl) == 'table' then
+            vim.list_extend(stack, hl)
+        else
+            stack[#stack + 1] = hl
+        end
     end
     return stack
 end

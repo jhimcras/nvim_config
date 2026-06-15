@@ -184,6 +184,23 @@ describe('wrap.compute_table_layout', function()
 end)
 
 describe('wrap behavior', function()
+    local function continuation_rows(lnum)
+        local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
+        local marks = vim.api.nvim_buf_get_extmarks(0, ns, { lnum, 0 }, { lnum, -1 },
+            { details = true })
+        local rows = {}
+        for _, m in ipairs(marks) do
+            for _, row in ipairs(m[4].virt_lines or {}) do
+                local chunks = {}
+                for _, chunk in ipairs(row) do
+                    chunks[#chunks + 1] = chunk[1]
+                end
+                rows[#rows + 1] = table.concat(chunks)
+            end
+        end
+        return rows
+    end
+
     before_each(function()
         pcall(vim.api.nvim_del_augroup_by_name, 'markdown_visual_wrap')
         pcall(vim.api.nvim_del_user_command, 'MarkdownWrapToggle')
@@ -217,6 +234,7 @@ describe('wrap behavior', function()
         vim.bo.filetype = 'markdown'
         vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
         -- The reading margin must not blank out the number column.
+        assert.is_truthy(vim.wo.statuscolumn:find('%%s'))
         assert.is_truthy(vim.wo.statuscolumn:find('v:lnum'))
         assert.is_truthy(vim.wo.statuscolumn:find('v:relnum'))
     end)
@@ -336,6 +354,83 @@ describe('wrap behavior', function()
         assert.is_truthy(text:find('bold', 1, true)) -- content kept
         assert.is_falsy(text:find('*', 1, true))     -- ** markers concealed
         assert.is_truthy(vim.inspect(bold_hl):find('markup%.strong'))
+    end)
+
+    it('uses hanging indent spaces, not rendered list prefixes, on continuation rows', function()
+        wrap.setup({ max_width = 24, left_pad = 0, right_pad = 0 })
+        local line = '- one two three four five six seven eight'
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { line, 'short' })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+        wrap.refresh(0)
+
+        local rows = continuation_rows(0)
+        assert.is_true(#rows > 0)
+        for _, row in ipairs(rows) do
+            assert.is_truthy(row:find('^  '))
+            assert.is_falsy(row:find('●', 1, true))
+            assert.is_falsy(row:find('○', 1, true))
+            assert.is_falsy(row:find('◆', 1, true))
+        end
+    end)
+
+    it('uses hanging indent spaces, not task-list prefixes, on continuation rows', function()
+        wrap.setup({ max_width = 24, left_pad = 0, right_pad = 0 })
+        local line = '- [x] one two three four five six seven eight'
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { line, 'short' })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+        wrap.refresh(0)
+
+        local rows = continuation_rows(0)
+        assert.is_true(#rows > 0)
+        for _, row in ipairs(rows) do
+            assert.is_truthy(row:find('^      '))
+            assert.is_falsy(row:find('●', 1, true))
+            assert.is_falsy(row:find('○', 1, true))
+            assert.is_falsy(row:find('◆', 1, true))
+            assert.is_falsy(row:find('[x]', 1, true))
+        end
+    end)
+
+    it('uses raw marker width, not nested bullet icons, on continuation rows', function()
+        wrap.setup({ max_width = 24, left_pad = 0, right_pad = 0 })
+        local line = '    - one two three four five six seven eight'
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { '- parent', line, 'short' })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.api.nvim_win_set_cursor(0, { 3, 0 })
+        wrap.refresh(0)
+
+        local rows = continuation_rows(1)
+        assert.is_true(#rows > 0)
+        for _, row in ipairs(rows) do
+            assert.is_truthy(row:find('^      '))
+            assert.is_falsy(row:find('●', 1, true))
+            assert.is_falsy(row:find('○', 1, true))
+            assert.is_falsy(row:find('◆', 1, true))
+        end
+    end)
+
+    it('uses heading prefix width as spaces on continuation rows in read mode', function()
+        wrap.setup({ max_width = 24, left_pad = 0, right_pad = 0 })
+        local line = '# one two three four five six seven eight'
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { line })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.b.markdown_read_mode = true
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        wrap.refresh(0)
+
+        local rows = continuation_rows(0)
+        assert.is_true(#rows > 0)
+        for _, row in ipairs(rows) do
+            assert.is_truthy(row:find('^  '))
+            assert.is_falsy(row:find('#', 1, true))
+            assert.is_falsy(row:find('●', 1, true))
+        end
     end)
 
     it('renders a table as a grid and leaves the cursor row raw', function()

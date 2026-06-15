@@ -26,15 +26,30 @@ function M.setup()
             skip_level = 0,
             skip_heading = true,
         },
+        -- Prefix rendering belongs to render-markdown.nvim on real buffer lines.
+        -- rendermark.wrap only preserves hanging-indent space on virtual rows.
         heading = {
-            icons = { '  ' },
-            signs = { ' ' },
+            icons = { '󰲡 ', '󰲣 ', '󰲥 ', '󰲧 ', '󰲩 ', '󰲫 ' },
+            signs = { '󰫎 ' },
             width = 'block',
             -- border = true,
             -- left_pad = 2,
             -- right_pad = 2,
         },
+        bullet = {
+            icons = { '●', '○', '◆', '◇' },
+            ordered_icons = function(ctx)
+                local value = vim.trim(ctx.value)
+                local index = tonumber(value:sub(1, #value - 1))
+                return ('%d.'):format(index > 1 and index or ctx.index)
+            end,
+            left_pad = 0,
+            right_pad = 0,
+            highlight = 'RenderMarkdownBullet',
+            scope_highlight = {},
+        },
         checkbox = {
+            bullet = true,
             unchecked = { icon = ' ' },
             checked   = { icon = ' ' },
             custom = {
