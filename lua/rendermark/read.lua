@@ -22,6 +22,11 @@ local saved_scrolloff = {}           -- win -> previous 'scrolloff'
 local cursor_au = {}                 -- buf -> CursorMoved autocmd id
 local visuals_active = {}            -- win -> true while READ window/global visuals applied
 
+local function is_markdown_buffer(buf)
+    local ft = vim.bo[buf].filetype
+    return ft == 'markdown' or ft == 'markdown.mdx'
+end
+
 -- Anti-conceal / concealcursor toggles live in rendermark.rm_compat (the sole
 -- render-markdown.nvim contact point): rm.set_anti_conceal / rm.set_conceal_cursor.
 
@@ -127,7 +132,8 @@ local function sync()
     end
 end
 
-function M.enter(buf, win)
+function M.enter(buf, win, opts)
+    opts = opts or {}
     buf = buf or vim.api.nvim_get_current_buf()
     win = win or vim.api.nvim_get_current_win()
     if vim.b[buf].read_mode then
@@ -139,11 +145,13 @@ function M.enter(buf, win)
     vim.bo[buf].modifiable = false
 
     vim.b[buf].markdown_read_mode = true
-    apply_visuals(buf, win)
+    if opts.apply_visuals ~= false then
+        apply_visuals(buf, win)
+    end
 
     ut.nnoremap('j', '<C-e>', { buffer = buf })
     ut.nnoremap('k', '<C-y>', { buffer = buf })
-    ut.nnoremap('<esc>', function() M.exit(buf, win) end, { buffer = buf })
+    ut.nnoremap('<esc>', function() M.exit(buf) end, { buffer = buf })
 
     cursor_au[buf] = pin_cursor(buf)
     local view = vim.fn.winsaveview()
@@ -192,15 +200,29 @@ function M.toggle(buf, win)
 end
 
 function M.setup()
+    local group = vim.api.nvim_create_augroup('rendermark_read', { clear = true })
+
+    vim.api.nvim_create_autocmd('WinLeave', {
+        group = group,
+        callback = function(args)
+            local buf = args.buf or vim.api.nvim_get_current_buf()
+            if is_markdown_buffer(buf) and not vim.b[buf].read_mode then
+                M.enter(buf, vim.api.nvim_get_current_win(), { apply_visuals = false })
+            end
+        end,
+    })
+
     -- Suspend/resume READ visuals when the window's current buffer changes.
     -- BufEnter catches same-window <C-o>/<C-i> jumps (no WinEnter fires there);
     -- WinEnter catches window switches.
     vim.api.nvim_create_autocmd({ 'BufEnter', 'WinEnter' }, {
+        group = group,
         callback = sync,
     })
 
     vim.api.nvim_create_autocmd('FileType', {
-        pattern = 'markdown',
+        group = group,
+        pattern = { 'markdown', 'markdown.mdx' },
         callback = function(args)
             local buf = args.buf
             ut.nnoremap('<leader>r', function() M.enter() end, { buffer = buf })

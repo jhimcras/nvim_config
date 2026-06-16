@@ -856,7 +856,7 @@ function M.refresh(buf)
     local read_mode = vim.b[buf].markdown_read_mode or vim.b[buf].read_mode
     local st = state_for(buf)
     local visual_or_select = mode_is_visual_or_select()
-    if visual_or_select then
+    if read_mode or visual_or_select then
         close_float(st)
     end
     local desired_folds = {}
@@ -1053,7 +1053,7 @@ function M.setup(opts)
 
     vim.api.nvim_create_autocmd({
         'BufWinEnter', 'WinEnter', 'CursorMoved', 'CursorMovedI',
-        'InsertEnter', 'InsertLeave', 'ModeChanged',
+        'InsertEnter', 'InsertLeave', 'ModeChanged', 'WinLeave',
     }, {
         group = group,
         callback = function(args)

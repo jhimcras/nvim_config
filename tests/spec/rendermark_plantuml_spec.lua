@@ -1,4 +1,5 @@
 local plantuml = require('rendermark.plantuml')
+local read = require('rendermark.read')
 
 local function make_buf(lines)
     vim.cmd('enew')
@@ -66,6 +67,7 @@ describe('rendermark.plantuml', function()
     local orig_notify
 
     before_each(function()
+        pcall(vim.api.nvim_del_augroup_by_name, 'rendermark_read')
         pcall(vim.api.nvim_del_augroup_by_name, 'rendermark_plantuml')
         pcall(vim.api.nvim_del_user_command, 'RendermarkPlantumlRefresh')
         pcall(vim.api.nvim_del_user_command, 'RendermarkPlantumlClean')
@@ -618,6 +620,51 @@ describe('rendermark.plantuml', function()
         plantuml.refresh(buf)
         st = plantuml._test.states[buf]
         assert.is_truthy(st and st.float and st.float.win and vim.api.nvim_win_is_valid(st.float.win))
+    end)
+
+    it('closes preview floats and enters READ mode when leaving a markdown window', function()
+        vim.fn.exepath = function(name)
+            return name == 'plantuml' and '/bin/plantuml' or ''
+        end
+        vim.system = function(argv, _, on_exit)
+            local png = argv[#argv]:gsub('%.puml$', '.png')
+            write_png_header(png, 120, 72)
+            vim.schedule(function() on_exit({ code = 0, stderr = '' }) end)
+            return { kill = function() end }
+        end
+        plantuml.setup({ debounce_ms = 10 })
+        local buf = make_buf({
+            '```plantuml',
+            '@startuml',
+            'Alice -> Bob',
+            '@enduml',
+            '```',
+        })
+        read.setup()
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+        plantuml.refresh(buf)
+        vim.wait(1000, function()
+            local st = plantuml._test.states[buf]
+            return st and st.float and st.float.win and vim.api.nvim_win_is_valid(st.float.win)
+        end)
+        local st = plantuml._test.states[buf]
+        local float_win = st.float.win
+
+        vim.api.nvim_exec_autocmds('WinLeave', { buffer = buf })
+        vim.wait(1000, function()
+            st = plantuml._test.states[buf]
+            return vim.b[buf].read_mode == true
+                and vim.b[buf].markdown_read_mode == true
+                and st
+                and st.float == nil
+                and not vim.api.nvim_win_is_valid(float_win)
+        end)
+
+        assert.is_true(vim.b[buf].read_mode)
+        assert.is_true(vim.b[buf].markdown_read_mode)
+        assert.is_nil(st.float)
+        assert.is_false(vim.api.nvim_win_is_valid(float_win))
     end)
 
     it('places preview floats above a block when the block is near the bottom', function()
