@@ -199,8 +199,8 @@ function M.setup()
         { callback = function() vim.go.tabline = M.TabLine() end }
     )
     ut.set_highlight('TabLineSel', {gui = 'bold,italic'})
-    ut.nnoremap('<leader>t', function() M.tab_scroll(vim.v.count1) end)
-    ut.nnoremap('<leader>T', function() M.tab_scroll(-vim.v.count1) end)
+    ut.nnoremap('<c-right>', function() M.tab_scroll(vim.v.count1) end)
+    ut.nnoremap('<c-left>', function() M.tab_scroll(-vim.v.count1) end)
 end
 
 return M
