@@ -32,6 +32,10 @@ local function assert_no_closed_fold(start_row)
     assert.are.equal(-1, vim.fn.foldclosed(start_row + 1))
 end
 
+local function rects_overlap(a_top, a_bottom, a_left, a_right, b_top, b_bottom, b_left, b_right)
+    return a_top <= b_bottom and b_top <= a_bottom and a_left <= b_right and b_left <= a_right
+end
+
 local function write_png_header(path, width, height)
     local bytes = {
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -291,7 +295,7 @@ describe('rendermark.plantuml', function()
         plantuml.setup({ enabled = false })
         local buf = make_buf({
             'before',
-            '```plantuml',
+            '    ```plantuml',
             '@startuml',
             '@enduml',
             '```',
@@ -304,8 +308,125 @@ describe('rendermark.plantuml', function()
             end_row = 4,
         }, 30, 6)
 
-        assert.are.equal('win', config.relative)
+        assert.are.equal('editor', config.relative)
         assert.is_true(config.row > 4)
+        assert.are.equal(4, config.col)
+    end)
+
+    it('keeps sample preview below cursor line 2 from covering the fenced block', function()
+        plantuml.setup({ enabled = false })
+        make_buf({
+            '# One',
+            '  ```plantuml',
+            '  @startuml',
+            '  Alice -> Bob',
+            '  Bob -> Carol',
+            '  Carol -> Alice',
+            '  Alice -> Dave',
+            '  Dave -> Bob',
+            '  ```',
+            '',
+            '  ```plantuml',
+            '  @startuml',
+            '  Foo -> Bar',
+            '  Bar -> Baz',
+            '  ```',
+        })
+        vim.cmd('resize 30')
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+        vim.cmd('normal! zt')
+
+        local config = plantuml._test.float_config_for_block(0, {
+            start_row = 1,
+            end_row = 8,
+        }, 24, 6)
+
+        local screenpos = vim.fn.win_screenpos(0)
+        local topline = vim.api.nvim_win_call(0, function() return vim.fn.line('w0') end) - 1
+        local block_top = (screenpos[1] or 1) - 1 + 1 - topline
+        local block_bottom = (screenpos[1] or 1) - 1 + 8 - topline
+        local float_top = config.row
+        local float_bottom = config.row + config.height + 1
+        assert.are.equal(2, config.col)
+        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width + 1,
+            block_top, block_bottom, 2, 17))
+    end)
+
+    it('keeps sample preview from cursor line 3 off the opening fence row', function()
+        plantuml.setup({ enabled = false })
+        make_buf({
+            '# One',
+            '  ```plantuml',
+            '  @startuml',
+            '  Alice -> Bob',
+            '  Bob -> Carol',
+            '  Carol -> Alice',
+            '  Alice -> Dave',
+            '  Dave -> Bob',
+            '  ```',
+            '',
+            '  ```plantuml',
+            '  @startuml',
+            '  Foo -> Bar',
+            '  Bar -> Baz',
+            '  ```',
+        })
+        vim.cmd('resize 30')
+        vim.api.nvim_win_set_cursor(0, { 3, 0 })
+        vim.cmd('normal! zt')
+
+        local config = plantuml._test.float_config_for_block(0, {
+            start_row = 1,
+            end_row = 8,
+        }, 24, 6)
+
+        local screenpos = vim.fn.win_screenpos(0)
+        local topline = vim.api.nvim_win_call(0, function() return vim.fn.line('w0') end) - 1
+        local block_top = (screenpos[1] or 1) - 1 + 1 - topline
+        local block_bottom = (screenpos[1] or 1) - 1 + 8 - topline
+        local float_top = config.row
+        local float_bottom = config.row + config.height + 1
+        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width + 1,
+            block_top, block_bottom, 2, 17))
+    end)
+
+    it('keeps sample preview from cursor line 11 off the second fenced block', function()
+        plantuml.setup({ enabled = false })
+        make_buf({
+            '# One',
+            '  ```plantuml',
+            '  @startuml',
+            '  Alice -> Bob',
+            '  Bob -> Carol',
+            '  Carol -> Alice',
+            '  Alice -> Dave',
+            '  Dave -> Bob',
+            '  ```',
+            '',
+            '    ```plantuml',
+            '    @startuml',
+            '    Foo -> Bar',
+            '    Bar -> Baz',
+            '    ```',
+        })
+        vim.cmd('resize 30')
+        vim.api.nvim_win_set_cursor(0, { 11, 0 })
+        vim.cmd('normal! zt')
+
+        local config = plantuml._test.float_config_for_block(0, {
+            start_row = 10,
+            end_row = 14,
+        }, 24, 6)
+
+        local screenpos = vim.fn.win_screenpos(0)
+        local topline = vim.api.nvim_win_call(0, function() return vim.fn.line('w0') end) - 1
+        local block_top = (screenpos[1] or 1) - 1 + 10 - topline
+        local block_bottom = (screenpos[1] or 1) - 1 + 14 - topline
+        local float_top = config.row
+        local float_bottom = config.row + config.height + 1
+        assert.are.equal(4, config.col)
+        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width + 1,
+            block_top, block_bottom, 4, 18))
     end)
 
     it('parses PNG dimensions from the image header', function()
@@ -349,9 +470,10 @@ describe('rendermark.plantuml', function()
             end_row = 5,
         }, 2, 6)
 
-        local topline = vim.fn.line('w0', 0) - 1
-        local block_top = 1 - topline
-        local block_bottom = 5 - topline
+        local topline = vim.api.nvim_win_call(0, function() return vim.fn.line('w0') end) - 1
+        local screenpos = vim.fn.win_screenpos(0)
+        local block_top = (screenpos[1] or 1) - 1 + 1 - topline
+        local block_bottom = (screenpos[1] or 1) - 1 + 5 - topline
         local float_top = config.row
         local float_bottom = config.row + config.height + 1
         assert.is_true(float_bottom < block_top or float_top > block_bottom or config.col + config.width + 1 < 0 or config.col > 0)

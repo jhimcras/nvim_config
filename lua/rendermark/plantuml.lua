@@ -591,59 +591,98 @@ end
 
 local function float_config_for_block(win, block, width, height)
     win = win == 0 and vim.api.nvim_get_current_win() or win
-    local win_height = vim.api.nvim_win_get_height(win)
-    local win_width = vim.api.nvim_win_get_width(win)
-    local topline = vim.fn.line('w0', win) - 1
+    local topline = vim.api.nvim_win_call(win, function()
+        return vim.fn.line('w0')
+    end) - 1
     local start_row = math.max(0, block.start_row - topline)
     local end_row = math.max(start_row, block.end_row - topline)
     local total_width = width + 2
     local total_height = height + 2
     local screenpos = vim.fn.win_screenpos(win)
+    local screen_row = type(screenpos) == 'table' and (screenpos[1] or 1) or 1
     local screen_col = type(screenpos) == 'table' and (screenpos[2] or 1) or 1
-    local left_space = math.max(0, screen_col - 1)
-    local right_space = math.max(0, vim.o.columns - (screen_col - 1 + win_width))
+    local win_top = screen_row - 1
+    local win_left = screen_col - 1
+    local editor_height = math.max(1, vim.o.lines - vim.o.cmdheight)
+    local editor_width = math.max(1, vim.o.columns)
+
+    local block_indent = 0
+    local block_width = 0
+    local lines = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), block.start_row, block.end_row + 1, false)
+    if lines[1] then
+        local leading = lines[1]:match('^%s*') or ''
+        block_indent = vim.fn.strdisplaywidth(leading)
+    end
+    for _, line in ipairs(lines) do
+        local leading = line:match('^%s*') or ''
+        local indent = vim.fn.strdisplaywidth(leading)
+        block_width = math.max(block_width, indent + vim.fn.strdisplaywidth(line:sub(#leading + 1)))
+    end
+    block_width = math.max(block_width, block_indent + 1)
+
+    local block_top = win_top + start_row
+    local block_bottom = win_top + end_row
+    local block_left = win_left + block_indent
+    local block_right = win_left + block_width - 1
+
+    local function clamp(value, low, high)
+        if high < low then
+            return low
+        end
+        return math.max(low, math.min(value, high))
+    end
 
     local function side_row()
-        if total_height >= win_height then
+        if total_height >= editor_height then
             return 0
         end
-        return math.max(0, math.min(start_row, win_height - total_height))
+        return clamp(block_top, 0, editor_height - total_height)
+    end
+
+    local function overlaps(a_start, a_end, b_start, b_end)
+        return a_start <= b_end and b_start <= a_end
+    end
+
+    local function score(candidate)
+        local row0 = candidate.row
+        local row1 = candidate.row + total_height - 1
+        local col0 = candidate.col
+        local col1 = candidate.col + total_width - 1
+        if overlaps(row0, row1, block_top, block_bottom) then
+            return nil
+        end
+        local clipped = 0
+        if row0 < 0 then clipped = clipped - row0 end
+        if col0 < 0 then clipped = clipped - col0 end
+        if row1 >= editor_height then clipped = clipped + row1 - editor_height + 1 end
+        if col1 >= editor_width then clipped = clipped + col1 - editor_width + 1 end
+        return clipped
     end
 
     local candidates = {
-        { name = 'below', row = end_row + 1, col = 0, clipped = math.max(0, end_row + 1 + total_height - win_height) },
-        { name = 'above', row = start_row - total_height, col = 0, clipped = math.max(0, total_height - start_row) },
-        { name = 'left', row = side_row(), col = -total_width, clipped = math.max(0, total_width - left_space) },
-        { name = 'right', row = side_row(), col = win_width, clipped = math.max(0, total_width - right_space) },
+        { name = 'below', row = block_bottom + 1, col = block_left },
+        { name = 'above', row = block_top - total_height, col = block_left },
+        { name = 'left', row = side_row(), col = block_left - total_width },
+        { name = 'right', row = side_row(), col = block_right + 1 },
     }
 
+    local best
     for _, candidate in ipairs(candidates) do
-        if candidate.clipped == 0 then
-            return {
-                relative = 'win',
-                win = win,
-                row = candidate.row,
-                col = candidate.col,
-                width = width,
-                height = height,
-                border = 'single',
-                style = 'minimal',
-                focusable = false,
-                zindex = 70,
-            }
+        candidate.clipped = score(candidate)
+        if candidate.clipped and (not best or candidate.clipped < best.clipped) then
+            best = candidate
+            if candidate.clipped == 0 then
+                break
+            end
         end
     end
 
-    local best = candidates[1]
-    for i = 2, #candidates do
-        if candidates[i].clipped < best.clipped then
-            best = candidates[i]
-        end
+    if not best then
+        best = { row = clamp(block_bottom + 1, 0, editor_height - total_height), col = block_left }
     end
 
     return {
-        relative = 'win',
-        win = win,
+        relative = 'editor',
         row = best.row,
         col = best.col,
         width = width,
