@@ -440,8 +440,12 @@ local function float_dimensions_for_image(size, opts)
     opts = opts or {}
     local cell_width = tonumber(opts.cell_width) or tonumber(vim.g.neopp_cell_width_px) or 10
     local cell_height = tonumber(opts.cell_height) or tonumber(vim.g.neopp_cell_height_px) or 18
-    local max_width = tonumber(opts.max_width) or math.max(20, vim.o.columns - 4)
-    local max_height = tonumber(opts.max_height) or math.max(4, vim.o.lines - 6)
+    local editor_width = math.max(1, vim.o.columns)
+    local editor_height = math.max(1, vim.o.lines - vim.o.cmdheight)
+    local requested_max_width = tonumber(opts.max_width) or math.max(20, editor_width)
+    local requested_max_height = tonumber(opts.max_height) or math.max(4, editor_height)
+    local max_width = math.min(editor_width, math.max(1, requested_max_width))
+    local max_height = math.min(editor_height, math.max(1, requested_max_height))
     local width = size and size.width and math.ceil(size.width / math.max(1, cell_width)) or 30
     local height = size and size.height and math.ceil(size.height / math.max(1, cell_height)) or 6
     return {
@@ -596,8 +600,8 @@ local function float_config_for_block(win, block, width, height)
     end) - 1
     local start_row = math.max(0, block.start_row - topline)
     local end_row = math.max(start_row, block.end_row - topline)
-    local total_width = width + 2
-    local total_height = height + 2
+    local total_width = width
+    local total_height = height
     local screenpos = vim.fn.win_screenpos(win)
     local screen_row = type(screenpos) == 'table' and (screenpos[1] or 1) or 1
     local screen_col = type(screenpos) == 'table' and (screenpos[2] or 1) or 1
@@ -648,7 +652,8 @@ local function float_config_for_block(win, block, width, height)
         local row1 = candidate.row + total_height - 1
         local col0 = candidate.col
         local col1 = candidate.col + total_width - 1
-        if overlaps(row0, row1, block_top, block_bottom) then
+        if overlaps(row0, row1, block_top, block_bottom)
+            and overlaps(col0, col1, block_left, block_right) then
             return nil
         end
         local clipped = 0
@@ -687,7 +692,6 @@ local function float_config_for_block(win, block, width, height)
         col = best.col,
         width = width,
         height = height,
-        border = 'single',
         style = 'minimal',
         focusable = false,
         zindex = 70,
@@ -698,8 +702,8 @@ local function open_float(buf, path, block)
     local st = state_for(buf)
     local current_win = vim.api.nvim_get_current_win()
     local dims = float_dimensions_for_image(read_png_size(path), {
-        max_width = math.max(20, vim.o.columns - 4),
-        max_height = math.max(4, vim.o.lines - 6),
+        max_width = vim.o.columns,
+        max_height = vim.o.lines - vim.o.cmdheight,
     })
     local fwidth = dims.width
     local fheight = dims.height

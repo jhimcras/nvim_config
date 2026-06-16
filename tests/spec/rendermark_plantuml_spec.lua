@@ -309,6 +309,7 @@ describe('rendermark.plantuml', function()
         }, 30, 6)
 
         assert.are.equal('editor', config.relative)
+        assert.is_nil(config.border)
         assert.is_true(config.row > 4)
         assert.are.equal(4, config.col)
     end)
@@ -346,9 +347,9 @@ describe('rendermark.plantuml', function()
         local block_top = (screenpos[1] or 1) - 1 + 1 - topline
         local block_bottom = (screenpos[1] or 1) - 1 + 8 - topline
         local float_top = config.row
-        local float_bottom = config.row + config.height + 1
+        local float_bottom = config.row + config.height - 1
         assert.are.equal(2, config.col)
-        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width + 1,
+        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width - 1,
             block_top, block_bottom, 2, 17))
     end)
 
@@ -385,8 +386,8 @@ describe('rendermark.plantuml', function()
         local block_top = (screenpos[1] or 1) - 1 + 1 - topline
         local block_bottom = (screenpos[1] or 1) - 1 + 8 - topline
         local float_top = config.row
-        local float_bottom = config.row + config.height + 1
-        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width + 1,
+        local float_bottom = config.row + config.height - 1
+        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width - 1,
             block_top, block_bottom, 2, 17))
     end)
 
@@ -423,9 +424,9 @@ describe('rendermark.plantuml', function()
         local block_top = (screenpos[1] or 1) - 1 + 10 - topline
         local block_bottom = (screenpos[1] or 1) - 1 + 14 - topline
         local float_top = config.row
-        local float_bottom = config.row + config.height + 1
+        local float_bottom = config.row + config.height - 1
         assert.are.equal(4, config.col)
-        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width + 1,
+        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width - 1,
             block_top, block_bottom, 4, 18))
     end)
 
@@ -454,6 +455,32 @@ describe('rendermark.plantuml', function()
         assert.are.equal(3, dims.height)
     end)
 
+    it('caps preview float dimensions to the usable editor screen', function()
+        plantuml.setup({ enabled = false })
+        local old_columns = vim.o.columns
+        local old_lines = vim.o.lines
+        local old_cmdheight = vim.o.cmdheight
+        vim.o.columns = 32
+        vim.o.lines = 12
+        vim.o.cmdheight = 1
+
+        local ok, dims = pcall(plantuml._test.float_dimensions_for_image, {
+            width = 4000,
+            height = 3000,
+        }, {
+            cell_width = 10,
+            cell_height = 10,
+        })
+
+        vim.o.columns = old_columns
+        vim.o.lines = old_lines
+        vim.o.cmdheight = old_cmdheight
+        if not ok then error(dims, 2) end
+
+        assert.are.equal(32, dims.width)
+        assert.are.equal(11, dims.height)
+    end)
+
     it('places preview floats beside the full fenced block without intersecting it', function()
         plantuml.setup({ enabled = false })
         local lines = {}
@@ -475,8 +502,8 @@ describe('rendermark.plantuml', function()
         local block_top = (screenpos[1] or 1) - 1 + 1 - topline
         local block_bottom = (screenpos[1] or 1) - 1 + 5 - topline
         local float_top = config.row
-        local float_bottom = config.row + config.height + 1
-        assert.is_true(float_bottom < block_top or float_top > block_bottom or config.col + config.width + 1 < 0 or config.col > 0)
+        local float_bottom = config.row + config.height - 1
+        assert.is_true(float_bottom < block_top or float_top > block_bottom or config.col + config.width - 1 < 0 or config.col > 0)
     end)
 
     it('creates preview floats as a markdown scratch buffer with one image link', function()
@@ -609,7 +636,7 @@ describe('rendermark.plantuml', function()
             end_row = 11,
         }, 30, 6)
 
-        assert.is_true(config.row + config.height + 1 < 8)
+        assert.is_true(config.row + config.height - 1 < 8)
     end)
 
     it('inline-transforms the active block in READ mode', function()
