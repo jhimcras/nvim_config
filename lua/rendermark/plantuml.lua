@@ -411,6 +411,45 @@ local function image_link(path)
     return '![plantuml](' .. path:gsub('\\', '/') .. ')'
 end
 
+local function read_png_size(path)
+    if not path then
+        return nil
+    end
+    local file = io.open(path, 'rb')
+    if not file then
+        return nil
+    end
+    local header = file:read(24)
+    file:close()
+    if not header or #header < 24 then
+        return nil
+    end
+    if header:sub(1, 8) ~= '\137PNG\r\n\026\n' or header:sub(13, 16) ~= 'IHDR' then
+        return nil
+    end
+    local b = { header:byte(17, 24) }
+    local width = b[1] * 0x1000000 + b[2] * 0x10000 + b[3] * 0x100 + b[4]
+    local height = b[5] * 0x1000000 + b[6] * 0x10000 + b[7] * 0x100 + b[8]
+    if width <= 0 or height <= 0 then
+        return nil
+    end
+    return { width = width, height = height }
+end
+
+local function float_dimensions_for_image(size, opts)
+    opts = opts or {}
+    local cell_width = tonumber(opts.cell_width) or tonumber(vim.g.neopp_cell_width_px) or 10
+    local cell_height = tonumber(opts.cell_height) or tonumber(vim.g.neopp_cell_height_px) or 18
+    local max_width = tonumber(opts.max_width) or math.max(20, vim.o.columns - 4)
+    local max_height = tonumber(opts.max_height) or math.max(4, vim.o.lines - 6)
+    local width = size and size.width and math.ceil(size.width / math.max(1, cell_width)) or 30
+    local height = size and size.height and math.ceil(size.height / math.max(1, cell_height)) or 6
+    return {
+        width = math.max(1, math.min(width, max_width)),
+        height = math.max(1, math.min(height, max_height)),
+    }
+end
+
 local function fallback_foldtext()
     if type(_G.FoldText) == 'function' then
         local ok, text = pcall(_G.FoldText)
@@ -544,39 +583,69 @@ local function ensure_spinner_timer(buf, st)
     end))
 end
 
+local function mode_is_visual_or_select()
+    local mode = vim.api.nvim_get_mode().mode
+    return mode == 'v' or mode == 'V' or mode == '\022'
+        or mode == 's' or mode == 'S' or mode == '\019'
+end
+
 local function float_config_for_block(win, block, width, height)
     win = win == 0 and vim.api.nvim_get_current_win() or win
     local win_height = vim.api.nvim_win_get_height(win)
+    local win_width = vim.api.nvim_win_get_width(win)
     local topline = vim.fn.line('w0', win) - 1
     local start_row = math.max(0, block.start_row - topline)
     local end_row = math.max(start_row, block.end_row - topline)
-    local above = math.max(0, start_row)
-    local below = math.max(0, win_height - end_row - 1)
+    local total_width = width + 2
+    local total_height = height + 2
+    local screenpos = vim.fn.win_screenpos(win)
+    local screen_col = type(screenpos) == 'table' and (screenpos[2] or 1) or 1
+    local left_space = math.max(0, screen_col - 1)
+    local right_space = math.max(0, vim.o.columns - (screen_col - 1 + win_width))
 
-    local min_height = 4
-    local row
-    if below >= height + 2 or below >= above then
-        height = math.max(1, math.min(height, math.max(1, below - 2)))
-        row = end_row + 1
-    else
-        height = math.max(1, math.min(height, math.max(1, above - 2)))
-        row = math.max(0, start_row - height - 2)
+    local function side_row()
+        if total_height >= win_height then
+            return 0
+        end
+        return math.max(0, math.min(start_row, win_height - total_height))
     end
 
-    if height < min_height and math.max(above, below) >= min_height + 2 then
-        height = min_height
-        if below >= above then
-            row = end_row + 1
-        else
-            row = math.max(0, start_row - height - 2)
+    local candidates = {
+        { name = 'below', row = end_row + 1, col = 0, clipped = math.max(0, end_row + 1 + total_height - win_height) },
+        { name = 'above', row = start_row - total_height, col = 0, clipped = math.max(0, total_height - start_row) },
+        { name = 'left', row = side_row(), col = -total_width, clipped = math.max(0, total_width - left_space) },
+        { name = 'right', row = side_row(), col = win_width, clipped = math.max(0, total_width - right_space) },
+    }
+
+    for _, candidate in ipairs(candidates) do
+        if candidate.clipped == 0 then
+            return {
+                relative = 'win',
+                win = win,
+                row = candidate.row,
+                col = candidate.col,
+                width = width,
+                height = height,
+                border = 'single',
+                style = 'minimal',
+                focusable = false,
+                zindex = 70,
+            }
+        end
+    end
+
+    local best = candidates[1]
+    for i = 2, #candidates do
+        if candidates[i].clipped < best.clipped then
+            best = candidates[i]
         end
     end
 
     return {
         relative = 'win',
         win = win,
-        row = row,
-        col = 0,
+        row = best.row,
+        col = best.col,
         width = width,
         height = height,
         border = 'single',
@@ -588,11 +657,13 @@ end
 
 local function open_float(buf, path, block)
     local st = state_for(buf)
-    local width = math.max(30, math.floor(vim.o.columns * 0.45))
-    local height = math.max(6, math.floor(vim.o.lines * 0.35))
     local current_win = vim.api.nvim_get_current_win()
-    local fwidth = math.min(width, math.max(20, vim.o.columns - 4))
-    local fheight = math.min(height, math.max(4, vim.o.lines - 6))
+    local dims = float_dimensions_for_image(read_png_size(path), {
+        max_width = math.max(20, vim.o.columns - 4),
+        max_height = math.max(4, vim.o.lines - 6),
+    })
+    local fwidth = dims.width
+    local fheight = dims.height
     local config_for_float = float_config_for_block(current_win, block, fwidth, fheight)
 
     if st.float and st.float.path == path
@@ -741,6 +812,10 @@ function M.refresh(buf)
     local active = current_block(buf, blocks)
     local read_mode = vim.b[buf].markdown_read_mode or vim.b[buf].read_mode
     local st = state_for(buf)
+    local visual_or_select = mode_is_visual_or_select()
+    if visual_or_select then
+        close_float(st)
+    end
     local desired_folds = {}
     local active_still_present = false
     if not read_mode then
@@ -756,7 +831,9 @@ function M.refresh(buf)
         end
 
         local entry = ensure_render(buf, block, false)
-        if is_active and not read_mode then
+        if is_active and visual_or_select then
+            -- Leave the active source block raw while a visual/select selection is active.
+        elseif is_active and not read_mode then
             if entry.status == 'ready' then
                 open_float(buf, entry.png, block)
             elseif entry.status == 'pending' then
@@ -933,7 +1010,7 @@ function M.setup(opts)
 
     vim.api.nvim_create_autocmd({
         'BufWinEnter', 'WinEnter', 'CursorMoved', 'CursorMovedI',
-        'InsertEnter', 'InsertLeave',
+        'InsertEnter', 'InsertLeave', 'ModeChanged',
     }, {
         group = group,
         callback = function(args)
@@ -971,9 +1048,11 @@ end
 M._test = {
     cleanup_buf = cleanup_buf,
     debug_lines = debug_lines,
+    float_dimensions_for_image = float_dimensions_for_image,
     float_config_for_block = float_config_for_block,
     image_link = image_link,
     namespace = ns,
+    read_png_size = read_png_size,
     render_error_text = render_error_text,
     states = states,
 }

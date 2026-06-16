@@ -32,9 +32,32 @@ local function assert_no_closed_fold(start_row)
     assert.are.equal(-1, vim.fn.foldclosed(start_row + 1))
 end
 
+local function write_png_header(path, width, height)
+    local bytes = {
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+        math.floor(width / 0x1000000) % 0x100,
+        math.floor(width / 0x10000) % 0x100,
+        math.floor(width / 0x100) % 0x100,
+        width % 0x100,
+        math.floor(height / 0x1000000) % 0x100,
+        math.floor(height / 0x10000) % 0x100,
+        math.floor(height / 0x100) % 0x100,
+        height % 0x100,
+    }
+    local chars = {}
+    for _, byte in ipairs(bytes) do
+        chars[#chars + 1] = string.char(byte)
+    end
+    local file = assert(io.open(path, 'wb'))
+    file:write(table.concat(chars))
+    file:close()
+end
+
 describe('rendermark.plantuml', function()
     local orig_exepath
     local orig_filereadable
+    local orig_get_mode
     local orig_system
     local orig_notify
 
@@ -48,6 +71,7 @@ describe('rendermark.plantuml', function()
         vim.env.PLANTUML_JAR = nil
         orig_exepath = vim.fn.exepath
         orig_filereadable = vim.fn.filereadable
+        orig_get_mode = vim.api.nvim_get_mode
         orig_system = vim.system
         orig_notify = vim.notify
         vim.notify = function() end
@@ -57,6 +81,7 @@ describe('rendermark.plantuml', function()
         plantuml.clean(0)
         vim.fn.exepath = orig_exepath
         vim.fn.filereadable = orig_filereadable
+        vim.api.nvim_get_mode = orig_get_mode
         vim.system = orig_system
         vim.notify = orig_notify
         vim.g.rendermark_plantuml_jar = nil
@@ -283,6 +308,55 @@ describe('rendermark.plantuml', function()
         assert.is_true(config.row > 4)
     end)
 
+    it('parses PNG dimensions from the image header', function()
+        local path = vim.fn.tempname() .. '.png'
+        write_png_header(path, 320, 180)
+
+        local size = plantuml._test.read_png_size(path)
+
+        assert.are.same({ width = 320, height = 180 }, size)
+        vim.fn.delete(path)
+    end)
+
+    it('sizes preview floats from image dimensions converted to cells', function()
+        plantuml.setup({ enabled = false })
+        local size = { width = 95, height = 37 }
+
+        local dims = plantuml._test.float_dimensions_for_image(size, {
+            cell_width = 10,
+            cell_height = 18,
+            max_width = 80,
+            max_height = 24,
+        })
+
+        assert.are.equal(10, dims.width)
+        assert.are.equal(3, dims.height)
+    end)
+
+    it('places preview floats beside the full fenced block without intersecting it', function()
+        plantuml.setup({ enabled = false })
+        local lines = {}
+        for i = 1, 20 do
+            lines[i] = 'line ' .. i
+        end
+        make_buf(lines)
+        vim.cmd('resize 8')
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        vim.cmd('normal! zt')
+
+        local config = plantuml._test.float_config_for_block(0, {
+            start_row = 1,
+            end_row = 5,
+        }, 2, 6)
+
+        local topline = vim.fn.line('w0', 0) - 1
+        local block_top = 1 - topline
+        local block_bottom = 5 - topline
+        local float_top = config.row
+        local float_bottom = config.row + config.height + 1
+        assert.is_true(float_bottom < block_top or float_top > block_bottom or config.col + config.width + 1 < 0 or config.col > 0)
+    end)
+
     it('creates preview floats as a markdown scratch buffer with one image link', function()
         vim.fn.exepath = function(name)
             return name == 'plantuml' and '/bin/plantuml' or ''
@@ -315,6 +389,86 @@ describe('rendermark.plantuml', function()
         assert.are.equal('markdown', vim.bo[float_buf].filetype)
         local lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
         assert.are.same({ '![plantuml](' .. st.float.path .. ')' }, lines)
+    end)
+
+    it('suppresses active previews and inline image marks in visual modes', function()
+        vim.fn.exepath = function(name)
+            return name == 'plantuml' and '/bin/plantuml' or ''
+        end
+        vim.system = function(argv, _, on_exit)
+            local png = argv[#argv]:gsub('%.puml$', '.png')
+            write_png_header(png, 120, 72)
+            vim.schedule(function() on_exit({ code = 0, stderr = '' }) end)
+            return { kill = function() end }
+        end
+        plantuml.setup({ debounce_ms = 10 })
+        local buf = make_buf({
+            '```plantuml',
+            '@startuml',
+            'Alice -> Bob',
+            '@enduml',
+            '```',
+        })
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+        plantuml.refresh(buf)
+        vim.wait(1000, function()
+            local st = plantuml._test.states[buf]
+            return st and st.float and st.float.win and vim.api.nvim_win_is_valid(st.float.win)
+        end)
+
+        vim.cmd('normal! V')
+        plantuml.refresh(buf)
+
+        local st = plantuml._test.states[buf]
+        assert.is_truthy(st)
+        assert.is_nil(st.float)
+        for _, mark in ipairs(plantuml_marks(buf)) do
+            local vt = mark[4].virt_text
+            assert.is_false(vt and vt[1] and vt[1][1]:find('!%[plantuml%]%(.*%.png%)') ~= nil)
+        end
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
+    end)
+
+    it('keeps active previews in insert and replace modes', function()
+        vim.fn.exepath = function(name)
+            return name == 'plantuml' and '/bin/plantuml' or ''
+        end
+        vim.system = function(argv, _, on_exit)
+            local png = argv[#argv]:gsub('%.puml$', '.png')
+            write_png_header(png, 120, 72)
+            vim.schedule(function() on_exit({ code = 0, stderr = '' }) end)
+            return { kill = function() end }
+        end
+        plantuml.setup({ debounce_ms = 10 })
+        local buf = make_buf({
+            '```plantuml',
+            '@startuml',
+            'Alice -> Bob',
+            '@enduml',
+            '```',
+        })
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+        plantuml.refresh(buf)
+        vim.wait(1000, function()
+            local st = plantuml._test.states[buf]
+            return st and st.float and st.float.win and vim.api.nvim_win_is_valid(st.float.win)
+        end)
+
+        vim.api.nvim_get_mode = function()
+            return { mode = 'i', blocking = false }
+        end
+        plantuml.refresh(buf)
+        local st = plantuml._test.states[buf]
+        assert.is_truthy(st and st.float and st.float.win and vim.api.nvim_win_is_valid(st.float.win))
+
+        vim.api.nvim_get_mode = function()
+            return { mode = 'R', blocking = false }
+        end
+        plantuml.refresh(buf)
+        st = plantuml._test.states[buf]
+        assert.is_truthy(st and st.float and st.float.win and vim.api.nvim_win_is_valid(st.float.win))
     end)
 
     it('places preview floats above a block when the block is near the bottom', function()
