@@ -293,7 +293,7 @@ describe('rendermark.plantuml', function()
         assert_no_closed_fold(0)
     end)
 
-    it('places preview floats below a block when there is room', function()
+    it('places preview anchor floats on the source block row', function()
         plantuml.setup({ enabled = false })
         local buf = make_buf({
             'before',
@@ -312,11 +312,58 @@ describe('rendermark.plantuml', function()
 
         assert.are.equal('editor', config.relative)
         assert.is_nil(config.border)
-        assert.is_true(config.row > 4)
+        assert.are.equal(1, config.row)
+        assert.are.equal(1, config.height)
         assert.are.equal(4, config.col)
     end)
 
-    it('keeps sample preview below cursor line 2 from covering the fenced block', function()
+    it('aligns preview anchor floats with virtual indent before the fenced block', function()
+        plantuml.setup({ enabled = false })
+        local buf = make_buf({
+            '```plantuml',
+            '@startuml',
+            '@enduml',
+            '```',
+        })
+        local indent_ns = vim.api.nvim_create_namespace('test_plantuml_virtual_indent')
+        vim.api.nvim_buf_set_extmark(buf, indent_ns, 0, 0, {
+            virt_text = { { '▎', 'RmIndent' }, { '   ', 'Normal' } },
+            virt_text_pos = 'inline',
+        })
+        vim.cmd('normal! gg')
+
+        local config = plantuml._test.float_config_for_block(0, {
+            start_row = 0,
+            end_row = 3,
+        }, 30, 6)
+
+        assert.are.equal(4, config.col)
+    end)
+
+    it('ignores render-markdown prefix overlays when aligning preview anchor floats', function()
+        plantuml.setup({ enabled = false })
+        local buf = make_buf({
+            '```plantuml',
+            '@startuml',
+            '@enduml',
+            '```',
+        })
+        local rm_ns = vim.api.nvim_create_namespace('render-markdown')
+        vim.api.nvim_buf_set_extmark(buf, rm_ns, 0, 0, {
+            virt_text = { { '▎', 'RenderMarkdownBullet' } },
+            virt_text_pos = 'overlay',
+        })
+        vim.cmd('normal! gg')
+
+        local config = plantuml._test.float_config_for_block(0, {
+            start_row = 0,
+            end_row = 3,
+        }, 30, 6)
+
+        assert.are.equal(0, config.col)
+    end)
+
+    it('anchors sample preview from cursor line 2 to the first fenced block row', function()
         plantuml.setup({ enabled = false })
         make_buf({
             '# One',
@@ -347,15 +394,12 @@ describe('rendermark.plantuml', function()
         local screenpos = vim.fn.win_screenpos(0)
         local topline = vim.api.nvim_win_call(0, function() return vim.fn.line('w0') end) - 1
         local block_top = (screenpos[1] or 1) - 1 + 1 - topline
-        local block_bottom = (screenpos[1] or 1) - 1 + 8 - topline
-        local float_top = config.row
-        local float_bottom = config.row + config.height - 1
         assert.are.equal(2, config.col)
-        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width - 1,
-            block_top, block_bottom, 2, 17))
+        assert.are.equal(math.max(0, block_top), config.row)
+        assert.are.equal(1, config.height)
     end)
 
-    it('keeps sample preview from cursor line 3 off the opening fence row', function()
+    it('anchors sample preview from cursor line 3 to the first fenced block row', function()
         plantuml.setup({ enabled = false })
         make_buf({
             '# One',
@@ -386,14 +430,12 @@ describe('rendermark.plantuml', function()
         local screenpos = vim.fn.win_screenpos(0)
         local topline = vim.api.nvim_win_call(0, function() return vim.fn.line('w0') end) - 1
         local block_top = (screenpos[1] or 1) - 1 + 1 - topline
-        local block_bottom = (screenpos[1] or 1) - 1 + 8 - topline
-        local float_top = config.row
-        local float_bottom = config.row + config.height - 1
-        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width - 1,
-            block_top, block_bottom, 2, 17))
+        assert.are.equal(2, config.col)
+        assert.are.equal(math.max(0, block_top), config.row)
+        assert.are.equal(1, config.height)
     end)
 
-    it('keeps sample preview from cursor line 11 off the second fenced block', function()
+    it('anchors sample preview from cursor line 11 to the second fenced block row', function()
         plantuml.setup({ enabled = false })
         make_buf({
             '# One',
@@ -424,12 +466,9 @@ describe('rendermark.plantuml', function()
         local screenpos = vim.fn.win_screenpos(0)
         local topline = vim.api.nvim_win_call(0, function() return vim.fn.line('w0') end) - 1
         local block_top = (screenpos[1] or 1) - 1 + 10 - topline
-        local block_bottom = (screenpos[1] or 1) - 1 + 14 - topline
-        local float_top = config.row
-        local float_bottom = config.row + config.height - 1
         assert.are.equal(4, config.col)
-        assert.is_false(rects_overlap(float_top, float_bottom, config.col, config.col + config.width - 1,
-            block_top, block_bottom, 4, 18))
+        assert.are.equal(block_top, config.row)
+        assert.are.equal(1, config.height)
     end)
 
     it('parses PNG dimensions from the image header', function()
@@ -483,7 +522,7 @@ describe('rendermark.plantuml', function()
         assert.are.equal(11, dims.height)
     end)
 
-    it('places preview floats beside the full fenced block without intersecting it', function()
+    it('keeps preview anchor floats on the source row even when the block is taller than the window', function()
         plantuml.setup({ enabled = false })
         local lines = {}
         for i = 1, 20 do
@@ -502,19 +541,18 @@ describe('rendermark.plantuml', function()
         local topline = vim.api.nvim_win_call(0, function() return vim.fn.line('w0') end) - 1
         local screenpos = vim.fn.win_screenpos(0)
         local block_top = (screenpos[1] or 1) - 1 + 1 - topline
-        local block_bottom = (screenpos[1] or 1) - 1 + 5 - topline
-        local float_top = config.row
-        local float_bottom = config.row + config.height - 1
-        assert.is_true(float_bottom < block_top or float_top > block_bottom or config.col + config.width - 1 < 0 or config.col > 0)
+        assert.are.equal(block_top, config.row)
+        assert.are.equal(0, config.col)
+        assert.are.equal(1, config.height)
     end)
 
-    it('creates preview floats as a markdown scratch buffer with one image link', function()
+    it('creates preview floats as a markdown scratch buffer with one image link and source metadata', function()
         vim.fn.exepath = function(name)
             return name == 'plantuml' and '/bin/plantuml' or ''
         end
         vim.system = function(argv, _, on_exit)
             local png = argv[#argv]:gsub('%.puml$', '.png')
-            vim.fn.writefile({ 'png' }, png)
+            write_png_header(png, 320, 180)
             vim.schedule(function() on_exit({ code = 0, stderr = '' }) end)
             return { kill = function() end }
         end
@@ -540,6 +578,13 @@ describe('rendermark.plantuml', function()
         assert.are.equal('markdown', vim.bo[float_buf].filetype)
         local lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
         assert.are.same({ '![plantuml](' .. st.float.path .. ')' }, lines)
+        local config = vim.api.nvim_win_get_config(float_win)
+        assert.are.equal(1, config.height)
+        local meta = vim.w[float_win].rendermark_plantuml_preview_source
+        assert.are.equal(buf, meta.buf)
+        assert.are.equal(0, meta.start_row)
+        assert.are.equal(0, meta.anchor_col)
+        assert.are.equal(st.float.path, meta.path)
     end)
 
     it('suppresses active previews and inline image marks in visual modes', function()
@@ -667,7 +712,7 @@ describe('rendermark.plantuml', function()
         assert.is_false(vim.api.nvim_win_is_valid(float_win))
     end)
 
-    it('places preview floats above a block when the block is near the bottom', function()
+    it('keeps preview anchor floats on the source row when the block is near the bottom', function()
         plantuml.setup({ enabled = false })
         local lines = {}
         for i = 1, 14 do
@@ -683,7 +728,11 @@ describe('rendermark.plantuml', function()
             end_row = 11,
         }, 30, 6)
 
-        assert.is_true(config.row + config.height - 1 < 8)
+        local screenpos = vim.fn.win_screenpos(0)
+        local topline = vim.api.nvim_win_call(0, function() return vim.fn.line('w0') end) - 1
+        local block_top = (screenpos[1] or 1) - 1 + 8 - topline
+        assert.are.equal(block_top, config.row)
+        assert.are.equal(1, config.height)
     end)
 
     it('inline-transforms the active block in READ mode', function()

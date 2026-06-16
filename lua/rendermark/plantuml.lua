@@ -593,15 +593,100 @@ local function mode_is_visual_or_select()
         or mode == 's' or mode == 'S' or mode == '\019'
 end
 
+local function strip_indent_space_chars(text)
+    if type(text) ~= 'string' then return '' end
+    return text
+        :gsub('[%s]', '')
+        :gsub('\194\160', '')
+        :gsub('\226\128[\128-\138]', '')
+        :gsub('\226\128\175', '')
+        :gsub('\226\129\159', '')
+        :gsub('\227\128\128', '')
+end
+
+local function text_has_indent_marker(text)
+    return text == '▎' or text == '▏' or text == '▕' or text == '│' or text == '┃' or text == '|'
+end
+
+local function highlight_has(highlight, needle)
+    if type(highlight) == 'string' then
+        return highlight:lower():find(needle, 1, true) ~= nil
+    end
+    if type(highlight) == 'table' then
+        for _, hl in ipairs(highlight) do
+            if type(hl) == 'string' and hl:lower():find(needle, 1, true) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function is_render_markdown_prefix(namespace, highlight)
+    if type(namespace) ~= 'string' or not namespace:lower():find('render%-markdown') then
+        return false
+    end
+    return highlight_has(highlight, 'head')
+        or highlight_has(highlight, 'bullet')
+        or highlight_has(highlight, 'check')
+end
+
+local function is_indent_text(text, highlight, namespace)
+    if is_render_markdown_prefix(namespace, highlight) then
+        return false
+    end
+
+    local rest = strip_indent_space_chars(text)
+    if rest == '' then return true end
+    return text_has_indent_marker(rest)
+        and (highlight_has(highlight, 'indent')
+            or (type(namespace) == 'string' and namespace:lower():find('indent', 1, true) ~= nil))
+end
+
+local function virt_text_width(virt_text, namespace)
+    if type(virt_text) ~= 'table' then return 0 end
+    local width = 0
+    for _, chunk in ipairs(virt_text) do
+        local text = type(chunk) == 'table' and chunk[1] or nil
+        local highlight = type(chunk) == 'table' and chunk[2] or nil
+        if type(text) ~= 'string' then return 0 end
+        if not is_indent_text(text, highlight, namespace) then return 0 end
+        width = width + vim.fn.strdisplaywidth(text)
+    end
+    return width
+end
+
+local function virtual_indent_width(buf, row, col)
+    local ok, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, -1, { row, 0 }, { row + 1, 0 }, { details = true })
+    if not ok then return 0 end
+    local namespaces = vim.api.nvim_get_namespaces()
+    local namespace_names = {}
+    for name, id in pairs(namespaces) do
+        namespace_names[id] = name
+    end
+
+    local width = 0
+    for _, mark in ipairs(marks) do
+        local mark_row = mark[2]
+        local mark_col = mark[3]
+        local details = mark[4] or {}
+        if mark_row == row and (mark_col <= col or (col == 0 and mark_col <= 1)) then
+            local virt_width = virt_text_width(details.virt_text, namespace_names[details.ns_id])
+            if virt_width > 0 and (details.virt_text_pos == 'inline'
+                or details.virt_text_pos == 'overlay'
+                or details.virt_text_win_col ~= nil) then
+                width = width + virt_width
+            end
+        end
+    end
+    return width
+end
+
 local function float_config_for_block(win, block, width, height)
     win = win == 0 and vim.api.nvim_get_current_win() or win
     local topline = vim.api.nvim_win_call(win, function()
         return vim.fn.line('w0')
     end) - 1
-    local start_row = math.max(0, block.start_row - topline)
-    local end_row = math.max(start_row, block.end_row - topline)
-    local total_width = width
-    local total_height = height
     local screenpos = vim.fn.win_screenpos(win)
     local screen_row = type(screenpos) == 'table' and (screenpos[1] or 1) or 1
     local screen_col = type(screenpos) == 'table' and (screenpos[2] or 1) or 1
@@ -610,24 +695,16 @@ local function float_config_for_block(win, block, width, height)
     local editor_height = math.max(1, vim.o.lines - vim.o.cmdheight)
     local editor_width = math.max(1, vim.o.columns)
 
+    local buf = vim.api.nvim_win_get_buf(win)
+    local anchor_row = math.max(0, block.start_row - topline)
     local block_indent = 0
-    local block_width = 0
-    local lines = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), block.start_row, block.end_row + 1, false)
+    local anchor_col = 0
+    local lines = vim.api.nvim_buf_get_lines(buf, block.start_row, block.start_row + 1, false)
     if lines[1] then
         local leading = lines[1]:match('^%s*') or ''
+        anchor_col = #leading
         block_indent = vim.fn.strdisplaywidth(leading)
     end
-    for _, line in ipairs(lines) do
-        local leading = line:match('^%s*') or ''
-        local indent = vim.fn.strdisplaywidth(leading)
-        block_width = math.max(block_width, indent + vim.fn.strdisplaywidth(line:sub(#leading + 1)))
-    end
-    block_width = math.max(block_width, block_indent + 1)
-
-    local block_top = win_top + start_row
-    local block_bottom = win_top + end_row
-    local block_left = win_left + block_indent
-    local block_right = win_left + block_width - 1
 
     local function clamp(value, low, high)
         if high < low then
@@ -636,83 +713,50 @@ local function float_config_for_block(win, block, width, height)
         return math.max(low, math.min(value, high))
     end
 
-    local function side_row()
-        if total_height >= editor_height then
-            return 0
-        end
-        return clamp(block_top, 0, editor_height - total_height)
-    end
-
-    local function overlaps(a_start, a_end, b_start, b_end)
-        return a_start <= b_end and b_start <= a_end
-    end
-
-    local function score(candidate)
-        local row0 = candidate.row
-        local row1 = candidate.row + total_height - 1
-        local col0 = candidate.col
-        local col1 = candidate.col + total_width - 1
-        if overlaps(row0, row1, block_top, block_bottom)
-            and overlaps(col0, col1, block_left, block_right) then
-            return nil
-        end
-        local clipped = 0
-        if row0 < 0 then clipped = clipped - row0 end
-        if col0 < 0 then clipped = clipped - col0 end
-        if row1 >= editor_height then clipped = clipped + row1 - editor_height + 1 end
-        if col1 >= editor_width then clipped = clipped + col1 - editor_width + 1 end
-        return clipped
-    end
-
-    local candidates = {
-        { name = 'below', row = block_bottom + 1, col = block_left },
-        { name = 'above', row = block_top - total_height, col = block_left },
-        { name = 'left', row = side_row(), col = block_left - total_width },
-        { name = 'right', row = side_row(), col = block_right + 1 },
-    }
-
-    local best
-    for _, candidate in ipairs(candidates) do
-        candidate.clipped = score(candidate)
-        if candidate.clipped and (not best or candidate.clipped < best.clipped) then
-            best = candidate
-            if candidate.clipped == 0 then
-                break
-            end
-        end
-    end
-
-    if not best then
-        best = { row = clamp(block_bottom + 1, 0, editor_height - total_height), col = block_left }
-    end
+    local total_width = math.max(1, math.min(width or 1, editor_width))
+    local total_height = 1
+    local row = clamp(win_top + anchor_row, 0, editor_height - total_height)
+    local col = clamp(win_left + block_indent + virtual_indent_width(buf, block.start_row, anchor_col),
+        0, editor_width - total_width)
 
     return {
         relative = 'editor',
-        row = best.row,
-        col = best.col,
-        width = width,
-        height = height,
+        row = row,
+        col = col,
+        width = total_width,
+        height = total_height,
         style = 'minimal',
         focusable = false,
         zindex = 70,
     }
 end
 
+local function preview_metadata(buf, source_win, block, path)
+    local line = vim.api.nvim_buf_get_lines(buf, block.start_row, block.start_row + 1, false)[1] or ''
+    local leading = line:match('^%s*') or ''
+    return {
+        buf = buf,
+        win = source_win,
+        start_row = block.start_row,
+        anchor_col = #leading,
+        path = path,
+    }
+end
+
 local function open_float(buf, path, block)
     local st = state_for(buf)
     local current_win = vim.api.nvim_get_current_win()
-    local dims = float_dimensions_for_image(read_png_size(path), {
-        max_width = vim.o.columns,
-        max_height = vim.o.lines - vim.o.cmdheight,
-    })
-    local fwidth = dims.width
-    local fheight = dims.height
+    local text = image_link(path)
+    local fwidth = math.max(1, math.min(vim.fn.strdisplaywidth(text), math.max(1, vim.o.columns)))
+    local fheight = 1
     local config_for_float = float_config_for_block(current_win, block, fwidth, fheight)
+    local metadata = preview_metadata(buf, current_win, block, path)
 
     if st.float and st.float.path == path
         and st.float.win and vim.api.nvim_win_is_valid(st.float.win)
         and st.float.buf and vim.api.nvim_buf_is_valid(st.float.buf) then
         pcall(vim.api.nvim_win_set_config, st.float.win, config_for_float)
+        vim.w[st.float.win].rendermark_plantuml_preview_source = metadata
         return
     end
     close_float(st)
@@ -725,6 +769,7 @@ local function open_float(buf, path, block)
     vim.bo[fbuf].modifiable = false
 
     local win = vim.api.nvim_open_win(fbuf, false, config_for_float)
+    vim.w[win].rendermark_plantuml_preview_source = metadata
     st.float = { buf = fbuf, win = win, path = path }
 end
 
