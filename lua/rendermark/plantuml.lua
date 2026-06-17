@@ -755,7 +755,8 @@ local function open_float(buf, path, block)
     if st.float and st.float.path == path
         and st.float.win and vim.api.nvim_win_is_valid(st.float.win)
         and st.float.buf and vim.api.nvim_buf_is_valid(st.float.buf) then
-        pcall(vim.api.nvim_win_set_config, st.float.win, config_for_float)
+        -- Leave geometry to the GUI (neopp), which positions/sizes the preview to
+        -- fit the rendered image adjacent to the block. Only refresh metadata.
         vim.w[st.float.win].rendermark_plantuml_preview_source = metadata
         return
     end
