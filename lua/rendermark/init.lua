@@ -11,17 +11,15 @@
 local M = {}
 
 local wrap = require('rendermark.wrap')
-local read = require('rendermark.read')
-local plantuml = require('rendermark.plantuml')
 
 function M.setup(opts)
     wrap.setup(opts) -- soft-wrap + tables (registers its own autocmds/command)
-    read.setup()     -- READ mode (registers its own autocmds/keymaps)
-    plantuml.setup(opts and opts.plantuml or nil)
+    -- READ mode and PlantUML rendering are intentionally disabled here.
+    -- PlantUML is now owned by the neopp GUI (it converts ```plantuml blocks to
+    -- images directly); READ mode is disabled pending rework.
 end
 
 M.refresh = wrap.refresh
 M.toggle = wrap.toggle
-M.plantuml_refresh = plantuml.refresh
 
 return M
