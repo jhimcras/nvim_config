@@ -13,6 +13,8 @@
 
 local M = {}
 
+local util = require('util')
+
 local image_ns
 local layout_sig = ''
 local image_reservation_sig = ''
@@ -21,6 +23,7 @@ local image_sync_pending = false
 local autocmd_group
 local bitops = bit or bit32
 local extmark_virt_lines_sig
+local cursor_block_sig  -- last seen M.cursor_active_block_sig(); gates CursorMoved
 local live_ids = {}  -- id -> true: images currently set in the GUI backend
 
 local function trim(s)
@@ -588,11 +591,10 @@ local function u24le(s, i)
   return a + b * 256 + c * 65536
 end
 
-function M.read_image_size(path)
-  local f = io.open(path, 'rb')
-  if not f then return nil end
-  local data = f:read(512 * 1024) or ''
-  f:close()
+-- Pure: decode width/height/format from leading image bytes (no I/O). Split out
+-- from read_image_size so the format detection is unit-testable on byte fixtures.
+function M.parse_image_size(data)
+  if type(data) ~= 'string' then return nil end
 
   if data:sub(1, 8) == '\137PNG\r\n\026\n' and #data >= 24 then
     return { width = u32be(data, 17), height = u32be(data, 21), format = 'png' }
@@ -637,6 +639,39 @@ function M.read_image_size(path)
     end
   end
   return nil
+end
+
+-- path -> { mtime = <ns>, size = <bytes>, dim = <result|false> }
+-- A `false` dim caches an unsupported/undecodable file so we don't re-read it.
+local image_size_cache = {}
+
+-- Read image dimensions from `path`, caching by (mtime, size) so repeated renders
+-- don't re-read the same files. fs_stat is a cheap syscall vs the 512KB read it
+-- guards, and mtime/size keying guarantees fresh dims if the file changes on disk.
+function M.read_image_size(path)
+  local st = vim.uv.fs_stat(path)
+  if not st then
+    image_size_cache[path] = nil
+    return nil
+  end
+
+  local mtime = st.mtime and (st.mtime.sec * 1000000000 + (st.mtime.nsec or 0)) or 0
+  local cached = image_size_cache[path]
+  if cached and cached.mtime == mtime and cached.size == st.size then
+    return cached.dim or nil
+  end
+
+  local f = io.open(path, 'rb')
+  if not f then
+    image_size_cache[path] = nil
+    return nil
+  end
+  local data = f:read(512 * 1024) or ''
+  f:close()
+
+  local dim = M.parse_image_size(data)
+  image_size_cache[path] = { mtime = mtime, size = st.size, dim = dim or false }
+  return dim
 end
 
 local function stable_hash(s)
@@ -1833,6 +1868,47 @@ end
 -- Change detection + autocmds
 -- ===========================================================================
 
+-- Pure: stable identity of the block containing `cursor_row` (0-based), or '' if
+-- the cursor is outside every block. Matches plantuml_active_block's containment
+-- test (start_row <= row <= end_row).
+function M.cursor_block_id(cursor_row, blocks)
+  for _, block in ipairs(blocks or {}) do
+    if cursor_row >= block.start_row and cursor_row <= block.end_row then
+      return tostring(block.start_row) .. ':' .. tostring(block.end_row)
+    end
+  end
+  return ''
+end
+
+-- Signature of "which PlantUML block (if any) the cursor sits in" across every
+-- visible markdown window. The only cursor-dependent output is the preview float
+-- that opens for the block under the cursor, so this fingerprint changes exactly
+-- when a cursor move could change rendering -- letting the CursorMoved handler skip
+-- a full render for ordinary navigation. Conservative: iterating all windows that
+-- show a buffer can only over-report a change, never miss one.
+function M.cursor_active_block_sig()
+  local parts = {}
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_is_valid(win) then
+      local buf = vim.api.nvim_win_get_buf(win)
+      local name = vim.api.nvim_buf_get_name(buf)
+      local ext = vim.fn.fnamemodify(name, ':e'):lower()
+      if vim.bo[buf].filetype == 'markdown' or ext == 'md' or ext == 'markdown' then
+        local blocks = M.plantuml_find_blocks(buf)
+        if #blocks > 0 then
+          local row = vim.api.nvim_win_get_cursor(win)[1] - 1
+          local id = M.cursor_block_id(row, blocks)
+          if id ~= '' then
+            parts[#parts + 1] = tostring(win) .. '@' .. tostring(buf) .. '=' .. id
+          end
+        end
+      end
+    end
+  end
+  table.sort(parts)
+  return table.concat(parts, '|')
+end
+
 function M.get_layout_sig()
   local s = {}
   for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -1912,6 +1988,17 @@ function M.handle_safestate()
   end
 end
 
+-- CursorMoved fires constantly; the only cursor-driven output is the PlantUML
+-- preview float. Re-render only when the cursor's block membership actually
+-- changes; ordinary navigation is a no-op.
+function M.handle_cursor_moved()
+  local sig = M.cursor_active_block_sig()
+  if sig == cursor_block_sig then return end
+  cursor_block_sig = sig
+  M.send_images()
+  notify_redraw()
+end
+
 function M.setup()
   install_terminal_stub()
   if img_available() then
@@ -1934,8 +2021,17 @@ function M._init()
   autocmd_group = vim.api.nvim_create_augroup('rendermark_image', { clear = true })
 
   vim.api.nvim_create_autocmd(
-    { 'BufEnter', 'BufReadPost', 'FileType', 'TextChanged', 'TextChangedI' },
+    { 'BufEnter', 'BufReadPost', 'FileType' },
     { group = autocmd_group, callback = function() M.send_images() end })
+
+  -- TextChanged fires per keystroke; coalesce bursts into one render. SafeState
+  -- still issues the authoritative render once typing pauses, so the final on-
+  -- screen state is identical -- only intermediate per-keystroke renders are saved.
+  local debounce_ms = tonumber(vim.g.rendermark_image_debounce_ms) or 30
+  local debounced_send = util.debounce(function() M.send_images() end, debounce_ms)
+  vim.api.nvim_create_autocmd(
+    { 'TextChanged', 'TextChangedI' },
+    { group = autocmd_group, callback = function() debounced_send() end })
 
   vim.api.nvim_create_autocmd(
     { 'WinScrolled', 'WinResized', 'WinNew', 'BufWinEnter', 'WinClosed' },
@@ -1944,10 +2040,7 @@ function M._init()
   vim.api.nvim_create_autocmd(
     { 'CursorMoved', 'CursorMovedI' },
     { group = autocmd_group, callback = function()
-      vim.schedule(function()
-        M.send_images()
-        notify_redraw()
-      end)
+      vim.schedule(M.handle_cursor_moved)
     end })
 
   vim.api.nvim_create_autocmd(
@@ -1967,6 +2060,7 @@ function M._init()
 
   M.send_images()
   layout_sig = M.get_layout_sync_sig()
+  cursor_block_sig = M.cursor_active_block_sig()
 end
 
 return M

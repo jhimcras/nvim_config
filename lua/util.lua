@@ -600,6 +600,29 @@ function M.memoize_ttl(func, opts)
     end
 end
 
+--- Debounce a function: coalesce rapid calls into a single trailing invocation.
+--- Each call (re)arms a timer for `ms`; the wrapped `fn` runs once, `ms` after the
+--- last call, with that last call's arguments. The timer callback is scheduled on
+--- the main loop, so `fn` may safely touch the Neovim API.
+---
+--- @param fn function   The function to debounce.
+--- @param ms number     Trailing-edge delay in milliseconds.
+--- @return function      The debounced wrapper.
+function M.debounce(fn, ms)
+    assert(type(fn) == "function", "debounce: fn must be a function")
+    ms = tonumber(ms) or 0
+
+    local timer
+    return function(...)
+        local packed = pack(...)
+        if not timer then timer = vim.uv.new_timer() end
+        timer:stop()
+        timer:start(ms, 0, vim.schedule_wrap(function()
+            fn(unpack_fn(packed, 1, packed.n))
+        end))
+    end
+end
+
 
 function M.insert_unique_by(t, value, eq)
     for _, v in ipairs(t) do
