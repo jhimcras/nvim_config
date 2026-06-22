@@ -238,9 +238,8 @@ function M.setup()
         { 'kana/vim-textobj-user' },
         { 'michaeljsmith/vim-indent-object' },
         { 'nvim-lua/lsp-status.nvim', config = LspStatusConfig },
-        { 'nvim-treesitter/nvim-treesitter', run = ':TSUpdate', config = function() require'treesitter_setting'.setup() end },
-        { 'nvim-treesitter/playground' },
-        { 'nvim-treesitter/nvim-treesitter-textobjects' },
+        { 'nvim-treesitter/nvim-treesitter', run = ':TSUpdate' },
+        { 'nvim-treesitter/nvim-treesitter-textobjects', config = function() require'nvim-treesitter-textobjects'.setup{} end },
         -- { 'plasticboy/vim-markdown', ft = { 'markdown' } },
         -- { 'iamcco/markdown-preview.nvim', ft = { 'markdown' }, run = 'cd app & yarn install' },
         { 'tpope/vim-fugitive', config = FugitiveSetting },
@@ -307,7 +306,6 @@ function M.setup()
     require'smart_cursorline'.setup()
     require'lsp_setting'.setup()
     require'rendermark'.setup{ max_width = 120 }
-    -- require'treesitter_setting'.setup()
     -- require'complete'.setup()
     -- require'md'.setup()
 

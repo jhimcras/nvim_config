@@ -139,11 +139,10 @@ end
 
 
 function M.current_function(bufnr, winid)
-    local ts_utils_loadded, ts_utils = pcall(require, "nvim-treesitter.ts_utils")
-    if ts_utils_loadded then
-        local node = ts_utils.get_node_at_cursor()
-        if not node then return "" end
-
+    local ok, parser = pcall(vim.treesitter.get_parser)
+    if ok and parser then
+        parser:parse()
+        local node = vim.treesitter.get_node()
         while node do
             local ntype = node:type()
 
