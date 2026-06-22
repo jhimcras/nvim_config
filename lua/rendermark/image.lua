@@ -35,6 +35,30 @@ local function img_available()
   return vim.ui and vim.ui.img and type(vim.ui.img.set) == 'function'
 end
 
+-- Terminal verification stub: when neopp is absent (plain terminal) and the user
+-- opts in via RENDERMARK_IMG_STUB / vim.g.rendermark_img_stub, install a no-op
+-- vim.ui.img backend so img_available() is true and the whole non-pixel UI
+-- pipeline (space reservation, conceal, preview floats, cursor rules, autocmds)
+-- runs. M._stub_active makes make_virt_lines draw a labelled box in the reserved
+-- area so the secured region/size is visible without real image pixels.
+local stub_store = {}  -- id -> { path = , opts = }
+
+local function stub_requested()
+  return (not img_available())
+     and (vim.env.RENDERMARK_IMG_STUB or vim.g.rendermark_img_stub)
+end
+
+local function install_terminal_stub()
+  if not stub_requested() then return end
+  vim.ui = vim.ui or {}
+  vim.ui.img = {
+    set = function(id, path, opts) stub_store[id] = { path = path, opts = opts } end,
+    get = function(id) return stub_store[id] end,
+    del = function(id) stub_store[id] = nil end,
+  }
+  M._stub_active = true
+end
+
 -- Diff a freshly computed payload against the live set: set every entry (its
 -- position/size may have changed) and del ids that are no longer present.
 local function apply_payload(payload)
@@ -291,12 +315,155 @@ function M.virtual_image_anchor_display_col(buf, row, image, sp, win_info)
   return math.max(base_col, wincol + textoff) + prefix_width
 end
 
-function M.make_virt_lines(virt_height)
+function M.make_virt_lines(virt_height, label)
+  local h = math.max(1, virt_height or 1)
+  if M._stub_active and label then
+    return M.make_stub_box(h, label)
+  end
   local lines = {}
-  for _ = 2, math.max(1, virt_height or 1) do
+  for _ = 2, h do
     lines[#lines + 1] = { { ' ', 'Normal' } }
   end
   return lines
+end
+
+-- Terminal stub: draw a bordered box inside the reserved rows so the secured
+-- render area (boundary + computed pixel size) is visible without real pixels.
+-- Like the blank variant, the box lives entirely in the h-1 virt_lines below the
+-- anchor buffer line; the anchor line keeps the (concealed) source link.
+function M.make_stub_box(h, label)
+  local hl = 'NonText'
+  local n = h - 1  -- number of virt_lines to emit
+  if n < 1 then return {} end
+  local name = label.name or '?'
+  local size = string.format('%dx%dpx  (%d rows)', label.w_px or 0, label.h_px or 0, h)
+  if n == 1 then
+    return { { { '[img: ' .. name .. '  ' .. size .. ']', hl } } }
+  end
+  local inner = math.min(200, math.max(#('- img: ' .. name .. ' '), #(' ' .. size .. ' ')))
+  local function row(open, fill, text, close)
+    local pad = math.max(0, inner - #text)
+    return open .. text .. string.rep(fill, pad) .. close
+  end
+  local lines = {}
+  lines[1] = { { row('+', '-', '- img: ' .. name .. ' ', '+'), hl } }
+  for i = 2, n - 1 do
+    local text = (i == 2) and (' ' .. size .. ' ') or ''
+    lines[i] = { { row('|', ' ', text, '|'), hl } }
+  end
+  lines[n] = { { row('+', '-', '', '+'), hl } }
+  return lines
+end
+
+-- Terminal stub, footprint-faithful box (PlantUML blocks AND image links). Unlike
+-- make_stub_box (which lives wholly in the virt_lines slice), this draws the box
+-- across the FULL image footprint: virt_h visual rows starting at the source's
+-- first row, exactly where the GUI image would paint. Space allocation is left
+-- untouched -- the box is split between (a) the already-reserved virt_lines and
+-- (b) zero-height virt_text overlays on the (concealed) source rows. Visual-row
+-- routing matches nvim's render order: src0, then the reserve_h-1 virt_lines
+-- anchored below src0, then src1..src(source_span-1). For a single-line image link
+-- source_span==1, so only src0 is overlaid (top border) and the rest are virt_lines.
+function M.draw_stub_footprint_box(buf, ns, reservation, cell_w)
+  local hl = 'NonText'
+  local label = reservation.label
+  local row = reservation.row
+  local reserve_h = math.max(1, reservation.reserve_h or 1)
+  local source_span = math.max(1, label.source_span or 1)
+  local virt_h = math.max(1, label.virt_h or 1)
+  local name = label.name or '?'
+  local size = string.format('%dx%dpx  (%d rows)', label.w_px or 0, label.h_px or 0, virt_h)
+
+  -- Box width = the image's real display width in cells (NOT the label length), so
+  -- the overlay never spills past the actual image footprint. Label text is clipped
+  -- to fit. Capped at 200 and floored so borders always render.
+  local box_w = math.min(200, math.max(4, math.floor((label.w_px or 0) / math.max(1, cell_w or 10) + 0.5)))
+  local inner = box_w - 2
+  local function clip(s)
+    if #s > inner then return s:sub(1, inner) end
+    return s
+  end
+
+  if virt_h <= 1 then
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
+      virt_text = { { clip('[img: ' .. name .. '  ' .. size .. ']'), hl } },
+      virt_text_pos = 'overlay', priority = 260,
+    })
+    return
+  end
+
+  local name_text = '- img: ' .. name .. ' '
+  local size_text = ' ' .. size .. ' '
+  local function bar(open, fill, text, close)
+    text = clip(text)
+    local pad = math.max(0, inner - #text)
+    return open .. text .. string.rep(fill, pad) .. close
+  end
+
+  -- Box content per visual row 0..virt_h-1.
+  local box = {}
+  box[0] = bar('+', '-', name_text, '+')
+  box[virt_h - 1] = bar('+', '-', '', '+')
+  for v = 1, virt_h - 2 do
+    box[v] = bar('|', ' ', v == 1 and size_text or '', '|')
+  end
+
+  local function overlay(brow, text)
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, brow, 0, {
+      virt_text = { { text, hl } }, virt_text_pos = 'overlay', priority = 260,
+    })
+  end
+
+  local virt_lines = {}
+  for v = 0, virt_h - 1 do
+    if v == 0 then
+      overlay(row, box[v])
+    elseif v <= reserve_h - 1 then
+      virt_lines[#virt_lines + 1] = { { box[v], hl } }
+    else
+      local src_index = v - (reserve_h - 1)
+      if src_index < source_span then overlay(row + src_index, box[v]) end
+    end
+  end
+  if #virt_lines > 0 then
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0,
+      { virt_lines = virt_lines, virt_lines_above = false })
+  end
+end
+
+-- Terminal stub box drawn into the PlantUML preview float buffer (the GUI would
+-- paint the image over the float). Fills exactly the place.width x place.height
+-- geometry the placement logic already sized the window to -- no placement change.
+function M.draw_stub_preview_box(buf, place, path)
+  local w = math.max(2, place.width or 2)
+  local h = math.max(1, place.height or 1)
+  local name = vim.fn.fnamemodify(path or '?', ':t')
+  local size = string.format('%dx%dpx', place.disp_w or 0, place.disp_h or 0)
+  local function fit(s)
+    if #s > w - 2 then return s:sub(1, w - 2) end
+    return s .. string.rep(' ', w - 2 - #s)
+  end
+  local lines = {}
+  if h == 1 then
+    lines[1] = ('[' .. name .. ' ' .. size .. ']'):sub(1, w)
+  else
+    lines[1] = '+' .. string.rep('-', w - 2) .. '+'
+    for i = 2, h - 1 do
+      local text = (i == 2) and (' img: ' .. name) or ((i == 3) and (' ' .. size) or '')
+      lines[i] = '|' .. fit(text) .. '|'
+    end
+    lines[h] = '+' .. string.rep('-', w - 2) .. '+'
+  end
+  -- Drop markdown ft so render-markdown/treesitter doesn't reflow the ASCII box
+  -- (the `|...|` rows would otherwise be mistaken for a pipe table). Only assign
+  -- when it actually differs: a FileType autocmd re-enters send_images
+  -- synchronously, so churning the filetype every draw recurses to E218.
+  if vim.bo[buf].filetype ~= '' then
+    pcall(function() vim.bo[buf].filetype = '' end)
+  end
+  pcall(function() vim.bo[buf].modifiable = true end)
+  pcall(vim.api.nvim_buf_set_lines, buf, 0, -1, false, lines)
+  pcall(function() vim.bo[buf].modifiable = false end)
 end
 
 function M.compute_image_display_size(image, max_w_px, max_rows, cell_h)
@@ -803,6 +970,14 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
   local ps = info.preview_source
   if not ps then return end
 
+  -- The `wins` snapshot predates collect_plantuml_images, which may have just
+  -- closed this float (the cursor left the block), wiping its window and buffer
+  -- (bufhidden='wipe'). Operating on the dead buffer/window then errors
+  -- (Invalid buffer id). Bail when the snapshot is stale.
+  if not (vim.api.nvim_win_is_valid(info.win) and vim.api.nvim_buf_is_valid(info.buf)) then
+    return
+  end
+
   -- Resolve the preview image from the source metadata path directly. We must
   -- NOT depend on scanning the carrier float's buffer: only markdown buffers are
   -- scanned for image links (collect_markdown_images gates on filetype), so if
@@ -832,6 +1007,12 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
   local place = M.compute_preview_placement(ps, image, cell_w, cell_h)
   if not place then return end
   M.reposition_preview_float(info.win, place)
+
+  if M._stub_active then
+    -- No pixels in a terminal: draw the box into the already-sized float instead.
+    M.draw_stub_preview_box(info.buf, place, image.path)
+    return
+  end
 
   payload[#payload + 1] = {
     id = 'preview:' .. info.buf .. ':' .. stable_hash(image.path) .. ':' .. place.disp_w .. 'x' .. place.disp_h,
@@ -1098,16 +1279,30 @@ function M.plantuml_cleanup_buf(buf)
   plantuml_states[buf] = nil
 end
 
--- Which block (if any) the current window's cursor sits inside.
+-- Which block (if any) the cursor sits inside, for a window showing `buf`.
+-- We must NOT key off the global current window alone: creating/repositioning
+-- the preview float re-fires send_images via window autocmds while the float is
+-- transiently the current window. Its buffer isn't `buf`, so keying off the
+-- current window would report "no active block" and tear the float down every
+-- other cycle (create/destroy flicker). Prefer the current window when it shows
+-- `buf`; otherwise fall back to any window displaying `buf` (the real source
+-- window), using that window's own cursor.
 local function plantuml_active_block(buf, blocks)
-  local win = vim.api.nvim_get_current_win()
-  if not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_buf(win) ~= buf then
-    return nil, nil
+  local cur = vim.api.nvim_get_current_win()
+  local candidates
+  if vim.api.nvim_win_is_valid(cur) and vim.api.nvim_win_get_buf(cur) == buf then
+    candidates = { cur }
+  else
+    candidates = vim.fn.win_findbuf(buf)
   end
-  local row = vim.api.nvim_win_get_cursor(win)[1] - 1
-  for _, block in ipairs(blocks) do
-    if row >= block.start_row and row <= block.end_row then
-      return block, win
+  for _, win in ipairs(candidates) do
+    if vim.api.nvim_win_is_valid(win) then
+      local row = vim.api.nvim_win_get_cursor(win)[1] - 1
+      for _, block in ipairs(blocks) do
+        if row >= block.start_row and row <= block.end_row then
+          return block, win
+        end
+      end
     end
   end
   return nil, nil
@@ -1191,7 +1386,45 @@ end
 -- Master sync: build the image payload and drive vim.ui.img
 -- ===========================================================================
 
+-- Resolve a window's PlantUML preview-source metadata (set on the carrier float by
+-- plantuml_open_float) into the normalized table emit_preview_float expects, or nil.
+local function resolve_preview_source(win)
+  local ok_source, source_meta = pcall(function()
+    return vim.w[win].rendermark_plantuml_preview_source
+  end)
+  if not (ok_source and type(source_meta) == 'table'
+      and source_meta.buf and vim.api.nvim_buf_is_valid(source_meta.buf)
+      and source_meta.win and vim.api.nvim_win_is_valid(source_meta.win)) then
+    return nil
+  end
+  local source_w = vim.fn.getwininfo(source_meta.win)
+  if not (source_w and source_w[1]) then return nil end
+  return {
+    buf = source_meta.buf,
+    win = source_meta.win,
+    w = source_w[1],
+    start_row = math.max(0, tonumber(source_meta.start_row) or 0),
+    anchor_col = math.max(0, tonumber(source_meta.anchor_col) or 0),
+    path = source_meta.path,
+  }
+end
+
+-- Re-entrancy guard. send_images mutates buffers/windows (opens the preview
+-- float, toggles its filetype, sets extmarks); those fire FileType/WinNew/etc
+-- autocmds that synchronously call send_images again. Without this guard the
+-- float-creation path recurses (open_float -> FileType=markdown -> send_images
+-- -> open_float -> ...) until E218 "autocommand nesting too deep". A nested call
+-- is always redundant -- the outer pass already reflects the latest state -- so
+-- drop it.
 function M.send_images()
+  if M._send_images_active then return end
+  M._send_images_active = true
+  local ok, err = pcall(M._send_images_impl)
+  M._send_images_active = false
+  if not ok then error(err) end
+end
+
+function M._send_images_impl()
   if not img_available() then return end
 
   local enabled = vim.g.neopp_images_enabled
@@ -1217,25 +1450,7 @@ function M.send_images()
       local buf = vim.api.nvim_win_get_buf(win)
       local ok_config, win_config = pcall(vim.api.nvim_win_get_config, win)
       local above_floats = ok_config and win_config and win_config.relative and win_config.relative ~= ''
-      local preview_source = nil
-      local ok_source, source_meta = pcall(function()
-        return vim.w[win].rendermark_plantuml_preview_source
-      end)
-      if ok_source and type(source_meta) == 'table'
-          and source_meta.buf and vim.api.nvim_buf_is_valid(source_meta.buf)
-          and source_meta.win and vim.api.nvim_win_is_valid(source_meta.win) then
-        local source_w = vim.fn.getwininfo(source_meta.win)
-        if source_w and source_w[1] then
-          preview_source = {
-            buf = source_meta.buf,
-            win = source_meta.win,
-            w = source_w[1],
-            start_row = math.max(0, tonumber(source_meta.start_row) or 0),
-            anchor_col = math.max(0, tonumber(source_meta.anchor_col) or 0),
-            path = source_meta.path,
-          }
-        end
-      end
+      local preview_source = resolve_preview_source(win)
       wins[#wins + 1] = { win = win, w = info, buf = buf, above_floats = above_floats, preview_source = preview_source }
       local start_row = math.max(0, info.topline - 1 - max_rows - 1)
       local end_row = math.max(start_row, info.botline)
@@ -1258,11 +1473,34 @@ function M.send_images()
     end
   end
 
+  -- collect_plantuml_images may have just created the preview carrier float for an
+  -- active block. The `wins` snapshot above predates that, so without this the float
+  -- only gets sized/drawn one cycle late -- with the cursor idle nothing re-triggers,
+  -- leaving the 1x1 seed float (a single concealed char) on screen. Append any
+  -- preview-source float that isn't already in the snapshot so emit_preview_float
+  -- runs for it this cycle.
+  do
+    local seen = {}
+    for _, info in ipairs(wins) do seen[info.win] = true end
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if not seen[win] then
+        local preview_source = resolve_preview_source(win)
+        if preview_source then
+          local w = vim.fn.getwininfo(win)
+          if w and w[1] then
+            wins[#wins + 1] = { win = win, w = w[1], buf = vim.api.nvim_win_get_buf(win),
+                                above_floats = true, preview_source = preview_source }
+          end
+        end
+      end
+    end
+  end
+
   local has_error_extmarks = false
   local image_reservations = {}
   local image_conceals = {}
   local reservation_carry_h = 0
-  local function remember_image_reservation(win, buf, row, virt_h, source_span_height)
+  local function remember_image_reservation(win, buf, row, virt_h, source_span_height, label)
     local reserve_row = row
     local reserve_above = false
     local reserve_h = math.max(1, (virt_h or 1) - math.max(1, source_span_height or 1) + 1)
@@ -1308,11 +1546,13 @@ function M.send_images()
     local current = image_reservations[buf][key]
     if current then
       current.reserve_h = math.max(current.reserve_h, reserve_h)
+      current.label = current.label or label
     else
       image_reservations[buf][key] = {
         row = reserve_row,
         reserve_h = reserve_h,
         above = reserve_above,
+        label = label,
       }
     end
   end
@@ -1425,7 +1665,20 @@ function M.send_images()
           for _, layout in ipairs(layouts) do
             source_span_height = math.min(source_span_height or math.huge, layout.image.source_span_height or 1)
           end
-          remember_image_reservation(measure_win, measure_buf, row, virt_h, source_span_height or 1)
+          local label = nil
+          if M._stub_active then
+            local first = layouts[1]
+            local path = first.image.path or first.image.raw_path or '?'
+            label = {
+              name = vim.fn.fnamemodify(path, ':t'),
+              w_px = first.display_width_px or 0,
+              h_px = first.display_height_px or 0,
+              is_plantuml = first.image.plantuml == true,
+              source_span = source_span_height or 1,
+              virt_h = virt_h,
+            }
+          end
+          remember_image_reservation(measure_win, measure_buf, row, virt_h, source_span_height or 1, label)
         end
 
         for idx, layout in ipairs(layouts) do
@@ -1517,10 +1770,18 @@ function M.send_images()
   end
   for buf, reservations in pairs(image_reservations) do
     for _, reservation in pairs(reservations) do
-      local virt_lines = M.make_virt_lines(reservation.reserve_h)
-      if #virt_lines > 0 then
-        pcall(vim.api.nvim_buf_set_extmark, buf, image_ns, reservation.row, 0,
-          { virt_lines = virt_lines, virt_lines_above = reservation.above })
+      local label = reservation.label
+      if M._stub_active and label and not reservation.above then
+        -- Footprint-faithful box across the concealed source rows + reserved
+        -- virt_lines, for both PlantUML blocks and inline image links. Allocation
+        -- (reserve_h/anchor/count) is unchanged.
+        M.draw_stub_footprint_box(buf, image_ns, reservation, cell_w)
+      else
+        local virt_lines = M.make_virt_lines(reservation.reserve_h, label)
+        if #virt_lines > 0 then
+          pcall(vim.api.nvim_buf_set_extmark, buf, image_ns, reservation.row, 0,
+            { virt_lines = virt_lines, virt_lines_above = reservation.above })
+        end
       end
     end
   end
@@ -1652,6 +1913,7 @@ function M.handle_safestate()
 end
 
 function M.setup()
+  install_terminal_stub()
   if img_available() then
     M._init()
   else
