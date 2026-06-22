@@ -335,7 +335,7 @@ end
 -- Like the blank variant, the box lives entirely in the h-1 virt_lines below the
 -- anchor buffer line; the anchor line keeps the (concealed) source link.
 function M.make_stub_box(h, label)
-  local hl = 'NonText'
+  local hl = 'Comment'
   local n = h - 1  -- number of virt_lines to emit
   if n < 1 then return {} end
   local name = label.name or '?'
@@ -368,7 +368,7 @@ end
 -- anchored below src0, then src1..src(source_span-1). For a single-line image link
 -- source_span==1, so only src0 is overlaid (top border) and the rest are virt_lines.
 function M.draw_stub_footprint_box(buf, ns, reservation, cell_w)
-  local hl = 'NonText'
+  local hl = 'Comment'
   local label = reservation.label
   local row = reservation.row
   local reserve_h = math.max(1, reservation.reserve_h or 1)
