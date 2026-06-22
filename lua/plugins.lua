@@ -170,7 +170,7 @@ local function MarkdownConfig()
             },
         },
         link = {
-            image     = ' ',
+            image     = '',
             email     = ' ',
             hyperlink = ' ',
             wiki      = { icon = ' ' },
@@ -191,6 +191,7 @@ local function MarkdownConfig()
             right_pad = 1,
             min_width = 50,
             border = 'thin',
+            disable = { 'plantuml', 'puml', 'uml' },
         },
         -- Tables are rendered by lua/wrap.lua (wrapped cells + proportional widths).
         pipe_table = { enabled = false },

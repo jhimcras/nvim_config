@@ -1454,23 +1454,6 @@ function M.send_images()
               }
             end
           end
-          -- render-markdown prepends an inline icon (underlined) at a real link's
-          -- start, displayed just left of where we draw the image. Measure that
-          -- prefix so the renderer occlusion can extend left over it (otherwise the
-          -- icon/underline juts out to the left of the image).
-          local text_lead = 0
-          if not image.virtual and image.byte_col then
-            local ok, marks = pcall(vim.api.nvim_buf_get_extmarks, measure_buf, -1,
-              { image.row, 0 }, { image.row, image.byte_col }, { details = true })
-            if ok then
-              for _, mark in ipairs(marks) do
-                local d = mark[4] or {}
-                if d.virt_text_pos == 'inline' and mark[3] >= image.byte_col then
-                  text_lead = text_lead + M.virt_text_width(d.virt_text)
-                end
-              end
-            end
-          end
           payload[#payload + 1] = {
             id = 'buf:' .. payload_buf .. ':' .. image.row .. ':' .. image.col .. ':' .. stable_hash(image.path) .. ':' .. layout.display_width_px .. 'x' .. layout.display_height_px,
             buf = payload_buf,
@@ -1483,11 +1466,9 @@ function M.send_images()
             -- renderer occludes the link text on THIS row, not the image's row.
             text_grid_row = source_grid_row,
             -- Global grid columns covering the rendered link text on text_grid_row.
-            -- Starts at grid_col minus any inline icon render-markdown prepends, and
-            -- spans the link width. The renderer occludes this so the raw link text /
-            -- render-markdown icon never shows around the image (real links), and the
-            -- full link width incl. fold-fill / path tail for virtual overlays.
-            text_col = math.max(0, layout.grid_col - text_lead),
+            -- Spans the link width so the renderer occludes the full link width incl.
+            -- fold-fill / path tail for virtual overlays.
+            text_col = layout.grid_col,
             text_end_col = layout.grid_col + math.max(1, (image.end_col or image.col) - image.col),
             virtual = image.virtual == true,
             win_left = win_left_col,
