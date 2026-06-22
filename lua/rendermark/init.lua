@@ -11,12 +11,14 @@
 local M = {}
 
 local wrap = require('rendermark.wrap')
+local image = require('rendermark.image')
 
 function M.setup(opts)
     wrap.setup(opts) -- soft-wrap + tables (registers its own autocmds/command)
-    -- READ mode and PlantUML rendering are intentionally disabled here.
-    -- PlantUML is now owned by the neopp GUI (it converts ```plantuml blocks to
-    -- images directly); READ mode is disabled pending rework.
+    -- Markdown image + PlantUML rendering: parses buffers, computes placement,
+    -- and drives the neopp GUI image backend via vim.ui.img (set/del). neopp only
+    -- loads/renders/deletes. READ mode is disabled pending rework.
+    image.setup()
 end
 
 M.refresh = wrap.refresh
