@@ -281,28 +281,8 @@ local function KeyMappings()
         vim.cmd.nohlsearch()
     end)
 
-    -- nvim-treesitter-textobjects (main branch): select / move / swap
-    for lhs, obj in pairs {
-        ['af'] = '@function.outer',  ['if'] = '@function.inner',
-        ['ac'] = '@class.outer',     ['ic'] = '@class.inner',
-        ['a,'] = '@parameter.outer', ['i,'] = '@parameter.inner',
-    } do
-        vim.keymap.set({'x', 'o'}, lhs, function()
-            require'nvim-treesitter-textobjects.select'.select_textobject(obj, 'textobjects')
-        end, { silent = true })
-    end
-    for lhs, spec in pairs {
-        [']m'] = {'goto_next_start',     '@function.outer'}, [']]'] = {'goto_next_start',     '@class.outer'},
-        [']M'] = {'goto_next_end',       '@function.outer'}, ['][']  = {'goto_next_end',       '@class.outer'},
-        ['[m'] = {'goto_previous_start', '@function.outer'}, ['[['] = {'goto_previous_start', '@class.outer'},
-        ['[M'] = {'goto_previous_end',   '@function.outer'}, ['[]']  = {'goto_previous_end',   '@class.outer'},
-    } do
-        vim.keymap.set({'n', 'x', 'o'}, lhs, function()
-            require'nvim-treesitter-textobjects.move'[spec[1]](spec[2], 'textobjects')
-        end, { silent = true })
-    end
-    vim.keymap.set('n', '>,', function() require'nvim-treesitter-textobjects.swap'.swap_next('@parameter.inner') end, { silent = true })
-    vim.keymap.set('n', '<,', function() require'nvim-treesitter-textobjects.swap'.swap_previous('@parameter.inner') end, { silent = true })
+    -- nvim-treesitter-textobjects keymaps (select/move/swap) are declared in
+    -- TreesitterConfig via require'nvim-treesitter.configs'.setup{ textobjects = ... }.
 
 end
 

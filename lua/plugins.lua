@@ -198,6 +198,41 @@ local function MarkdownConfig()
     }
 end
 
+local function TreesitterConfig()
+    require'nvim-treesitter.configs'.setup{
+        ensure_installed = {
+            'bash', 'c', 'cpp', 'lua', 'vim', 'vimdoc', 'query',
+            'markdown', 'markdown_inline',
+            'javascript', 'typescript', 'json', 'python', 'rust', 'regex',
+        },
+        highlight = { enable = true },
+        textobjects = {
+            select = {
+                enable = true,
+                lookahead = true,
+                keymaps = {
+                    ['af'] = '@function.outer',  ['if'] = '@function.inner',
+                    ['ac'] = '@class.outer',     ['ic'] = '@class.inner',
+                    ['a,'] = '@parameter.outer', ['i,'] = '@parameter.inner',
+                },
+            },
+            move = {
+                enable = true,
+                set_jumps = true,
+                goto_next_start     = { [']m'] = '@function.outer', [']]'] = '@class.outer' },
+                goto_next_end       = { [']M'] = '@function.outer', ['][']  = '@class.outer' },
+                goto_previous_start = { ['[m'] = '@function.outer', ['[['] = '@class.outer' },
+                goto_previous_end   = { ['[M'] = '@function.outer', ['[]']  = '@class.outer' },
+            },
+            swap = {
+                enable = true,
+                swap_next     = { ['>,'] = '@parameter.inner' },
+                swap_previous = { ['<,'] = '@parameter.inner' },
+            },
+        },
+    }
+end
+
 local function bootstrap_pckr()
     local pckr_path = vim.fn.stdpath("data") .. "/pckr/pckr.nvim"
     if not (vim.uv or vim.loop).fs_stat(pckr_path) then
@@ -239,8 +274,8 @@ function M.setup()
         { 'kana/vim-textobj-user' },
         { 'michaeljsmith/vim-indent-object' },
         { 'nvim-lua/lsp-status.nvim', config = LspStatusConfig },
-        { 'nvim-treesitter/nvim-treesitter', branch = 'main', run = ':TSUpdate' },
-        { 'nvim-treesitter/nvim-treesitter-textobjects', branch = 'main', config = function() require'nvim-treesitter-textobjects'.setup{} end },
+        { 'nvim-treesitter/nvim-treesitter', branch = 'master', run = ':TSUpdate', config = TreesitterConfig },
+        { 'nvim-treesitter/nvim-treesitter-textobjects', branch = 'master' },
         -- { 'plasticboy/vim-markdown', ft = { 'markdown' } },
         -- { 'iamcco/markdown-preview.nvim', ft = { 'markdown' }, run = 'cd app & yarn install' },
         { 'tpope/vim-fugitive', config = FugitiveSetting },
