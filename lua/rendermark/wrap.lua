@@ -1001,6 +1001,14 @@ local function apply_current_window()
     if vim.g.markdown_visual_wrap_enabled == false then
         return
     end
+    -- Don't decorate floating preview windows (LSP hover, signature help, etc.).
+    -- Their narrow, fixed width plus the left_pad statuscolumn make stylize_markdown's
+    -- full-width separator rules wrap and long lines truncate; Neovim's built-in
+    -- markdown stylize already handles these floats (render-markdown.nvim likewise
+    -- skips them via the nofile buftype override).
+    if vim.api.nvim_win_get_config(0).relative ~= '' then
+        return
+    end
     if is_markdown_buffer(0) then
         M.apply(0)
     elseif saved_state[vim.api.nvim_get_current_win()] then
