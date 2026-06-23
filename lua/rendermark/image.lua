@@ -39,6 +39,13 @@ local function img_available()
   return vim.ui and vim.ui.img and type(vim.ui.img.set) == 'function'
 end
 
+-- True when the image pipeline will actually decorate image-link lines (real neopp
+-- backend or terminal stub, and not globally disabled). wrap.lua uses this to decide
+-- whether to skip image-link lines (image.lua owns their layout) or wrap them itself.
+function M.is_active()
+  return img_available() and vim.g.neopp_images_enabled ~= false
+end
+
 -- Terminal verification stub: when neopp is absent (plain terminal) and the user
 -- opts in via RENDERMARK_IMG_STUB / vim.g.rendermark_img_stub, install a no-op
 -- vim.ui.img backend so img_available() is true and the whole non-pixel UI
@@ -362,6 +369,55 @@ function M.make_stub_box(h, label)
   return lines
 end
 
+-- Greedy display-width wrap of `text` into rows of at most `width` cells. Breaks
+-- at whitespace when possible, hard-breaks over-long words / CJK. Mirrors wrap.lua's
+-- wrap_indices but returns plain strings (kept local to avoid a circular require).
+-- Always returns at least one row (possibly '').
+local function wrap_text_to_width(text, width)
+  width = math.max(1, width)
+  local chars = vim.fn.split(text or '', '\\zs')
+  if #chars == 0 then return { '' } end
+  local rows = {}
+  local line_start = 1
+  local cur_w = 0
+  local last_space = nil
+  local function push(stop_exclusive)
+    local e = stop_exclusive - 1
+    while e >= line_start and chars[e]:match('%s') do e = e - 1 end
+    local parts = {}
+    for k = line_start, e do parts[#parts + 1] = chars[k] end
+    rows[#rows + 1] = table.concat(parts)
+  end
+  local i = 1
+  while i <= #chars do
+    local c = chars[i]
+    local w = vim.fn.strdisplaywidth(c)
+    if c:match('%s') then last_space = i end
+    if cur_w + w > width and i > line_start then
+      local stop, next_start
+      if last_space and last_space >= line_start then
+        stop = last_space
+        next_start = last_space + 1
+        while next_start <= #chars and chars[next_start]:match('%s') do next_start = next_start + 1 end
+      else
+        stop = i
+        next_start = i
+      end
+      push(stop)
+      line_start = next_start
+      last_space = nil
+      cur_w = 0
+      i = next_start
+    else
+      cur_w = cur_w + w
+      i = i + 1
+    end
+  end
+  if line_start <= #chars then push(#chars + 1) end
+  if #rows == 0 then rows[1] = '' end
+  return rows
+end
+
 -- Terminal stub, footprint-faithful box (PlantUML blocks AND image links). Unlike
 -- make_stub_box (which lives wholly in the virt_lines slice), this draws the box
 -- across the FULL image footprint: virt_h visual rows starting at the source's
@@ -373,11 +429,11 @@ end
 -- source_span==1, so only src0 is overlaid (top border) and the rest are virt_lines.
 -- Pure: lay every image box on a line into virt_h visual rows of virt_text
 -- chunks. `boxes` is a list of { name, w_px, h_px, start_cell } (one per image,
--- left-to-right as the GUI paints them). Boxes are normalized so the leftmost
--- starts at column 0 (matching the historical single-box overlay) and later
--- boxes keep their relative cell offset, bumped right when they would overlap.
--- Returns rows[0..virt_h-1], each a list of { text, 'Comment' } chunks. Split
--- out from draw_stub_footprint_box for unit-testing, like parse_image_size.
+-- left-to-right as the GUI paints them). Each box keeps its text-relative
+-- start_cell (so leading prose can push the leftmost box right), later boxes bumped
+-- right when they would overlap. Returns rows[0..virt_h-1], each a list of
+-- { text, 'Comment' } chunks. Split out from draw_stub_footprint_box for
+-- unit-testing, like parse_image_size.
 function M.build_stub_box_rows(boxes, virt_h, cell_w)
   virt_h = math.max(1, virt_h or 1)
   cell_w = math.max(1, cell_w or 10)
@@ -420,10 +476,9 @@ function M.build_stub_box_rows(boxes, virt_h, cell_w)
   end
 
   table.sort(prepared, function(a, b) return a.start_cell < b.start_cell end)
-  local min_cell = prepared[1].start_cell
   local prev_end = -1
   for _, p in ipairs(prepared) do
-    p.col = math.max(p.start_cell - min_cell, prev_end + 1)
+    p.col = math.max(p.start_cell, prev_end + 1)
     prev_end = p.col + p.box_w - 1
   end
 
@@ -447,6 +502,146 @@ function M.build_stub_box_rows(boxes, virt_h, cell_w)
   return rows
 end
 
+-- Pure: lay non-image text segments into virt_h visual rows of column-positioned
+-- virt_text chunks, each segment WRAPPED to its slot width and BOTTOM-aligned within
+-- the band (last wrapped row on visual row virt_h-1, stacking upward; clipped to the
+-- bottom virt_h rows so text never spills below the image). `segments` is a list of
+--   { text = string, start_cell = N, width_cells = N }   (text-relative columns)
+-- Returns rows[0..virt_h-1] (each a list of { text, hl } chunks; nil for empty
+-- rows), like build_stub_box_rows. Split out for unit-testing.
+function M.build_image_text_rows(segments, virt_h, opts)
+  opts = opts or {}
+  local hl = opts.hl or 'Normal'
+  virt_h = math.max(1, virt_h or 1)
+  if not segments or #segments == 0 then return {} end
+
+  local by_row = {}  -- v -> list of { col, text }
+  for _, seg in ipairs(segments) do
+    local text = seg.text
+    local width = math.max(1, math.floor(seg.width_cells or 0))
+    if type(text) == 'string' and text ~= '' and (seg.width_cells or 0) >= 1 then
+      local wrapped = wrap_text_to_width(text, width)
+      while #wrapped > 0 and wrapped[#wrapped] == '' do table.remove(wrapped) end
+      local m = #wrapped
+      local clip = math.max(0, m - virt_h)  -- rows that don't fit are dropped from the top
+      for k = clip + 1, m do
+        local v = virt_h - 1 - m + k  -- 0-based visual row; k==m -> virt_h-1 (bottom)
+        by_row[v] = by_row[v] or {}
+        by_row[v][#by_row[v] + 1] = { col = math.max(0, math.floor(seg.start_cell or 0)), text = wrapped[k] }
+      end
+    end
+  end
+
+  local rows = {}
+  for v = 0, virt_h - 1 do
+    local segs = by_row[v]
+    if segs then
+      table.sort(segs, function(a, b) return a.col < b.col end)
+      local chunks = {}
+      local col = 0
+      for _, s in ipairs(segs) do
+        if s.col > col then
+          chunks[#chunks + 1] = { string.rep(' ', s.col - col), hl }
+          col = s.col
+        end
+        chunks[#chunks + 1] = { s.text, hl }
+        col = col + vim.fn.strdisplaywidth(s.text)
+      end
+      rows[v] = chunks
+    end
+  end
+  return rows
+end
+
+-- Merge two column-positioned chunk-rows: paint `base` (e.g. stub boxes), then
+-- overlay `over` (e.g. gap text) treating over's spaces as transparent, so the text
+-- only fills the columns the boxes leave blank. Both are chunk lists positioned from
+-- column 0; returns one positioned chunk list. Width-aware (CJK/wide chars).
+local function merge_chunk_rows(base, over)
+  if not over or #over == 0 then return base or {} end
+  if not base or #base == 0 then return over end
+  local grid = {}  -- col -> { c, hl } | false (wide-char continuation) | nil (blank)
+  local maxcol = 0
+  local function paint(chunks, transparent_space)
+    local col = 0
+    for _, ch in ipairs(chunks) do
+      for _, c in ipairs(vim.fn.split(ch[1] or '', '\\zs')) do
+        local w = math.max(1, vim.fn.strdisplaywidth(c))
+        if not (transparent_space and c == ' ') then
+          grid[col] = { c = c, hl = ch[2] }
+          for k = 1, w - 1 do grid[col + k] = false end
+        end
+        col = col + w
+      end
+    end
+    if col > maxcol then maxcol = col end
+  end
+  paint(base, false)
+  paint(over, true)
+  local out = {}
+  local col = 0
+  while col < maxcol do
+    local cell = grid[col]
+    if cell == false then
+      col = col + 1
+    elseif cell == nil then
+      local s = col
+      while col < maxcol and grid[col] == nil do col = col + 1 end
+      out[#out + 1] = { string.rep(' ', col - s), 'Normal' }
+    else
+      local hl = cell.hl
+      local parts = {}
+      while col < maxcol do
+        local cc = grid[col]
+        if cc == false then
+          col = col + 1
+        elseif cc == nil or cc.hl ~= hl then
+          break
+        else
+          parts[#parts + 1] = cc.c
+          col = col + 1
+        end
+      end
+      out[#out + 1] = { table.concat(parts), hl }
+    end
+  end
+  return out
+end
+
+-- Emit per-visual-row chunk lists across the image footprint, routing each visual
+-- row to a virt_line or a source-row overlay exactly like draw_stub_footprint_box:
+-- v=0 -> overlay on the anchor row; v in [1,reserve_h-1] -> reserved virt_lines;
+-- v>=reserve_h -> overlay on lower source rows (multi-line sources). Overlays on a
+-- cursor row are skipped so native conceal reveals the raw text there.
+local function emit_band_rows(buf, ns, row, reserve_h, source_span, virt_h, rows, cursor_rows)
+  reserve_h = math.max(1, reserve_h or 1)
+  source_span = math.max(1, source_span or 1)
+  virt_h = math.max(1, virt_h or 1)
+  local function overlay(brow, chunks)
+    if cursor_rows and cursor_rows[brow] then return end
+    if not chunks or #chunks == 0 then return end
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, brow, 0, {
+      virt_text = chunks, virt_text_pos = 'overlay', priority = 260,
+    })
+  end
+  local virt_lines = {}
+  for v = 0, virt_h - 1 do
+    if v == 0 then
+      overlay(row, rows[v])
+    elseif v <= reserve_h - 1 then
+      local chunks = rows[v]
+      virt_lines[#virt_lines + 1] = (chunks and #chunks > 0) and chunks or { { ' ', 'Normal' } }
+    else
+      local src_index = v - (reserve_h - 1)
+      if src_index < source_span then overlay(row + src_index, rows[v]) end
+    end
+  end
+  if #virt_lines > 0 then
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0,
+      { virt_lines = virt_lines, virt_lines_above = false })
+  end
+end
+
 -- Terminal stub, footprint-faithful box(es) (PlantUML blocks AND image links).
 -- Unlike make_stub_box (which lives wholly in the virt_lines slice), this draws
 -- across the FULL image footprint: virt_h visual rows starting at the source's
@@ -458,7 +653,6 @@ end
 -- source row (`cursor_rows[brow]`), its overlay is skipped so native conceal can
 -- reveal the raw link text there.
 function M.draw_stub_footprint_box(buf, ns, reservation, cell_w, cursor_rows)
-  local hl = 'Comment'
   local label = reservation.label
   local row = reservation.row
   local reserve_h = math.max(1, reservation.reserve_h or 1)
@@ -468,31 +662,15 @@ function M.draw_stub_footprint_box(buf, ns, reservation, cell_w, cursor_rows)
   if #boxes == 0 then return end
 
   local box_rows = M.build_stub_box_rows(boxes, virt_h, cell_w)
-
-  local function overlay(brow, chunks)
-    if cursor_rows and cursor_rows[brow] then return end
-    if not chunks or #chunks == 0 then return end
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns, brow, 0, {
-      virt_text = chunks, virt_text_pos = 'overlay', priority = 260,
-    })
-  end
-
-  local virt_lines = {}
-  for v = 0, virt_h - 1 do
-    if v == 0 then
-      overlay(row, box_rows[v])
-    elseif v <= reserve_h - 1 then
-      local chunks = box_rows[v]
-      virt_lines[#virt_lines + 1] = (chunks and #chunks > 0) and chunks or { { ' ', hl } }
-    else
-      local src_index = v - (reserve_h - 1)
-      if src_index < source_span then overlay(row + src_index, box_rows[v]) end
+  -- Weave the bottom-aligned gap text into the (disjoint) gap columns between boxes.
+  local rows = box_rows
+  if label.text_rows then
+    rows = {}
+    for v = 0, virt_h - 1 do
+      rows[v] = merge_chunk_rows(box_rows[v], label.text_rows[v])
     end
   end
-  if #virt_lines > 0 then
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0,
-      { virt_lines = virt_lines, virt_lines_above = false })
-  end
+  emit_band_rows(buf, ns, row, reserve_h, source_span, virt_h, rows, cursor_rows)
 end
 
 -- Terminal stub box drawn into the PlantUML preview float buffer (the GUI would
@@ -562,6 +740,18 @@ function M.layout_image_line(images, opts)
   local text_right_px = tonumber(opts.text_right_px) or (clip_x + clip_w)
   local dest_y_px = tonumber(opts.dest_y_px) or (base_grid_row * cell_h)
   if text_right_px <= text_left_px then text_right_px = text_left_px + cell_w end
+  -- Image-line text layout (opt-in): start packing at row_start_x_override (= text
+  -- left + leading-prose width) and use per-gap widths from gaps_px[i] (the reserved
+  -- room for the prose between image i and i+1) instead of the constant gap_px.
+  local row_start_override = tonumber(opts.row_start_x_override)
+  local gaps_px = opts.gaps_px or {}
+  -- Room reserved to the right of the last image for the trailing prose slot, so
+  -- the images don't pack all the way to text_right_px and squeeze it out.
+  local trailing_reserve = math.max(0, tonumber(opts.trailing_px) or 0)
+  -- gap_scale shrinks the reserved text gaps only in the narrow-window edge case
+  -- where images alone can't shrink enough to fit (see the fit logic below).
+  local gap_scale = 1
+  local function gap_after(i) return math.max(0, math.floor((tonumber(gaps_px[i]) or gap_px) * gap_scale)) end
 
   table.sort(images, function(a, b)
     if a.col == b.col then return (a.path or '') < (b.path or '') end
@@ -590,24 +780,41 @@ function M.layout_image_line(images, opts)
   common_h = math.max(1, common_h)
   if max_rows and max_rows > 0 then common_h = math.min(common_h, max_rows * cell_h) end
 
-  row_start_x = row_start_x or text_left_px
-  local available_w = math.max(1, text_right_px - row_start_x)
-  local function total_width_for(height)
-    local total = math.max(0, #sized - 1) * gap_px
+  row_start_x = row_start_override or row_start_x or text_left_px
+  local available_w = math.max(1, text_right_px - row_start_x - trailing_reserve)
+  local function images_width_for(height)
+    local total = 0
     for _, item in ipairs(sized) do
       total = total + math.max(1, math.floor(height * item.image.source_width / item.image.source_height + 0.5))
     end
     return total
   end
+  local function gaps_total()
+    local total = 0
+    for i = 1, #sized - 1 do total = total + gap_after(i) end
+    return total
+  end
 
-  local total_w = total_width_for(common_h)
-  if total_w > available_w then
-    common_h = math.max(1, math.floor(common_h * available_w / total_w))
+  -- Fit images + the fixed gap slots within available_w. Gaps are reserved text
+  -- columns that do NOT scale with image height, so shrink images against the
+  -- budget left after the gaps. If the gaps alone leave less than 1px per image,
+  -- scale the gaps down too so the band never spills past text_right_px.
+  local min_imgs_w = images_width_for(1)  -- images collapsed to the 1px floor
+  local budget = available_w - gaps_total()
+  if budget < min_imgs_w then
+    local room = math.max(0, available_w - min_imgs_w)
+    local g = gaps_total()
+    gap_scale = (g > 0) and (room / g) or 1
+    budget = available_w - gaps_total()
+  end
+  local imgs_w = images_width_for(common_h)
+  if imgs_w > budget then
+    common_h = math.max(1, math.floor(common_h * budget / imgs_w))
     common_h = math.max(1, math.floor(common_h / cell_h) * cell_h)
   end
 
   local dest_x = row_start_x
-  for _, item in ipairs(sized) do
+  for i, item in ipairs(sized) do
     local display_w = math.max(1, math.floor(common_h * item.image.source_width / item.image.source_height + 0.5))
     layouts[#layouts + 1] = {
       image = item.image,
@@ -622,7 +829,7 @@ function M.layout_image_line(images, opts)
       clip_width_px = math.floor(clip_w + 0.5),
       clip_height_px = math.floor(clip_h + 0.5),
     }
-    dest_x = dest_x + display_w + gap_px
+    dest_x = dest_x + display_w + (i < #sized and gap_after(i) or 0)
   end
 
   return layouts, math.max(1, math.ceil(common_h / cell_h))
@@ -822,6 +1029,12 @@ function M.scan_markdown_image_text(buf, row0, text, result, opts)
     add_markdown_image_link(buf, row0, col0, col0 + math.max(1, match_width), raw, result, extra)
     search_at = e + 1
   end
+end
+
+-- True if `text` contains at least one markdown image link. Shared with wrap.lua so
+-- it can skip these lines (image.lua owns their layout). Same pattern as the scanner.
+function M.line_has_image_link(text)
+  return type(text) == 'string' and text:find('!%[[^%]]*%]%(([^%)%s]+)%)') ~= nil
 end
 
 function M.virt_text_to_plain(virt_text)
@@ -1738,6 +1951,47 @@ function M._send_images_impl()
         if stack_bottom_grid_row and source_grid_row < stack_bottom_grid_row then
           layout_grid_row = stack_bottom_grid_row
         end
+        -- Image-line text layout: pull the prose around/between the (real) image
+        -- links off the raw row so it can be re-rendered bottom-aligned in the gaps
+        -- between images. Reserve horizontal room for the leading + between prose so
+        -- the images are spaced to leave the text a slot (capped so a long caption
+        -- wraps instead of shoving images off-screen). Only for real buffer links.
+        local TEXT_SLOT_MAX_CELLS = 30
+        local text_layout = nil
+        do
+          local eligible = #line_images > 0
+          for _, img in ipairs(line_images) do
+            if img.virtual or not img.byte_col or img.plantuml then eligible = false break end
+          end
+          if eligible then
+            local imgs = {}
+            for _, img in ipairs(line_images) do imgs[#imgs + 1] = img end
+            table.sort(imgs, function(a, b) return (a.byte_col or 0) < (b.byte_col or 0) end)
+            local raw_line = (vim.api.nvim_buf_get_lines(measure_buf, row, row + 1, false) or {})[1] or ''
+            local segs = {}
+            segs[1] = vim.trim(raw_line:sub(1, imgs[1].byte_col))
+            for i = 1, #imgs - 1 do
+              segs[i + 1] = vim.trim(raw_line:sub(imgs[i].byte_end_col + 1, imgs[i + 1].byte_col))
+            end
+            segs[#imgs + 1] = vim.trim(raw_line:sub(imgs[#imgs].byte_end_col + 1))
+            local function cap_w(s) return math.min(vim.fn.strdisplaywidth(s), TEXT_SLOT_MAX_CELLS) end
+            local leading_px = cap_w(segs[1]) * cell_w
+            local gaps = {}
+            for i = 1, #imgs - 1 do
+              local w = cap_w(segs[i + 1])
+              gaps[i] = (w > 0) and (w * cell_w + gap_px) or gap_px
+            end
+            local trailing_w = cap_w(segs[#imgs + 1])
+            local trailing_px = (trailing_w > 0) and (trailing_w * cell_w + gap_px) or 0
+            text_layout = {
+              segs = segs, raw_line = raw_line,
+              row_start_x_override = text_left_px + leading_px,
+              gaps_px = gaps,
+              trailing_px = trailing_px,
+            }
+          end
+        end
+
         local layouts, image_rows = M.layout_image_line(line_images, {
           cell_w = cell_w,
           cell_h = cell_h,
@@ -1752,6 +2006,9 @@ function M._send_images_impl()
           clip_height_px = clip_h_px,
           text_left_px = text_left_px,
           text_right_px = layout_text_right_px,
+          row_start_x_override = text_layout and text_layout.row_start_x_override,
+          gaps_px = text_layout and text_layout.gaps_px,
+          trailing_px = text_layout and text_layout.trailing_px,
         })
 
         local virt_h = image_rows
@@ -1761,11 +2018,12 @@ function M._send_images_impl()
           for _, layout in ipairs(layouts) do
             source_span_height = math.min(source_span_height or math.huge, layout.image.source_span_height or 1)
           end
-          local label = nil
+          local text_left_cell = math.floor(text_left_px / math.max(1, cell_w))
+          local label = { source_span = source_span_height or 1, virt_h = virt_h }
           if M._stub_active then
-            -- One box per image, placed at the same horizontal cell offset the
-            -- GUI image uses (relative to the text start). build_stub_box_rows
-            -- normalizes the leftmost to column 0.
+            -- One box per image, placed at the same text-relative cell offset the
+            -- GUI image uses (grid_col - text_left_cell), so boxes and gap text share
+            -- one coordinate space.
             local stub_boxes = {}
             for _, layout in ipairs(layouts) do
               local path = layout.image.path or layout.image.raw_path or '?'
@@ -1773,24 +2031,64 @@ function M._send_images_impl()
                 name = vim.fn.fnamemodify(path, ':t'),
                 w_px = layout.display_width_px or 0,
                 h_px = layout.display_height_px or 0,
-                start_cell = math.max(0, math.floor(((layout.dest_x_px or text_left_px) - text_left_px) / math.max(1, cell_w))),
+                start_cell = math.max(0, layout.grid_col - text_left_cell),
               }
             end
-            label = {
-              boxes = stub_boxes,
-              source_span = source_span_height or 1,
-              virt_h = virt_h,
+            label.boxes = stub_boxes
+          end
+          if text_layout then
+            -- Slots from the laid-out images: leading (left of image 1), the gap after
+            -- each image (= prose before the next image), and the trailing slot.
+            local text_right_cell = math.floor(layout_text_right_px / math.max(1, cell_w))
+            local segments = {}
+            for i, layout in ipairs(layouts) do
+              local left_cell = layout.grid_col
+              local right_cell = layout.grid_col + math.ceil((layout.display_width_px or cell_w) / math.max(1, cell_w))
+              if i == 1 and text_layout.segs[1] ~= '' then
+                local w = left_cell - text_left_cell
+                if w >= 1 then
+                  segments[#segments + 1] = { text = text_layout.segs[1], start_cell = 0, width_cells = w }
+                end
+              end
+              local seg = text_layout.segs[i + 1]
+              if seg and seg ~= '' then
+                local next_left = layouts[i + 1] and layouts[i + 1].grid_col or text_right_cell
+                local w = next_left - right_cell
+                if w >= 1 then
+                  segments[#segments + 1] = { text = seg, start_cell = right_cell - text_left_cell, width_cells = w }
+                end
+              end
+            end
+            if #segments > 0 then
+              label.text_rows = M.build_image_text_rows(segments, virt_h, {})
+            end
+          end
+          if not label.boxes and not label.text_rows then label = nil end
+          remember_image_reservation(measure_win, measure_buf, row, virt_h, source_span_height or 1, label)
+          if text_layout then
+            -- Conceal the whole raw row (links + surrounding prose); the prose is
+            -- re-rendered bottom-aligned in the gaps via label.text_rows.
+            local cbuf = (line_images[1] and line_images[1].payload_buf) or info.buf
+            image_conceals[cbuf] = image_conceals[cbuf] or {}
+            image_conceals[cbuf][#image_conceals[cbuf] + 1] = {
+              row = row,
+              col = 0,
+              end_col = #text_layout.raw_line,
             }
           end
-          remember_image_reservation(measure_win, measure_buf, row, virt_h, source_span_height or 1, label)
         end
 
         for idx, layout in ipairs(layouts) do
           local image = layout.image
           local payload_buf = image.payload_buf or info.buf
           -- Conceal the raw link text (and its highlight) for real buffer links so
-          -- it never reaches the grid under the image overlay.
-          if not image.virtual and image.byte_col then
+          -- it never reaches the grid under the image overlay. When this line is a
+          -- text-layout line the WHOLE raw row is concealed once (below) instead --
+          -- its prose is re-rendered bottom-aligned in the gaps -- so skip the
+          -- per-link conceal here.
+          if text_layout then
+            -- handled by the whole-line conceal added once per row below
+          elseif not image.virtual and image.byte_col then
             image_conceals[payload_buf] = image_conceals[payload_buf] or {}
             image_conceals[payload_buf][#image_conceals[payload_buf] + 1] = {
               row = image.row,
@@ -1902,6 +2200,12 @@ function M._send_images_impl()
           stub_source_rows[buf][r] = true
         end
         M.draw_stub_footprint_box(buf, image_ns, reservation, cell_w, cursor_rows_for(buf))
+      elseif label and label.text_rows and not reservation.above then
+        -- GUI path with bottom-aligned gap text: route the text rows into the
+        -- reserved virt_lines / source-row overlays (no stub boxes).
+        emit_band_rows(buf, image_ns, reservation.row, reservation.reserve_h,
+          label.source_span or 1, label.virt_h or reservation.reserve_h,
+          label.text_rows, cursor_rows_for(buf))
       else
         local virt_lines = M.make_virt_lines(reservation.reserve_h, label)
         if #virt_lines > 0 then

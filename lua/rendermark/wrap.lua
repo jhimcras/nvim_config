@@ -882,10 +882,18 @@ function M.refresh(win)
         render_table(buf, t[1], t[2], width, cursor_row, inline)
     end
 
+    -- Lines with image links are laid out by rendermark.image (images as a band +
+    -- bottom-aligned gap text); don't double-wrap them here or the continuation rows
+    -- stack below the image. Only skip when the image pipeline is actually active.
+    local image = require('rendermark.image')
+    local images_active = image.is_active()
+
     for lnum = first, last - 1 do
         if lnum + 1 ~= cursor_row and not in_code[lnum] and not in_table[lnum] then
             local text = vim.api.nvim_buf_get_lines(buf, lnum, lnum + 1, false)[1]
-            if text and #text > 0 then
+            if images_active and text and image.line_has_image_link(text) then
+                -- handled by rendermark.image
+            elseif text and #text > 0 then
                 local indent = M.compute_indent(text)
                 local r = M.wrap_line(text, width, width - indent, indent)
                 if r.first_end_byte then

@@ -269,6 +269,119 @@ describe('build_stub_box_rows', function()
   it('returns no rows for an empty box list', function()
     assert.same({}, image.build_stub_box_rows({}, 3, 10))
   end)
+
+  it('keeps the leftmost box at its start_cell so leading prose can push it right', function()
+    local rows = image.build_stub_box_rows(
+      { { name = 'a.png', w_px = 100, h_px = 50, start_cell = 4 } }, 1, 10)
+    local top = row_text(rows[0])
+    assert.equals('    ', top:sub(1, 4))  -- 4-cell leading offset preserved
+    assert.equals('[', top:sub(5, 5))     -- single-line label begins after the offset
+  end)
+end)
+
+describe('build_image_text_rows', function()
+  local function row_text(chunks)
+    local s = {}
+    for _, c in ipairs(chunks or {}) do s[#s + 1] = c[1] end
+    return table.concat(s)
+  end
+
+  it('bottom-aligns a short segment on the last visual row', function()
+    local rows = image.build_image_text_rows(
+      { { text = 'hi', start_cell = 0, width_cells = 10 } }, 3, {})
+    assert.is_nil(rows[0])
+    assert.is_nil(rows[1])
+    assert.equals('hi', row_text(rows[2]))
+  end)
+
+  it('positions the segment at its start_cell', function()
+    local rows = image.build_image_text_rows(
+      { { text = 'hi', start_cell = 4, width_cells = 10 } }, 1, {})
+    assert.equals('    hi', row_text(rows[0]))
+  end)
+
+  it('wraps within the slot width, stacking bottom-aligned', function()
+    local rows = image.build_image_text_rows(
+      { { text = 'aa bb cc', start_cell = 0, width_cells = 3 } }, 3, {})
+    assert.equals('aa', row_text(rows[0]))
+    assert.equals('bb', row_text(rows[1]))
+    assert.equals('cc', row_text(rows[2]))
+  end)
+
+  it('clips from the top when the wrapped text is taller than the band', function()
+    local rows = image.build_image_text_rows(
+      { { text = 'aa bb cc', start_cell = 0, width_cells = 3 } }, 2, {})
+    assert.equals('bb', row_text(rows[0]))  -- 'aa' (top) dropped
+    assert.equals('cc', row_text(rows[1]))
+  end)
+
+  it('merges multiple segments onto the same visual row by column', function()
+    local rows = image.build_image_text_rows({
+      { text = 'lead', start_cell = 0, width_cells = 10 },
+      { text = 'end', start_cell = 20, width_cells = 10 },
+    }, 1, {})
+    assert.equals('lead' .. string.rep(' ', 16) .. 'end', row_text(rows[0]))
+  end)
+
+  it('returns no rows for an empty segment list', function()
+    assert.same({}, image.build_image_text_rows({}, 3, {}))
+  end)
+end)
+
+describe('layout_image_line fit', function()
+  local cell_w, cell_h = 10, 18
+  local function layout(images, opts)
+    opts = opts or {}
+    opts.cell_w = cell_w; opts.cell_h = cell_h; opts.gap_px = cell_w
+    opts.max_ratio = 1.0; opts.max_rows = 30
+    opts.clip_x_px = 0; opts.clip_y_px = 0
+    opts.clip_width_px = opts.text_right_px; opts.clip_height_px = 1000
+    return image.layout_image_line(images, opts)
+  end
+  local function right_edge(layouts)
+    local last = layouts[#layouts]
+    return last.dest_x_px + last.display_width_px
+  end
+  local two = {
+    { source_width = 600, source_height = 400, byte_col = 0,  byte_end_col = 10, col = 0,  anchor_x_px = 0 },
+    { source_width = 600, source_height = 400, byte_col = 40, byte_end_col = 50, col = 40, anchor_x_px = 400 },
+  }
+
+  it('keeps the band within text_right_px when wide gaps are reserved', function()
+    -- Pre-fix this overflowed to 1150 against a 1000px (100-col) window because the
+    -- scale-down divided by images+gaps but only shrank the images.
+    local layouts = layout(two, { text_left_px = 0, text_right_px = 1000,
+      row_start_x_override = 300, gaps_px = { 310 } })
+    assert.is_true(right_edge(layouts) <= 1000)
+  end)
+
+  it('shrinks gaps too when images alone cannot fit a narrow window', function()
+    local layouts = layout(two, { text_left_px = 0, text_right_px = 400,
+      row_start_x_override = 300, gaps_px = { 310 } })
+    assert.is_true(right_edge(layouts) <= 400)
+  end)
+
+  it('does not alter a single image with no reserved gaps', function()
+    local layouts = layout({ two[1] }, { text_left_px = 0, text_right_px = 1000 })
+    assert.is_true(right_edge(layouts) <= 1000)
+    assert.equals(600, layouts[1].display_width_px)  -- source width, unshrunk
+  end)
+
+  it('fits two images packed with the default gap (no text layout)', function()
+    local layouts = layout(two, { text_left_px = 0, text_right_px = 1000 })
+    assert.is_true(right_edge(layouts) <= 1000)
+  end)
+
+  it('reserves a trailing slot so prose after the last image keeps room', function()
+    -- Without trailing_px the images packed to the right edge and the trailing
+    -- text slot collapsed to < 1 cell (the line-18 bug).
+    local layouts = layout(two, { text_left_px = 0, text_right_px = 1000,
+      row_start_x_override = 0, gaps_px = { 260 }, trailing_px = 70 })
+    local last = layouts[#layouts]
+    local last_right_cell = last.grid_col + math.ceil(last.display_width_px / cell_w)
+    local text_right_cell = math.floor(1000 / cell_w)
+    assert.is_true(text_right_cell - last_right_cell >= 6)  -- room for ~6-cell trailing
+  end)
 end)
 
 describe('util.debounce', function()
