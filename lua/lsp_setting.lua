@@ -39,10 +39,34 @@ end
 -- }
 
 local orig_util_open_floating_preview = vim.lsp.util.open_floating_preview
+local fence_conceal_ns = api.nvim_create_namespace('lsp_hover_fence_conceal')
 function vim.lsp.util.open_floating_preview(contents, syntax, opts, ...)
     opts = opts or {}
     opts.border = opts.border or 'rounded'
-    return orig_util_open_floating_preview(contents, syntax, opts, ...)
+    local fbuf, fwin = orig_util_open_floating_preview(contents, syntax, opts, ...)
+    -- Hide the markdown code-fence delimiter lines (```lang / ```) in hover/signature
+    -- floats. Neovim stylizes the float as markdown + treesitter, so the fenced code
+    -- itself is syntax-highlighted, but the fence markers stay visible: render-markdown
+    -- doesn't attach to floats and core treesitter's query-conceal doesn't fire for them.
+    -- Conceal the whole delimiter line via extmark, then shrink the float to reclaim the
+    -- now-blank rows.
+    if fbuf and fwin and vim.bo[fbuf].filetype == 'markdown' then
+        local lines = api.nvim_buf_get_lines(fbuf, 0, -1, false)
+        local hidden = 0
+        for i, line in ipairs(lines) do
+            if line:match('^%s*[`~][`~][`~]') then
+                api.nvim_buf_set_extmark(fbuf, fence_conceal_ns, i - 1, 0, { conceal_lines = '' })
+                hidden = hidden + 1
+            end
+        end
+        if hidden > 0 then
+            local h = api.nvim_win_get_height(fwin)
+            if h - hidden >= 1 then
+                api.nvim_win_set_height(fwin, h - hidden)
+            end
+        end
+    end
+    return fbuf, fwin
 end
 
 local function capabilities()
