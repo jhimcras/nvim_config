@@ -25,6 +25,7 @@ local bitops = bit or bit32
 local extmark_virt_lines_sig
 local cursor_block_sig  -- last seen M.cursor_active_block_sig(); gates CursorMoved
 local live_ids = {}  -- id -> true: images currently set in the GUI backend
+local stub_source_rows = {}  -- buf -> set of 0-based stub image source rows (last render)
 
 local function trim(s)
   return (s or ''):gsub('^%s+', ''):gsub('%s+$', '')
@@ -333,13 +334,16 @@ end
 -- Terminal stub: draw a bordered box inside the reserved rows so the secured
 -- render area (boundary + computed pixel size) is visible without real pixels.
 -- Like the blank variant, the box lives entirely in the h-1 virt_lines below the
--- anchor buffer line; the anchor line keeps the (concealed) source link.
+-- anchor buffer line; the anchor line keeps the (concealed) source link. Only
+-- used for the fold-above reservation path; it labels just the first image on
+-- the line (the footprint box handles multiple images side-by-side).
 function M.make_stub_box(h, label)
   local hl = 'Comment'
   local n = h - 1  -- number of virt_lines to emit
   if n < 1 then return {} end
-  local name = label.name or '?'
-  local size = string.format('%dx%dpx  (%d rows)', label.w_px or 0, label.h_px or 0, h)
+  local first = (label.boxes or {})[1] or {}
+  local name = first.name or '?'
+  local size = string.format('%dx%dpx  (%d rows)', first.w_px or 0, first.h_px or 0, h)
   if n == 1 then
     return { { { '[img: ' .. name .. '  ' .. size .. ']', hl } } }
   end
@@ -367,65 +371,122 @@ end
 -- routing matches nvim's render order: src0, then the reserve_h-1 virt_lines
 -- anchored below src0, then src1..src(source_span-1). For a single-line image link
 -- source_span==1, so only src0 is overlaid (top border) and the rest are virt_lines.
-function M.draw_stub_footprint_box(buf, ns, reservation, cell_w)
+-- Pure: lay every image box on a line into virt_h visual rows of virt_text
+-- chunks. `boxes` is a list of { name, w_px, h_px, start_cell } (one per image,
+-- left-to-right as the GUI paints them). Boxes are normalized so the leftmost
+-- starts at column 0 (matching the historical single-box overlay) and later
+-- boxes keep their relative cell offset, bumped right when they would overlap.
+-- Returns rows[0..virt_h-1], each a list of { text, 'Comment' } chunks. Split
+-- out from draw_stub_footprint_box for unit-testing, like parse_image_size.
+function M.build_stub_box_rows(boxes, virt_h, cell_w)
+  virt_h = math.max(1, virt_h or 1)
+  cell_w = math.max(1, cell_w or 10)
+  local hl = 'Comment'
+  if not boxes or #boxes == 0 then return {} end
+
+  -- Per-box geometry + per-visual-row text.
+  local prepared = {}
+  for _, b in ipairs(boxes) do
+    local name = b.name or '?'
+    local size = string.format('%dx%dpx  (%d rows)', b.w_px or 0, b.h_px or 0, virt_h)
+    -- Box width = the image's real display width in cells (NOT the label length),
+    -- so a box never spills past the actual image footprint. Capped/floored so
+    -- borders always render; label text is clipped to fit.
+    local box_w = math.min(200, math.max(4, math.floor((b.w_px or 0) / cell_w + 0.5)))
+    local inner = box_w - 2
+    local function clip(s)
+      if #s > inner then return s:sub(1, inner) end
+      return s
+    end
+    local function bar(open, fill, text, close)
+      text = clip(text)
+      return open .. text .. string.rep(fill, math.max(0, inner - #text)) .. close
+    end
+    local text_by_row = {}
+    if virt_h <= 1 then
+      text_by_row[0] = clip('[img: ' .. name .. '  ' .. size .. ']')
+    else
+      text_by_row[0] = bar('+', '-', '- img: ' .. name .. ' ', '+')
+      text_by_row[virt_h - 1] = bar('+', '-', '', '+')
+      for v = 1, virt_h - 2 do
+        text_by_row[v] = bar('|', ' ', v == 1 and (' ' .. size .. ' ') or '', '|')
+      end
+    end
+    prepared[#prepared + 1] = {
+      start_cell = math.max(0, b.start_cell or 0),
+      box_w = box_w,
+      text_by_row = text_by_row,
+    }
+  end
+
+  table.sort(prepared, function(a, b) return a.start_cell < b.start_cell end)
+  local min_cell = prepared[1].start_cell
+  local prev_end = -1
+  for _, p in ipairs(prepared) do
+    p.col = math.max(p.start_cell - min_cell, prev_end + 1)
+    prev_end = p.col + p.box_w - 1
+  end
+
+  local rows = {}
+  for v = 0, virt_h - 1 do
+    local chunks = {}
+    local col = 0
+    for _, p in ipairs(prepared) do
+      local text = p.text_by_row[v]
+      if text and #text > 0 then
+        if p.col > col then
+          chunks[#chunks + 1] = { string.rep(' ', p.col - col), hl }
+          col = p.col
+        end
+        chunks[#chunks + 1] = { text, hl }
+        col = col + #text
+      end
+    end
+    rows[v] = chunks
+  end
+  return rows
+end
+
+-- Terminal stub, footprint-faithful box(es) (PlantUML blocks AND image links).
+-- Unlike make_stub_box (which lives wholly in the virt_lines slice), this draws
+-- across the FULL image footprint: virt_h visual rows starting at the source's
+-- first row, exactly where the GUI image(s) would paint. Space allocation is
+-- left untouched -- the box is split between (a) the already-reserved virt_lines
+-- and (b) zero-height virt_text overlays on the (concealed) source rows. Visual-
+-- row routing matches nvim's render order: src0, then reserve_h-1 virt_lines
+-- anchored below src0, then src1..src(source_span-1). When the cursor sits on a
+-- source row (`cursor_rows[brow]`), its overlay is skipped so native conceal can
+-- reveal the raw link text there.
+function M.draw_stub_footprint_box(buf, ns, reservation, cell_w, cursor_rows)
   local hl = 'Comment'
   local label = reservation.label
   local row = reservation.row
   local reserve_h = math.max(1, reservation.reserve_h or 1)
   local source_span = math.max(1, label.source_span or 1)
   local virt_h = math.max(1, label.virt_h or 1)
-  local name = label.name or '?'
-  local size = string.format('%dx%dpx  (%d rows)', label.w_px or 0, label.h_px or 0, virt_h)
+  local boxes = label.boxes or {}
+  if #boxes == 0 then return end
 
-  -- Box width = the image's real display width in cells (NOT the label length), so
-  -- the overlay never spills past the actual image footprint. Label text is clipped
-  -- to fit. Capped at 200 and floored so borders always render.
-  local box_w = math.min(200, math.max(4, math.floor((label.w_px or 0) / math.max(1, cell_w or 10) + 0.5)))
-  local inner = box_w - 2
-  local function clip(s)
-    if #s > inner then return s:sub(1, inner) end
-    return s
-  end
+  local box_rows = M.build_stub_box_rows(boxes, virt_h, cell_w)
 
-  if virt_h <= 1 then
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
-      virt_text = { { clip('[img: ' .. name .. '  ' .. size .. ']'), hl } },
-      virt_text_pos = 'overlay', priority = 260,
-    })
-    return
-  end
-
-  local name_text = '- img: ' .. name .. ' '
-  local size_text = ' ' .. size .. ' '
-  local function bar(open, fill, text, close)
-    text = clip(text)
-    local pad = math.max(0, inner - #text)
-    return open .. text .. string.rep(fill, pad) .. close
-  end
-
-  -- Box content per visual row 0..virt_h-1.
-  local box = {}
-  box[0] = bar('+', '-', name_text, '+')
-  box[virt_h - 1] = bar('+', '-', '', '+')
-  for v = 1, virt_h - 2 do
-    box[v] = bar('|', ' ', v == 1 and size_text or '', '|')
-  end
-
-  local function overlay(brow, text)
+  local function overlay(brow, chunks)
+    if cursor_rows and cursor_rows[brow] then return end
+    if not chunks or #chunks == 0 then return end
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, brow, 0, {
-      virt_text = { { text, hl } }, virt_text_pos = 'overlay', priority = 260,
+      virt_text = chunks, virt_text_pos = 'overlay', priority = 260,
     })
   end
 
   local virt_lines = {}
   for v = 0, virt_h - 1 do
     if v == 0 then
-      overlay(row, box[v])
+      overlay(row, box_rows[v])
     elseif v <= reserve_h - 1 then
-      virt_lines[#virt_lines + 1] = { { box[v], hl } }
+      local chunks = box_rows[v]
+      virt_lines[#virt_lines + 1] = (chunks and #chunks > 0) and chunks or { { ' ', hl } }
     else
       local src_index = v - (reserve_h - 1)
-      if src_index < source_span then overlay(row + src_index, box[v]) end
+      if src_index < source_span then overlay(row + src_index, box_rows[v]) end
     end
   end
   if #virt_lines > 0 then
@@ -1702,13 +1763,21 @@ function M._send_images_impl()
           end
           local label = nil
           if M._stub_active then
-            local first = layouts[1]
-            local path = first.image.path or first.image.raw_path or '?'
+            -- One box per image, placed at the same horizontal cell offset the
+            -- GUI image uses (relative to the text start). build_stub_box_rows
+            -- normalizes the leftmost to column 0.
+            local stub_boxes = {}
+            for _, layout in ipairs(layouts) do
+              local path = layout.image.path or layout.image.raw_path or '?'
+              stub_boxes[#stub_boxes + 1] = {
+                name = vim.fn.fnamemodify(path, ':t'),
+                w_px = layout.display_width_px or 0,
+                h_px = layout.display_height_px or 0,
+                start_cell = math.max(0, math.floor(((layout.dest_x_px or text_left_px) - text_left_px) / math.max(1, cell_w))),
+              }
+            end
             label = {
-              name = vim.fn.fnamemodify(path, ':t'),
-              w_px = first.display_width_px or 0,
-              h_px = first.display_height_px or 0,
-              is_plantuml = first.image.plantuml == true,
+              boxes = stub_boxes,
               source_span = source_span_height or 1,
               virt_h = virt_h,
             }
@@ -1803,6 +1872,23 @@ function M._send_images_impl()
       vim.api.nvim_buf_clear_namespace(buf, M.ensure_image_namespace(), 0, -1)
     end
   end
+  -- Cursor buffer-rows for each window, so the stub can step its overlay aside
+  -- on the cursor's line (letting native conceal reveal the raw link there).
+  -- READ mode forces concealcursor='nvic' and pins the cursor, so suppress the
+  -- reveal in that mode.
+  local function cursor_rows_for(buf)
+    if vim.b[buf].markdown_read_mode then return nil end
+    local set = nil
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+        set = set or {}
+        set[vim.api.nvim_win_get_cursor(win)[1] - 1] = true
+      end
+    end
+    return set
+  end
+
+  stub_source_rows = {}
   for buf, reservations in pairs(image_reservations) do
     for _, reservation in pairs(reservations) do
       local label = reservation.label
@@ -1810,7 +1896,12 @@ function M._send_images_impl()
         -- Footprint-faithful box across the concealed source rows + reserved
         -- virt_lines, for both PlantUML blocks and inline image links. Allocation
         -- (reserve_h/anchor/count) is unchanged.
-        M.draw_stub_footprint_box(buf, image_ns, reservation, cell_w)
+        local span = math.max(1, label.source_span or 1)
+        stub_source_rows[buf] = stub_source_rows[buf] or {}
+        for r = reservation.row, reservation.row + span - 1 do
+          stub_source_rows[buf][r] = true
+        end
+        M.draw_stub_footprint_box(buf, image_ns, reservation, cell_w, cursor_rows_for(buf))
       else
         local virt_lines = M.make_virt_lines(reservation.reserve_h, label)
         if #virt_lines > 0 then
@@ -1988,11 +2079,36 @@ function M.handle_safestate()
   end
 end
 
--- CursorMoved fires constantly; the only cursor-driven output is the PlantUML
--- preview float. Re-render only when the cursor's block membership actually
--- changes; ordinary navigation is a no-op.
+-- Signature of "is the cursor on a stub image source row" across every window.
+-- In stub mode the cursor's line is the only other cursor-driven output (its
+-- overlay is suppressed so the raw link reveals), so this fingerprint changes
+-- exactly when the cursor enters/leaves an image row. Empty unless the stub is
+-- active. Uses the source rows recorded by the last render.
+function M.stub_cursor_sig()
+  if not M._stub_active then return '' end
+  local parts = {}
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_is_valid(win) then
+      local buf = vim.api.nvim_win_get_buf(win)
+      local rows = stub_source_rows[buf]
+      if rows then
+        local crow = vim.api.nvim_win_get_cursor(win)[1] - 1
+        if rows[crow] then
+          parts[#parts + 1] = tostring(win) .. '=' .. tostring(crow)
+        end
+      end
+    end
+  end
+  table.sort(parts)
+  return table.concat(parts, '|')
+end
+
+-- CursorMoved fires constantly; the cursor-driven outputs are the PlantUML
+-- preview float and (in stub mode) the per-line reveal. Re-render only when the
+-- cursor's block membership -- or, under the stub, its image-row membership --
+-- actually changes; ordinary navigation is a no-op.
 function M.handle_cursor_moved()
-  local sig = M.cursor_active_block_sig()
+  local sig = M.cursor_active_block_sig() .. '\0' .. M.stub_cursor_sig()
   if sig == cursor_block_sig then return end
   cursor_block_sig = sig
   M.send_images()
@@ -2060,7 +2176,7 @@ function M._init()
 
   M.send_images()
   layout_sig = M.get_layout_sync_sig()
-  cursor_block_sig = M.cursor_active_block_sig()
+  cursor_block_sig = M.cursor_active_block_sig() .. '\0' .. M.stub_cursor_sig()
 end
 
 return M

@@ -196,6 +196,79 @@ describe('handle_cursor_moved gate', function()
     sig = '';          img.handle_cursor_moved()  -- leave the block
     assert.equals(4, sends)
   end)
+
+  it('also renders when the stub image-row signature changes', function()
+    local img = fresh_image()
+    local sends = 0
+    img.send_images = function() sends = sends + 1 end
+    img.cursor_active_block_sig = function() return '' end
+    local stub = ''
+    img.stub_cursor_sig = function() return stub end
+
+    stub = '';      img.handle_cursor_moved()  -- first observation, render
+    assert.equals(1, sends)
+    stub = 'w1=4';  img.handle_cursor_moved()  -- cursor enters an image row
+    assert.equals(2, sends)
+    stub = 'w1=4';  img.handle_cursor_moved()  -- still on the row, skip
+    assert.equals(2, sends)
+    stub = '';      img.handle_cursor_moved()  -- leaves the image row
+    assert.equals(3, sends)
+  end)
+end)
+
+describe('build_stub_box_rows', function()
+  local function row_text(chunks)
+    local s = {}
+    for _, c in ipairs(chunks or {}) do s[#s + 1] = c[1] end
+    return table.concat(s)
+  end
+
+  it('draws a single box across virt_h rows, anchored at column 0', function()
+    local rows = image.build_stub_box_rows(
+      { { name = 'a.png', w_px = 100, h_px = 50, start_cell = 0 } }, 3, 10)
+    assert.is_truthy(rows[0]); assert.is_truthy(rows[1]); assert.is_truthy(rows[2])
+    assert.is_nil(rows[3])
+    local top = row_text(rows[0])
+    assert.equals('+', top:sub(1, 1))
+    assert.equals('+', top:sub(-1))
+    assert.equals(10, #top)  -- box_w = round(100/10) = 10 cells
+    local mid = row_text(rows[1])
+    assert.equals('|', mid:sub(1, 1))
+    assert.equals('|', mid:sub(-1))
+  end)
+
+  it('lays multiple images side-by-side, normalized so the leftmost is at col 0', function()
+    local rows = image.build_stub_box_rows({
+      { name = 'a.png', w_px = 100, h_px = 50, start_cell = 0 },   -- cols 0..9
+      { name = 'b.png', w_px = 100, h_px = 50, start_cell = 15 },  -- cols 15..24
+    }, 3, 10)
+    local top = row_text(rows[0])
+    assert.equals(25, #top)
+    assert.equals('+', top:sub(1, 1))     -- first box opens
+    assert.equals('+', top:sub(10, 10))   -- first box closes
+    assert.equals(' ', top:sub(11, 11))   -- gap between boxes
+    assert.equals('+', top:sub(16, 16))   -- second box opens (col 15, 1-based 16)
+    assert.equals('+', top:sub(25, 25))   -- second box closes
+  end)
+
+  it('bumps overlapping boxes right so they never collide', function()
+    local rows = image.build_stub_box_rows({
+      { name = 'a.png', w_px = 100, h_px = 50, start_cell = 0 },  -- cols 0..9
+      { name = 'b.png', w_px = 100, h_px = 50, start_cell = 3 },  -- bumped to col 10
+    }, 3, 10)
+    assert.equals(20, #row_text(rows[0]))  -- two adjacent 10-wide boxes
+  end)
+
+  it('renders a single-line label when virt_h <= 1', function()
+    local rows = image.build_stub_box_rows(
+      { { name = 'a.png', w_px = 100, h_px = 50, start_cell = 0 } }, 1, 10)
+    assert.is_truthy(rows[0])
+    assert.is_nil(rows[1])
+  end)
+
+  it('returns no rows for an empty box list', function()
+    assert.same({}, image.build_stub_box_rows({}, 3, 10))
+  end)
 end)
 
 describe('util.debounce', function()
