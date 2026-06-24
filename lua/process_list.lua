@@ -17,7 +17,7 @@ function M.Show()
 
     process_list_buf = ut.NewScratchBuffer({ orientation = 'vertical', size = 60 })
     api.nvim_buf_set_name(process_list_buf, '[Process List]')
-    api.nvim_buf_set_option(process_list_buf, 'filetype', 'processlist')
+    api.nvim_set_option_value('filetype', 'processlist', { buf = process_list_buf })
 
     M.SetMappings(process_list_buf)
     M.Update()
@@ -50,7 +50,7 @@ local function gather_processes()
     end
 
     for _, buf in ipairs(api.nvim_list_bufs()) do
-        if api.nvim_buf_is_valid(buf) and api.nvim_buf_get_option(buf, 'buftype') == 'terminal' then
+        if api.nvim_buf_is_valid(buf) and api.nvim_get_option_value('buftype', { buf = buf }) == 'terminal' then
             if not tracked_bufs[buf] then
                 local job_id = vim.b[buf].terminal_job_id
                 if job_id and vim.fn.jobwait({job_id}, 0)[1] == -1 then
@@ -94,9 +94,9 @@ function M.Update()
         table.insert(lines, string.format("%-10s | %-30s | %-10s | %-10s", p.type, name, status, id))
     end
 
-    api.nvim_buf_set_option(process_list_buf, 'modifiable', true)
+    api.nvim_set_option_value('modifiable', true, { buf = process_list_buf })
     api.nvim_buf_set_lines(process_list_buf, 0, -1, false, lines)
-    api.nvim_buf_set_option(process_list_buf, 'modifiable', false)
+    api.nvim_set_option_value('modifiable', false, { buf = process_list_buf })
 end
 
 function M.StartRefresh()

@@ -4,7 +4,7 @@ local session = require('session')
 
 -- 1. Setup a dummy launcher process
 local launcher_buf = ut.NewScratchBuffer('vertical')
-vim.api.nvim_buf_set_option(launcher_buf, 'filetype', 'launcher')
+vim.api.nvim_set_option_value('filetype', 'launcher', { buf = launcher_buf })
 vim.api.nvim_buf_set_var(launcher_buf, 'launcher_status', 'running')
 vim.api.nvim_buf_set_var(launcher_buf, 'lc_object', 'dummy_task')
 launcher.RegisterProcess(launcher_buf, { type = 'general', obj = 'dummy_task', buf = launcher_buf })

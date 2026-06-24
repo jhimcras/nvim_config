@@ -126,20 +126,6 @@ local function SetColorsAndHighlighting()
     end } )
 end
 
-local function LspStatusConfig()
-    local lsp_setting = require'lsp_setting'
-    local lsp_status = require'lsp-status'
-    lsp_status.register_progress()
-    lsp_status.config {
-        indicator_errors = lsp_setting.SymError,
-        indicator_warnings = lsp_setting.SymWarn,
-        indicator_info = lsp_setting.SymInfo,
-        indicator_hint = lsp_setting.SymHint,
-        status_symbol = '',
-        current_function = true,
-    }
-end
-
 local function MarkdownConfig()
     require'render-markdown'.setup{
         overrides = {
@@ -231,11 +217,77 @@ local function TreesitterConfig()
             },
         },
     }
+
+    -- nvim-treesitter still registers a few directives as if query captures are
+    -- single TSNode values. Neovim 0.12 passes TSNode[] per capture, which breaks
+    -- markdown injection parsing through render-markdown.nvim.
+    if vim.fn.has('nvim-0.12') == 1 then
+        require'nvim-treesitter.query_predicates'
+        local query = require'vim.treesitter.query'
+        local html_script_type_languages = {
+            importmap = 'json',
+            module = 'javascript',
+            ['application/ecmascript'] = 'javascript',
+            ['text/ecmascript'] = 'javascript',
+        }
+        local non_filetype_match_injection_language_aliases = {
+            ex = 'elixir',
+            pl = 'perl',
+            sh = 'bash',
+            uxn = 'uxntal',
+            ts = 'typescript',
+        }
+        local function first_node(match, capture_id)
+            local nodes = match[capture_id]
+            if type(nodes) == 'table' then
+                return nodes[1]
+            end
+            return nodes
+        end
+        local function parser_from_markdown_info_string(injection_alias)
+            local match = vim.filetype.match { filename = 'a.' .. injection_alias }
+            return match or non_filetype_match_injection_language_aliases[injection_alias] or injection_alias
+        end
+        query.add_directive('set-lang-from-mimetype!', function(match, _, bufnr, pred, metadata)
+            local node = first_node(match, pred[2])
+            if not node then
+                return
+            end
+            local type_attr_value = vim.treesitter.get_node_text(node, bufnr)
+            local configured = html_script_type_languages[type_attr_value]
+            if configured then
+                metadata['injection.language'] = configured
+            else
+                local parts = vim.split(type_attr_value, '/', {})
+                metadata['injection.language'] = parts[#parts]
+            end
+        end, { force = true })
+        query.add_directive('set-lang-from-info-string!', function(match, _, bufnr, pred, metadata)
+            local node = first_node(match, pred[2])
+            if not node then
+                return
+            end
+            local injection_alias = vim.treesitter.get_node_text(node, bufnr):lower()
+            metadata['injection.language'] = parser_from_markdown_info_string(injection_alias)
+        end, { force = true })
+        query.add_directive('downcase!', function(match, _, bufnr, pred, metadata)
+            local id = pred[2]
+            local node = first_node(match, id)
+            if not node then
+                return
+            end
+            local text = vim.treesitter.get_node_text(node, bufnr, { metadata = metadata[id] }) or ''
+            if not metadata[id] then
+                metadata[id] = {}
+            end
+            metadata[id].text = string.lower(text)
+        end, { force = true })
+    end
 end
 
 local function bootstrap_pckr()
     local pckr_path = vim.fn.stdpath("data") .. "/pckr/pckr.nvim"
-    if not (vim.uv or vim.loop).fs_stat(pckr_path) then
+    if not vim.uv.fs_stat(pckr_path) then
         vim.fn.system({
             'git', 'clone', '--filter=blob:none',
             'https://github.com/lewis6991/pckr.nvim',
@@ -273,7 +325,6 @@ function M.setup()
         { 'kana/vim-textobj-entire' },
         { 'kana/vim-textobj-user' },
         { 'michaeljsmith/vim-indent-object' },
-        { 'nvim-lua/lsp-status.nvim', config = LspStatusConfig },
         { 'nvim-treesitter/nvim-treesitter', branch = 'master', run = ':TSUpdate', config = TreesitterConfig },
         { 'nvim-treesitter/nvim-treesitter-textobjects', branch = 'master' },
         -- { 'plasticboy/vim-markdown', ft = { 'markdown' } },

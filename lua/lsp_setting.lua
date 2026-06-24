@@ -146,11 +146,6 @@ local function SetupClangd()
             filetypes = { 'c', 'cpp' },
             -- capabilities = capabilities(),
             handlers = {
-            --     ['textDocument/publishDiagnostics'] = vim.lsp.with(
-            --         vim.lsp.diagnostic.on_publish_diagnostics,
-            --         { virtual_text = false }
-            --     ),
-            --     unpack(require'lsp-status'.extensions.clangd.setup()),
             },
         }
         vim.lsp.enable('clangd')
@@ -262,7 +257,7 @@ M.SymHint = ' '
 -- M.SymHint = '▁'
 
 function M.setup()
-    vim.lsp.set_log_level('WARN')
+    vim.lsp.log.set_level('WARN')
 
     vim.diagnostic.config {
         signs =  {
@@ -279,15 +274,6 @@ function M.setup()
     ut.set_highlight('LspReferenceRead', { gui='bold' })
     ut.set_highlight('LspReferenceWrite', { gui='bold' })
 
-    -- require'lsp-status'.register_progress()
-    -- require'lsp-status'.config {
-    --     mindicator_errors = M.SymError,
-    --     indicator_warnings = M.SymWarn,
-    --     indicator_info = M.SymInfo,
-    --     indicator_hint = M.SymHint,
-    --     status_symbol = '',
-    --     current_function = true,
-    -- }
     api.nvim_create_autocmd({'LspProgress', 'DiagnosticChanged'}, {
         callback = function() vim.cmd.redrawstatus() end,
     })

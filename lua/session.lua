@@ -639,7 +639,7 @@ function M.setup()
         local abort_buf = vim.api.nvim_create_buf(false, true)
         local unique_id = math.random(1000, 9999)
         pcall(vim.api.nvim_buf_set_name, abort_buf, "[CANCELLED EXIT " .. unique_id .. "]")
-        vim.api.nvim_buf_set_option(abort_buf, 'modified', true)
+        vim.api.nvim_set_option_value('modified', true, { buf = abort_buf })
         
         -- Use a timer to clean it up, so it exists long enough for Neovim to see it
         local timer = vim.uv.new_timer()

@@ -3,7 +3,7 @@ vim.api.nvim_create_autocmd("QuitPre", {
     callback = function()
         print("QuitPre triggered")
         local buf = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_option(buf, 'modified', true)
+        vim.api.nvim_set_option_value('modified', true, { buf = buf })
         print("Created modified buffer")
     end
 })

@@ -6,14 +6,19 @@ local env = require 'env'
 local api = vim.api
 local buffers_handles = {}
 local launcher_timers = {}
+local launcher_highlight_ns = api.nvim_create_namespace('launcher_highlights')
 M.running_processes = {}
 
 local function SetBufLines(buf, start, end_, strict, lines)
     if not api.nvim_buf_is_valid(buf) then return end
-    local modifiable = api.nvim_buf_get_option(buf, 'modifiable')
-    api.nvim_buf_set_option(buf, 'modifiable', true)
+    local modifiable = api.nvim_get_option_value('modifiable', { buf = buf })
+    api.nvim_set_option_value('modifiable', true, { buf = buf })
     api.nvim_buf_set_lines(buf, start, end_, strict, lines)
-    api.nvim_buf_set_option(buf, 'modifiable', modifiable)
+    api.nvim_set_option_value('modifiable', modifiable, { buf = buf })
+end
+
+local function AddHighlight(buf, hl_group, lnum, col_start, col_end)
+    vim.hl.range(buf, launcher_highlight_ns, hl_group, { lnum, col_start }, { lnum, col_end }, {})
 end
 
 local function SafeCloseTimer(buf)
@@ -72,12 +77,12 @@ function M.Restore(data)
     api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
     
     if data.filetype == 'terminal' then
-        api.nvim_buf_set_option(buf, 'filetype', 'terminal')
+        api.nvim_set_option_value('filetype', 'terminal', { buf = buf })
     else
-        api.nvim_buf_set_option(buf, 'filetype', 'launcher')
+        api.nvim_set_option_value('filetype', 'launcher', { buf = buf })
     end
     
-    api.nvim_buf_set_option(buf, 'modifiable', false)
+    api.nvim_set_option_value('modifiable', false, { buf = buf })
     
     if data.prjroot then
         pr.SetBufferProjectRoot(buf, data.prjroot)
@@ -100,9 +105,9 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     else
         buf = ut.NewScratchBuffer(position)
     end
-    api.nvim_buf_set_option(buf, 'filetype', 'launcher')
-    api.nvim_buf_set_option(buf, 'bufhidden', 'hide')
-    api.nvim_buf_set_option(buf, 'modifiable', false)
+    api.nvim_set_option_value('filetype', 'launcher', { buf = buf })
+    api.nvim_set_option_value('bufhidden', 'hide', { buf = buf })
+    api.nvim_set_option_value('modifiable', false, { buf = buf })
 
     -- Initialize matches for navigation
     api.nvim_buf_set_var(buf, 'launcher_matches', {})
@@ -140,7 +145,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                 SetBufLines(buf, -2, -1, false, {'Error reading output: ' .. err})
                 api.nvim_buf_set_var(buf, 'launcher_failed', true)
                 api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
-                api.nvim_buf_set_option(buf, 'modified', false)
+                api.nvim_set_option_value('modified', false, { buf = buf })
 
                 local new_line_count = api.nvim_buf_line_count(buf)
                 for _, w in ipairs(scroll_wins) do
@@ -203,7 +208,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                     for i, line_highlights in ipairs(highlight_data) do
                         local lnum = start_line + i - 1
                         for _, hl in ipairs(line_highlights) do
-                            api.nvim_buf_add_highlight(buf, -1, hl[3], lnum, hl[1], hl[2])
+                            AddHighlight(buf, hl[3], lnum, hl[1], hl[2])
                         end
                     end
                 end
@@ -247,7 +252,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
 
                                         if hl_idx == 0 then
                                             if s and e then
-                                                api.nvim_buf_add_highlight(buf, -1, hl_group, lnum, s - 1, e)
+                                                AddHighlight(buf, hl_group, lnum, s - 1, e)
                                             end
                                         elseif m[hl_idx] then
                                             -- Search for the exact capture string within the matched portion of the line
@@ -255,7 +260,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                                             local search_area = line:sub(s, e)
                                             local cap_s, cap_e = search_area:find(cap_str, 1, true) -- plain search
                                             if cap_s then
-                                                api.nvim_buf_add_highlight(buf, -1, hl_group, lnum, s + cap_s - 2, s + cap_e - 1)
+                                                AddHighlight(buf, hl_group, lnum, s + cap_s - 2, s + cap_e - 1)
                                             end
                                         end
                                     end
@@ -295,7 +300,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
 
         local status = (code == 0 and signal == 0) and 'done' or 'terminated'
         api.nvim_buf_set_var(buf, 'launcher_status', status)
-        api.nvim_buf_set_option(buf, 'modified', false)
+        api.nvim_set_option_value('modified', false, { buf = buf })
 
         local end_text = string.format('---- End [code %d] [signal %d]', code, signal)
         SetBufLines(buf, -2, -1, false, {end_text})
@@ -312,7 +317,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
 
     -- Start spinner timer
     api.nvim_buf_set_var(buf, 'launcher_status', 'running')
-    api.nvim_buf_set_option(buf, 'modified', true)
+    api.nvim_set_option_value('modified', true, { buf = buf })
     local timer = vim.uv.new_timer()
     timer:start(0, 120, vim.schedule_wrap(function()
         if api.nvim_buf_is_valid(buf) then
@@ -357,7 +362,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         api.nvim_buf_set_var(buf, 'launcher_status', 'terminated')
         api.nvim_buf_set_var(buf, 'launcher_failed', true)
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
-        api.nvim_buf_set_option(buf, 'modified', false)
+        api.nvim_set_option_value('modified', false, { buf = buf })
 
         -- Stop timer if failed to start
         SafeCloseTimer(buf)
@@ -375,8 +380,8 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, position, obj, existing_buf)
     else
         buf = ut.NewScratchBuffer(position)
     end
-    api.nvim_buf_set_option(buf, 'filetype', 'terminal')
-    api.nvim_buf_set_option(buf, 'bufhidden', 'hide')
+    api.nvim_set_option_value('filetype', 'terminal', { buf = buf })
+    api.nvim_set_option_value('bufhidden', 'hide', { buf = buf })
 
     -- Set a unique session token for this terminal launch
     local session_token = {}
@@ -542,12 +547,12 @@ function M.LaunchObject(obj)
 
             local guard_buf = api.nvim_create_buf(false, true)
             api.nvim_buf_set_name(guard_buf, string.format("[External Process: %s]", obj or cmd))
-            api.nvim_buf_set_option(guard_buf, 'buftype', 'nofile')
-            api.nvim_buf_set_option(guard_buf, 'modified', true)
+            api.nvim_set_option_value('buftype', 'nofile', { buf = guard_buf })
+            api.nvim_set_option_value('modified', true, { buf = guard_buf })
 
             local on_exit = function(code, signal)
                 if api.nvim_buf_is_valid(guard_buf) then
-                    api.nvim_buf_set_option(guard_buf, 'modified', false)
+                    api.nvim_set_option_value('modified', false, { buf = guard_buf })
                     api.nvim_buf_delete(guard_buf, {force = true})
                 end
             end
@@ -597,7 +602,7 @@ function M.LaunchObject(obj)
                     -- Clear the buffer content for non-terminal reuse
                     SetBufLines(existing_buf, 0, -1, false, {})
                     -- Ensure it's not marked as modified so next launch is clean
-                    vim.api.nvim_buf_set_option(existing_buf, 'modified', false)
+                    vim.api.nvim_set_option_value('modified', false, { buf = existing_buf })
 
                     -- If the buffer is hidden, display it again
                     local wins = vim.fn.win_findbuf(existing_buf)

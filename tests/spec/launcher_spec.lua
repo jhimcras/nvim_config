@@ -32,7 +32,7 @@ describe('launcher', function()
         
         launcher.Launch('ls', {}, '.', nil, nil, nil, 'use', nil, nil, 'test')
         
-        local modifiable = vim.api.nvim_buf_get_option(mock_buf, 'modifiable')
+        local modifiable = vim.api.nvim_get_option_value('modifiable', { buf = mock_buf })
         assert.is_false(modifiable)
         
         require('util').NewScratchBuffer = original_new_scratch

@@ -19,7 +19,7 @@ end
 -- resolve .git (dir or file for worktree)
 local function resolve_git_dir(dir)
     local git_path = vim.fs.joinpath(dir, ".git")
-    local stat = vim.loop.fs_stat(git_path)
+    local stat = vim.uv.fs_stat(git_path)
 
     if not stat then
         return nil
@@ -85,7 +85,7 @@ end
 
 -- public function
 function M.git_branch_commit(dir)
-    dir = dir or vim.loop.cwd()
+    dir = dir or vim.uv.cwd()
     dir = normpath(dir)
 
     local now = vim.uv.now() / 1000

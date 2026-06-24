@@ -123,7 +123,7 @@ local types = {
 
 function M.lsp()
     if next(vim.lsp.get_clients()) ~= nil then
-        return require'lsp-status'.status()
+        return vim.lsp.status()
     end
     return ''
 end
@@ -298,7 +298,7 @@ function M.search_result()
 
     -- M.duration_active = vim.uv.hrtime() - M.start_active_time
     local ok, searchcount = pcall(vim.fn.searchcount, { maxcount = 99999, timeout = 100 })
-    if not ok or searchcount.total == 0 then
+    if not ok or not searchcount.total or searchcount.total == 0 then
         return ''
     end
 
@@ -425,7 +425,7 @@ end
 
 local function lsp_status(bufnr, winid)
     if next(vim.lsp.get_clients{bufnr = bufnr}) ~= nil then
-        return vim.trim(require'lsp-status'.status())
+        return vim.trim(vim.lsp.status())
     end
 end
 
@@ -439,7 +439,7 @@ local function search_count(bufnr, winid)
     local searchcount = vim.api.nvim_win_call(winids[1], function()
         return {pcall(vim.fn.searchcount, { maxcount = 999999, timeout = 1000 })}
     end)
-    if not searchcount[1] or searchcount[2].total == 0 then return end
+    if not searchcount[1] or not searchcount[2].total or searchcount[2].total == 0 then return end
 
     return ('  %d/%d'):format(searchcount[2].current, searchcount[2].total)
 end

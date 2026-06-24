@@ -70,7 +70,7 @@ function M.show()
     end
 
     if next(vim.lsp.get_clients{bufnr = bufnr}) ~= nil then
-        add_line("LSP", vim.trim(require'lsp-status'.status()))
+        add_line("LSP", vim.trim(vim.lsp.status()))
     end
 
     -- Create floating window
