@@ -18,6 +18,7 @@
 -- [text](url) shows as plain "text" without the icon inside virtual rows.
 
 local M = {}
+local wrap_text = require('rendermark.wrap.text')
 
 local defaults = {
     markdown = true,
@@ -37,12 +38,8 @@ local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
 local group
 local saved_state = {} -- per-window saved options, keyed by window id
 
--- List marker, including an optional task checkbox: "- ", "* ", "+ ", "1.", "12)",
--- "  - nested", "- [ ] task", etc.
-local list_pat = [[^\s*\%(\d\+[.)]\|[-*+]\)\s\+\%(\[.\]\s\+\)\?]]
-
 local function dw(s)
-    return vim.fn.strdisplaywidth(s)
+    return wrap_text.dw(s)
 end
 
 local function hl_chunk(s)
@@ -71,27 +68,11 @@ end
 -- Continuation indent (display columns) for a logical line, so wrapped rows hang
 -- under the line's text the way a browser renders it.
 function M.compute_indent(text)
-    local marker = vim.fn.matchstr(text, list_pat)
-    if marker ~= '' then
-        return dw(marker)
-    end
-    local heading = text:match('^%s*#+%s+')
-    if heading then
-        return dw(heading)
-    end
-    local quote = text:match('^%s*>[%s>]*')
-    if quote then
-        return dw(quote)
-    end
-    return dw(text:match('^%s*') or '')
+    return wrap_text.compute_indent(text)
 end
 
 local function slice_concat(t, a, b)
-    local r = {}
-    for k = a, b do
-        r[#r + 1] = t[k]
-    end
-    return table.concat(r)
+    return wrap_text.slice_concat(t, a, b)
 end
 
 -- Flatten possibly-overlapping highlight/conceal intervals of one line into
@@ -104,89 +85,19 @@ end
 -- char is emitted exactly once even when the run is sliced.
 -- Exported only so it can be unit-tested without treesitter.
 function M.flatten_runs(intervals, line_len)
-    if not intervals or #intervals == 0 then
-        return nil
-    end
-    local points, seen = {}, {}
-    local function add_point(p)
-        p = math.max(0, math.min(p, line_len))
-        if not seen[p] then
-            seen[p] = true
-            points[#points + 1] = p
-        end
-    end
-    for _, iv in ipairs(intervals) do
-        add_point(iv.s)
-        add_point(iv.e)
-    end
-    table.sort(points)
-
-    local runs = {}
-    for k = 1, #points - 1 do
-        local s, e = points[k], points[k + 1]
-        local active = {}
-        for _, iv in ipairs(intervals) do
-            if iv.s < e and iv.e > s then
-                active[#active + 1] = iv
-            end
-        end
-        if #active > 0 then
-            table.sort(active, function(a, b)
-                if (a.priority or 100) ~= (b.priority or 100) then
-                    return (a.priority or 100) < (b.priority or 100)
-                end
-                return (a.seq or 0) < (b.seq or 0)
-            end)
-            local hl, conceal, anchor = {}, nil, nil
-            for _, iv in ipairs(active) do
-                if iv.hl then
-                    hl[#hl + 1] = iv.hl
-                end
-                if iv.conceal ~= nil then
-                    conceal, anchor = iv.conceal, iv.s
-                end
-            end
-            runs[#runs + 1] = {
-                s = s,
-                e = e,
-                hl = #hl > 0 and hl or nil,
-                conceal = conceal,
-                conceal_anchor = anchor,
-            }
-        end
-    end
-    return runs
+    return wrap_text.flatten_runs(intervals, line_len)
 end
 
 -- Prepend the base continuation-row highlight (config.hl) to a run's hl stack;
 -- inline groups come later, so they win attribute conflicts over the base.
 local function with_base(hl)
-    if not config.hl then
-        return hl
-    end
-    local stack = { config.hl }
-    if hl then
-        if type(hl) == 'table' then
-            vim.list_extend(stack, hl)
-        else
-            stack[#stack + 1] = hl
-        end
-    end
-    return stack
+    return wrap_text.with_base(config.hl, hl)
 end
 
 -- Append a virt_text chunk, merging into the previous chunk when the hl stack is
 -- identical (keeps extmark payloads small; refresh runs on CursorMoved).
 local function push_chunk(out, text, hl)
-    if text == '' then
-        return
-    end
-    local prev = out[#out]
-    if prev and vim.deep_equal(prev[2], hl) then
-        prev[1] = prev[1] .. text
-    else
-        out[#out + 1] = hl ~= nil and { text, hl } or { text }
-    end
+    return wrap_text.push_chunk(out, text, hl)
 end
 
 -- Emit virt_text chunks for the raw byte range [sb, eb) of `line`, applying the
@@ -194,36 +105,7 @@ end
 -- dropped, and a non-empty conceal replacement is emitted once at its anchor.
 -- runs == nil falls back to a single plain chunk.
 local function slice_chunks(out, line, runs, sb, eb)
-    if not runs then
-        push_chunk(out, line:sub(sb + 1, eb), with_base(nil))
-        return
-    end
-    local pos = sb
-    for _, r in ipairs(runs) do
-        if pos >= eb then
-            break
-        end
-        if r.e > pos and r.s < eb then
-            if r.s > pos then -- uncovered gap before this run
-                push_chunk(out, line:sub(pos + 1, math.min(r.s, eb)), with_base(nil))
-                pos = math.min(r.s, eb)
-            end
-            local s, e = math.max(r.s, pos), math.min(r.e, eb)
-            if r.conceal == '' then
-                -- concealed: dropped
-            elseif r.conceal then
-                if r.conceal_anchor >= s and r.conceal_anchor < e then
-                    push_chunk(out, r.conceal, with_base(r.hl))
-                end
-            else
-                push_chunk(out, line:sub(s + 1, e), with_base(r.hl))
-            end
-            pos = e
-        end
-    end
-    if pos < eb then
-        push_chunk(out, line:sub(pos + 1, eb), with_base(nil))
-    end
+    return wrap_text.slice_chunks(out, line, runs, sb, eb, config.hl)
 end
 
 -- Inline treesitter highlight/conceal runs for rows [first, last), keyed by row
@@ -285,67 +167,11 @@ end
 -- trailing whitespace trimmed from each row (e < s for an all-space row).
 -- Breaks at spaces when possible, otherwise per item (handles CJK / long words).
 local function wrap_indices(items, width1, widthN)
-    local ranges = {}
-    local line_start = 1   -- item index where the current display row starts
-    local cur_w = 0
-    local last_space = nil -- index of the last space seen on the current row
-    local budget = width1
-
-    local function push(stop_exclusive)
-        local e = stop_exclusive - 1
-        while e >= line_start and items[e].sp do
-            e = e - 1
-        end
-        ranges[#ranges + 1] = { line_start, e }
-    end
-
-    local i = 1
-    while i <= #items do
-        local it = items[i]
-        -- A space is a break opportunity: the content before it already fits, so
-        -- record it before the overflow check (handles a space landing exactly at
-        -- the budget boundary).
-        if it.sp then
-            last_space = i
-        end
-        if cur_w + it.w > budget and i > line_start then
-            local stop, next_start
-            if last_space and last_space >= line_start then
-                stop = last_space        -- end row before the space (space dropped)
-                next_start = last_space + 1
-                while next_start <= #items and items[next_start].sp do
-                    next_start = next_start + 1
-                end
-            else
-                stop = i                 -- hard break (CJK / over-long word)
-                next_start = i
-            end
-            push(stop)
-            budget = widthN
-            line_start = next_start
-            last_space = nil
-            cur_w = 0
-            i = next_start
-        else
-            cur_w = cur_w + it.w
-            i = i + 1
-        end
-    end
-
-    -- line_start passes the end when only trailing spaces remained after the
-    -- last break; don't emit an empty ghost row for them.
-    if line_start <= #items then
-        push(#items + 1)
-    end
-    return ranges
+    return wrap_text.wrap_indices(items, width1, widthN)
 end
 
 local function char_items(chars)
-    local items = {}
-    for i, c in ipairs(chars) do
-        items[i] = { w = dw(c), sp = c:match('%s') ~= nil }
-    end
-    return items
+    return wrap_text.char_items(chars)
 end
 
 -- Pure wrap computation. Given a line and the available widths, returns:
@@ -355,33 +181,7 @@ end
 --   spans          : per continuation row, its { start, end } raw byte range in
 --                    `text` (0-based, end-exclusive, after trailing-space trim).
 function M.wrap_line(text, width1, widthN, indent)
-    local chars = vim.fn.split(text, '\\zs')
-    if #chars == 0 then
-        return { first_end_byte = nil, lines = {}, spans = {} }
-    end
-
-    -- byte offset (0-based) of the start of each char; byte_at[#chars+1] = #text
-    local byte_at = {}
-    local acc = 0
-    for i, c in ipairs(chars) do
-        byte_at[i] = acc
-        acc = acc + #c
-    end
-    byte_at[#chars + 1] = acc
-
-    local ranges = wrap_indices(char_items(chars), width1, widthN)
-    if #ranges < 2 then
-        return { first_end_byte = nil, lines = {}, spans = {} }
-    end
-
-    local indent_str = string.rep(' ', indent)
-    local lines, spans = {}, {}
-    for k = 2, #ranges do
-        local s, e = ranges[k][1], ranges[k][2]
-        lines[#lines + 1] = indent_str .. slice_concat(chars, s, e)
-        spans[#spans + 1] = { byte_at[s], byte_at[e + 1] }
-    end
-    return { first_end_byte = byte_at[ranges[1][2] + 1], lines = lines, spans = spans }
+    return wrap_text.wrap_line(text, width1, widthN, indent)
 end
 
 -- Split a table row into trimmed cells, dropping the outer pipes and unescaping

@@ -3,11 +3,12 @@ local M = {}
 local pr = require'prjroot'
 local ut = require'util'
 local env = require 'env'
+local registry = require('launcher.registry')
 local api = vim.api
 local buffers_handles = {}
 local launcher_timers = {}
 local launcher_highlight_ns = api.nvim_create_namespace('launcher_highlights')
-M.running_processes = {}
+M.running_processes = registry.processes
 
 local function SetBufLines(buf, start, end_, strict, lines)
     if not api.nvim_buf_is_valid(buf) then return end
@@ -787,20 +788,15 @@ function M.GetLauncherList()
 end
 
 function M.GetRunningProcesses()
-    local processes = {}
-    for k, v in pairs(M.running_processes) do
-        local p = vim.tbl_extend('force', v, { key = k })
-        table.insert(processes, p)
-    end
-    return processes
+    return registry.list()
 end
 
 function M.RegisterProcess(key, proc_info)
-    M.running_processes[key] = proc_info
+    registry.register(key, proc_info)
 end
 
 function M.UnregisterProcess(key)
-    M.running_processes[key] = nil
+    registry.unregister(key)
 end
 
 function M.ShowProcessList()
@@ -822,19 +818,7 @@ function M.setup()
     api.nvim_create_autocmd('BufWipeout', {
         callback = function(args)
             local buf = args.buf
-            local proc = M.running_processes[buf]
-            if proc then
-                if proc.type == 'terminal' then
-                    vim.fn.jobstop(proc.job_id)
-                elseif proc.terminate then
-                    proc.terminate(15)
-                elseif proc.handle and not proc.handle:is_closing() then
-                    if type(proc.handle.kill) == 'function' then
-                        proc.handle:kill(15)
-                    end
-                end
-                M.running_processes[buf] = nil
-            end
+            registry.terminate(buf)
 
             SafeCloseTimer(buf)
         end

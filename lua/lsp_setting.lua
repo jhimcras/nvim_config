@@ -162,6 +162,32 @@ local function SetupLua()
         lua_lsp_cmd = vim.env.LUALS .. '/bin/lua-language-server'
     end
     if not vim.fn.executable(lua_lsp_cmd) then return end
+
+    local function lua_workspace_library()
+        local library = { vim.env.VIMRUNTIME }
+        local candidates = {}
+
+        if vim.env.LUALS then
+            table.insert(candidates, vim.env.LUALS .. '/meta/3rd/luv/library')
+        end
+
+        local exe = vim.fn.exepath(lua_lsp_cmd)
+        if exe ~= '' then
+            local exe_dir = vim.fn.fnamemodify(exe, ':h')
+            table.insert(candidates, exe_dir .. '/../meta/3rd/luv/library')
+            table.insert(candidates, exe_dir .. '/meta/3rd/luv/library')
+        end
+
+        for _, path in ipairs(candidates) do
+            if vim.uv.fs_stat(path) then
+                table.insert(library, '${3rd}/luv/library')
+                break
+            end
+        end
+
+        return library
+    end
+
     vim.lsp.config('lua_ls', {
         cmd = { lua_lsp_cmd },
         filetypes = { 'lua' },
@@ -186,15 +212,18 @@ local function SetupLua()
                     },
                 },
                 workspace = {
-                    checkThirdParty = 'Disable',
-                    library = {
-                        vim.env.VIMRUNTIME
-                    }
+                    checkThirdParty = false,
+                    library = lua_workspace_library(),
                 }
             })
         end,
         settings = {
-            Lua = {}
+            Lua = {
+                workspace = {
+                    checkThirdParty = false,
+                    library = lua_workspace_library(),
+                },
+            }
         }
     })
     vim.lsp.enable('lua_ls')

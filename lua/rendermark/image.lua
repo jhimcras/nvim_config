@@ -14,6 +14,9 @@
 local M = {}
 
 local util = require('util')
+local image_backend = require('rendermark.image.backend')
+local image_scan = require('rendermark.image.scan')
+local image_size = require('rendermark.image.size')
 
 local image_ns
 local layout_sig = ''
@@ -24,8 +27,9 @@ local autocmd_group
 local bitops = bit or bit32
 local extmark_virt_lines_sig
 local cursor_block_sig  -- last seen M.cursor_active_block_sig(); gates CursorMoved
-local live_ids = {}  -- id -> true: images currently set in the GUI backend
 local stub_source_rows = {}  -- buf -> set of 0-based stub image source rows (last render)
+local backend = image_backend.new(M)
+local read_image_size_impl = image_size.new_reader()
 
 local function trim(s)
   return (s or ''):gsub('^%s+', ''):gsub('%s+$', '')
@@ -35,70 +39,29 @@ end
 -- GUI image backend (vim.ui.img) plumbing
 -- ---------------------------------------------------------------------------
 
-local function img_available()
-  return vim.ui and vim.ui.img and type(vim.ui.img.set) == 'function'
-end
-
 -- True when the image pipeline will actually decorate image-link lines (real neopp
 -- backend or terminal stub, and not globally disabled). wrap.lua uses this to decide
 -- whether to skip image-link lines (image.lua owns their layout) or wrap them itself.
 function M.is_active()
-  return img_available() and vim.g.neopp_images_enabled ~= false
-end
-
--- Terminal verification stub: when neopp is absent (plain terminal) and the user
--- opts in via RENDERMARK_IMG_STUB / vim.g.rendermark_img_stub, install a no-op
--- vim.ui.img backend so img_available() is true and the whole non-pixel UI
--- pipeline (space reservation, conceal, preview floats, cursor rules, autocmds)
--- runs. M._stub_active makes make_virt_lines draw a labelled box in the reserved
--- area so the secured region/size is visible without real image pixels.
-local stub_store = {}  -- id -> { path = , opts = }
-
-local function stub_requested()
-  return (not img_available())
-     and (vim.env.RENDERMARK_IMG_STUB or vim.g.rendermark_img_stub)
+  return backend.is_active()
 end
 
 local function install_terminal_stub()
-  if not stub_requested() then return end
-  vim.ui = vim.ui or {}
-  vim.ui.img = {
-    set = function(id, path, opts) stub_store[id] = { path = path, opts = opts } end,
-    get = function(id) return stub_store[id] end,
-    del = function(id) stub_store[id] = nil end,
-  }
-  M._stub_active = true
+  backend.install_terminal_stub()
 end
 
 -- Diff a freshly computed payload against the live set: set every entry (its
 -- position/size may have changed) and del ids that are no longer present.
 local function apply_payload(payload)
-  if not img_available() then return end
-  local next_ids = {}
-  for _, entry in ipairs(payload) do
-    local id, path = entry.id, entry.path
-    local opts = {}
-    for k, v in pairs(entry) do
-      if k ~= 'id' and k ~= 'path' then opts[k] = v end
-    end
-    next_ids[id] = true
-    vim.ui.img.set(id, path, opts)
-  end
-  for id in pairs(live_ids) do
-    if not next_ids[id] then vim.ui.img.del(id) end
-  end
-  live_ids = next_ids
+  backend.apply_payload(payload)
 end
 
 local function clear_all_images()
-  if not img_available() then live_ids = {}; return end
-  for id in pairs(live_ids) do vim.ui.img.del(id) end
-  live_ids = {}
+  backend.clear_all_images()
 end
 
 local function notify_redraw()
-  local ch = vim.g.neopp_channel
-  if ch then pcall(vim.rpcnotify, ch, 'force_redraw') end
+  backend.notify_redraw()
 end
 
 -- ---------------------------------------------------------------------------
@@ -835,111 +798,17 @@ function M.layout_image_line(images, opts)
   return layouts, math.max(1, math.ceil(common_h / cell_h))
 end
 
-local function u32be(s, i)
-  local a, b, c, d = s:byte(i, i + 3)
-  if not d then return nil end
-  return ((a * 256 + b) * 256 + c) * 256 + d
-end
-
-local function u16be(s, i)
-  local a, b = s:byte(i, i + 1)
-  if not b then return nil end
-  return a * 256 + b
-end
-
-local function u16le(s, i)
-  local a, b = s:byte(i, i + 1)
-  if not b then return nil end
-  return a + b * 256
-end
-
-local function u24le(s, i)
-  local a, b, c = s:byte(i, i + 2)
-  if not c then return nil end
-  return a + b * 256 + c * 65536
-end
-
 -- Pure: decode width/height/format from leading image bytes (no I/O). Split out
 -- from read_image_size so the format detection is unit-testable on byte fixtures.
 function M.parse_image_size(data)
-  if type(data) ~= 'string' then return nil end
-
-  if data:sub(1, 8) == '\137PNG\r\n\026\n' and #data >= 24 then
-    return { width = u32be(data, 17), height = u32be(data, 21), format = 'png' }
-  end
-
-  if data:sub(1, 2) == '\255\216' then
-    local i = 3
-    while i + 8 <= #data do
-      if data:byte(i) ~= 0xFF then return nil end
-      local marker = data:byte(i + 1)
-      i = i + 2
-      while marker == 0xFF and i <= #data do
-        marker = data:byte(i)
-        i = i + 1
-      end
-      if marker == 0xD9 or marker == 0xDA then return nil end
-      local len = u16be(data, i)
-      if not len or len < 2 or i + len - 1 > #data then return nil end
-      if (marker >= 0xC0 and marker <= 0xC3) or
-         (marker >= 0xC5 and marker <= 0xC7) or
-         (marker >= 0xC9 and marker <= 0xCB) or
-         (marker >= 0xCD and marker <= 0xCF) then
-        return { width = u16be(data, i + 5), height = u16be(data, i + 3), format = 'jpeg' }
-      end
-      i = i + len
-    end
-  end
-
-  if data:sub(1, 4) == 'RIFF' and data:sub(9, 12) == 'WEBP' then
-    local chunk = data:sub(13, 16)
-    if chunk == 'VP8X' and #data >= 30 then
-      return { width = u24le(data, 25) + 1, height = u24le(data, 28) + 1, format = 'webp' }
-    elseif chunk == 'VP8 ' and #data >= 30 then
-      return { width = bitops.band(u16le(data, 27) or 0, 0x3FFF), height = bitops.band(u16le(data, 29) or 0, 0x3FFF), format = 'webp' }
-    elseif chunk == 'VP8L' and #data >= 25 then
-      local b1, b2, b3, b4 = data:byte(22, 25)
-      if b1 then
-        local width = 1 + (bitops.band(b2 or 0, 0x3F) * 256 + b1)
-        local height = 1 + (bitops.band(b4 or 0, 0x0F) * 1024 + (b3 or 0) * 4 + bitops.rshift(bitops.band(b2 or 0, 0xC0), 6))
-        return { width = width, height = height, format = 'webp' }
-      end
-    end
-  end
-  return nil
+  return image_size.parse_image_size(data)
 end
-
--- path -> { mtime = <ns>, size = <bytes>, dim = <result|false> }
--- A `false` dim caches an unsupported/undecodable file so we don't re-read it.
-local image_size_cache = {}
 
 -- Read image dimensions from `path`, caching by (mtime, size) so repeated renders
 -- don't re-read the same files. fs_stat is a cheap syscall vs the 512KB read it
 -- guards, and mtime/size keying guarantees fresh dims if the file changes on disk.
 function M.read_image_size(path)
-  local st = vim.uv.fs_stat(path)
-  if not st then
-    image_size_cache[path] = nil
-    return nil
-  end
-
-  local mtime = st.mtime and (st.mtime.sec * 1000000000 + (st.mtime.nsec or 0)) or 0
-  local cached = image_size_cache[path]
-  if cached and cached.mtime == mtime and cached.size == st.size then
-    return cached.dim or nil
-  end
-
-  local f = io.open(path, 'rb')
-  if not f then
-    image_size_cache[path] = nil
-    return nil
-  end
-  local data = f:read(512 * 1024) or ''
-  f:close()
-
-  local dim = M.parse_image_size(data)
-  image_size_cache[path] = { mtime = mtime, size = st.size, dim = dim or false }
-  return dim
+  return read_image_size_impl(path)
 end
 
 local function stable_hash(s)
@@ -951,116 +820,33 @@ local function stable_hash(s)
 end
 
 function M.resolve_image_path(buf, raw_path)
-  if raw_path == '' or raw_path:match('^%a[%w+.-]*://') then return nil end
-  raw_path = raw_path:gsub('%%20', ' ')
-  local expanded = vim.fn.expand(raw_path)
-  if vim.fn.fnamemodify(expanded, ':p') == expanded then return vim.fn.fnamemodify(expanded, ':p') end
-
-  local name = vim.api.nvim_buf_get_name(buf)
-  local base = name ~= '' and vim.fn.fnamemodify(name, ':p:h') or vim.fn.getcwd()
-  return vim.fn.fnamemodify(base .. '/' .. expanded, ':p')
+  return image_scan.resolve_image_path(buf, raw_path)
 end
 
-local function add_markdown_image_link(buf, row0, col0, end_col, raw, result, extra)
-  local path = M.resolve_image_path(buf, raw)
-  if not path then return end
-
-  local item = {
-    row = row0,
-    col = col0,
-    end_col = end_col,
-    raw_path = raw,
-    path = path,
+local function image_scan_deps()
+  return {
+    read_image_size = M.read_image_size,
+    image_ns = function() return image_ns end,
+    markdown_plantuml_block_height = M.markdown_plantuml_block_height,
   }
-  if extra then
-    for k, v in pairs(extra) do item[k] = v end
-  end
-  item.source_span_height = math.max(1, tonumber(item.source_span_height) or 1)
-
-  if vim.fn.filereadable(path) ~= 1 then
-    item.error = 'not_found'
-    result[#result + 1] = item
-    return
-  end
-
-  local size = M.read_image_size(path)
-  if size and size.width and size.height and size.width > 0 and size.height > 0 then
-    item.source_width = size.width
-    item.source_height = size.height
-  else
-    item.error = 'unsupported'
-  end
-  result[#result + 1] = item
 end
 
 function M.scan_markdown_image_text(buf, row0, text, result, opts)
-  if type(text) ~= 'string' or text == '' then return end
-  opts = opts or {}
-  local base_col = math.max(0, tonumber(opts.base_col) or 0)
-  local virtual = opts.virtual == true
-  local search_at = 1
-  while search_at <= #text do
-    local s, e, raw = text:find('!%[[^%]]*%]%(([^%)%s]+)%)', search_at)
-    if not s then break end
-
-    local prefix = text:sub(1, s - 1)
-    local prefix_width = vim.fn.strdisplaywidth(prefix)
-    local match_width = vim.fn.strdisplaywidth(text:sub(s, e))
-    local col0 = base_col + prefix_width
-    local extra = nil
-    if virtual then
-      extra = {
-        virtual = true,
-        virtual_mark_col = base_col,
-        virtual_prefix_width = prefix_width,
-        virt_text_pos = opts.virt_text_pos,
-        virt_text_win_col = opts.virt_text_win_col,
-        source_span_height = opts.source_span_height,
-      }
-    else
-      -- Real buffer text: remember byte offsets (s,e are byte positions in the
-      -- line) so the link can be concealed via an extmark. col0/end_col are
-      -- *display* columns and must not be used for byte-based extmark ranges.
-      extra = {
-        byte_col = s - 1,
-        byte_end_col = e,
-      }
-    end
-    add_markdown_image_link(buf, row0, col0, col0 + math.max(1, match_width), raw, result, extra)
-    search_at = e + 1
-  end
+  return image_scan.scan_markdown_image_text(image_scan_deps(), buf, row0, text, result, opts)
 end
 
 -- True if `text` contains at least one markdown image link. Shared with wrap.lua so
 -- it can skip these lines (image.lua owns their layout). Same pattern as the scanner.
 function M.line_has_image_link(text)
-  return type(text) == 'string' and text:find('!%[[^%]]*%]%(([^%)%s]+)%)') ~= nil
+  return image_scan.line_has_image_link(text)
 end
 
 function M.virt_text_to_plain(virt_text)
-  if type(virt_text) ~= 'table' then return '' end
-  local parts = {}
-  for _, chunk in ipairs(virt_text) do
-    local text = type(chunk) == 'table' and chunk[1] or nil
-    if type(text) == 'string' then parts[#parts + 1] = text end
-  end
-  return table.concat(parts)
+  return image_scan.virt_text_to_plain(virt_text)
 end
 
 function M.virt_lines_to_plain(virt_lines)
-  if type(virt_lines) ~= 'table' then return {} end
-  local lines = {}
-  for _, row in ipairs(virt_lines) do
-    local parts = {}
-    if type(row) == 'table' then
-      for _, chunk in ipairs(row) do
-        local text = type(chunk) == 'table' and chunk[1] or nil
-        if type(text) == 'string' then parts[#parts + 1] = text end
-      end
-    end
-    lines[#lines + 1] = table.concat(parts)
-  end
-  return lines
+  return image_scan.virt_lines_to_plain(virt_lines)
 end
 
 extmark_virt_lines_sig = function(virt_lines)
@@ -1083,53 +869,7 @@ extmark_virt_lines_sig = function(virt_lines)
 end
 
 function M.collect_markdown_images(buf, start_row, end_row)
-  local result = {}
-  local name = vim.api.nvim_buf_get_name(buf)
-  local ext = vim.fn.fnamemodify(name, ':e'):lower()
-  if vim.bo[buf].filetype ~= 'markdown' and ext ~= 'md' and ext ~= 'markdown' then return result end
-  if start_row >= end_row then return result end
-
-  local ok, lines = pcall(vim.api.nvim_buf_get_lines, buf, start_row, end_row, false)
-  if not ok then return result end
-
-  for i, line in ipairs(lines) do
-    local row0 = start_row + i - 1
-    M.scan_markdown_image_text(buf, row0, line, result, { base_col = 0 })
-  end
-
-  local ok_marks, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, -1, { start_row, 0 }, { end_row, 0 }, { details = true })
-  if ok_marks then
-    for _, mark in ipairs(marks) do
-      local row0 = mark[2]
-      local col0 = mark[3]
-      local details = mark[4] or {}
-      if row0 and details.ns_id ~= image_ns and details.virt_text ~= nil then
-        local text = M.virt_text_to_plain(details.virt_text)
-        if text ~= '' then
-          M.scan_markdown_image_text(buf, row0, text, result, {
-            base_col = col0,
-            virtual = true,
-            virt_text_pos = details.virt_text_pos,
-            virt_text_win_col = details.virt_text_win_col,
-            source_span_height = M.markdown_plantuml_block_height(buf, row0),
-          })
-        end
-      end
-      if row0 and details.ns_id ~= image_ns and details.virt_lines ~= nil then
-        local lines = M.virt_lines_to_plain(details.virt_lines)
-        for idx, text in ipairs(lines) do
-          if text ~= '' then
-            M.scan_markdown_image_text(buf, row0 + idx - 1, text, result, {
-              base_col = 0,
-              virtual = true,
-            })
-          end
-        end
-      end
-    end
-  end
-
-  return result
+  return image_scan.collect_markdown_images(image_scan_deps(), buf, start_row, end_row)
 end
 
 function M.ensure_image_namespace()
@@ -1723,7 +1463,7 @@ function M.send_images()
 end
 
 function M._send_images_impl()
-  if not img_available() then return end
+  if not backend.img_available() then return end
 
   local enabled = vim.g.neopp_images_enabled
   if enabled == false then
@@ -2403,7 +2143,7 @@ end
 
 function M.setup()
   install_terminal_stub()
-  if img_available() then
+  if backend.img_available() then
     M._init()
   else
     -- neopp installs vim.ui.img at UI attach, which happens after startup has
@@ -2418,7 +2158,7 @@ function M.setup()
 end
 
 function M._init()
-  if not img_available() then return end
+  if not backend.img_available() then return end
   M.ensure_image_namespace()
   autocmd_group = vim.api.nvim_create_augroup('rendermark_image', { clear = true })
 
