@@ -173,6 +173,39 @@ describe('cursor_active_block_sig', function()
     vim.api.nvim_win_set_buf(0, vim.api.nvim_create_buf(false, true))
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
   end)
+
+  it('is empty while focus is in another buffer even if a markdown window cursor is in a PlantUML block', function()
+    local original_win = vim.api.nvim_get_current_win()
+    local markdown_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(markdown_buf, 0, -1, false, {
+      'intro',
+      '```plantuml',
+      '@startuml',
+      'a -> b',
+      '@enduml',
+      '```',
+      'outro',
+    })
+    vim.bo[markdown_buf].filetype = 'markdown'
+    vim.api.nvim_win_set_buf(original_win, markdown_buf)
+    vim.api.nvim_win_set_cursor(original_win, { 4, 0 })
+
+    local other_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[other_buf].filetype = 'TelescopePrompt'
+    vim.cmd('botright split')
+    local other_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(other_win, other_buf)
+
+    assert.equals('', image.cursor_active_block_sig())
+
+    vim.api.nvim_set_current_win(original_win)
+    assert.is_truthy(image.cursor_active_block_sig():find('=1:5', 1, true))
+
+    pcall(vim.api.nvim_win_close, other_win, true)
+    vim.api.nvim_win_set_buf(original_win, vim.api.nvim_create_buf(false, true))
+    pcall(vim.api.nvim_buf_delete, markdown_buf, { force = true })
+    pcall(vim.api.nvim_buf_delete, other_buf, { force = true })
+  end)
 end)
 
 describe('handle_cursor_moved gate', function()

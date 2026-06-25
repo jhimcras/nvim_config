@@ -1588,30 +1588,19 @@ function M.plantuml_cleanup_buf(buf)
   plantuml_states[buf] = nil
 end
 
--- Which block (if any) the cursor sits inside, for a window showing `buf`.
--- We must NOT key off the global current window alone: creating/repositioning
--- the preview float re-fires send_images via window autocmds while the float is
--- transiently the current window. Its buffer isn't `buf`, so keying off the
--- current window would report "no active block" and tear the float down every
--- other cycle (create/destroy flicker). Prefer the current window when it shows
--- `buf`; otherwise fall back to any window displaying `buf` (the real source
--- window), using that window's own cursor.
+-- Which block (if any) the cursor sits inside for the focused source window.
+-- The preview float is an editing aid for the current buffer only: when focus
+-- moves to Telescope, another buffer, or any other window, the source window's
+-- stale cursor must not keep the preview floating over the new UI.
 local function plantuml_active_block(buf, blocks)
   local cur = vim.api.nvim_get_current_win()
-  local candidates
-  if vim.api.nvim_win_is_valid(cur) and vim.api.nvim_win_get_buf(cur) == buf then
-    candidates = { cur }
-  else
-    candidates = vim.fn.win_findbuf(buf)
+  if not (vim.api.nvim_win_is_valid(cur) and vim.api.nvim_win_get_buf(cur) == buf) then
+    return nil, nil
   end
-  for _, win in ipairs(candidates) do
-    if vim.api.nvim_win_is_valid(win) then
-      local row = vim.api.nvim_win_get_cursor(win)[1] - 1
-      for _, block in ipairs(blocks) do
-        if row >= block.start_row and row <= block.end_row then
-          return block, win
-        end
-      end
+  local row = vim.api.nvim_win_get_cursor(cur)[1] - 1
+  for _, block in ipairs(blocks) do
+    if row >= block.start_row and row <= block.end_row then
+      return block, cur
     end
   end
   return nil, nil
@@ -2275,33 +2264,26 @@ function M.cursor_block_id(cursor_row, blocks)
   return ''
 end
 
--- Signature of "which PlantUML block (if any) the cursor sits in" across every
--- visible markdown window. The only cursor-dependent output is the preview float
--- that opens for the block under the cursor, so this fingerprint changes exactly
--- when a cursor move could change rendering -- letting the CursorMoved handler skip
--- a full render for ordinary navigation. Conservative: iterating all windows that
--- show a buffer can only over-report a change, never miss one.
+-- Signature of "which PlantUML block (if any) the focused cursor sits in". The
+-- only cursor-dependent output is the preview float that opens for the block
+-- under focus, so this fingerprint changes exactly when a cursor/focus move
+-- could change rendering -- letting the CursorMoved handler skip a full render
+-- for ordinary navigation.
 function M.cursor_active_block_sig()
-  local parts = {}
-  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    if vim.api.nvim_win_is_valid(win) then
-      local buf = vim.api.nvim_win_get_buf(win)
-      local name = vim.api.nvim_buf_get_name(buf)
-      local ext = vim.fn.fnamemodify(name, ':e'):lower()
-      if vim.bo[buf].filetype == 'markdown' or ext == 'md' or ext == 'markdown' then
-        local blocks = M.plantuml_find_blocks(buf)
-        if #blocks > 0 then
-          local row = vim.api.nvim_win_get_cursor(win)[1] - 1
-          local id = M.cursor_block_id(row, blocks)
-          if id ~= '' then
-            parts[#parts + 1] = tostring(win) .. '@' .. tostring(buf) .. '=' .. id
-          end
-        end
-      end
-    end
+  local win = vim.api.nvim_get_current_win()
+  if not vim.api.nvim_win_is_valid(win) then return '' end
+  local buf = vim.api.nvim_win_get_buf(win)
+  local name = vim.api.nvim_buf_get_name(buf)
+  local ext = vim.fn.fnamemodify(name, ':e'):lower()
+  if vim.bo[buf].filetype ~= 'markdown' and ext ~= 'md' and ext ~= 'markdown' then
+    return ''
   end
-  table.sort(parts)
-  return table.concat(parts, '|')
+  local blocks = M.plantuml_find_blocks(buf)
+  if #blocks == 0 then return '' end
+  local row = vim.api.nvim_win_get_cursor(win)[1] - 1
+  local id = M.cursor_block_id(row, blocks)
+  if id == '' then return '' end
+  return tostring(win) .. '@' .. tostring(buf) .. '=' .. id
 end
 
 function M.get_layout_sig()
