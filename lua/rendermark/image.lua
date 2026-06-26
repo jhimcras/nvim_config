@@ -819,6 +819,15 @@ local function stable_hash(s)
   return string.format('%08x', h)
 end
 
+function M.preview_image_id(ps, place)
+  return table.concat({
+    'preview',
+    tostring(ps and ps.buf or 0),
+    tostring(ps and ps.start_row or 0),
+    tostring(place and place.disp_w or 0) .. 'x' .. tostring(place and place.disp_h or 0),
+  }, ':')
+end
+
 function M.resolve_image_path(buf, raw_path)
   return image_scan.resolve_image_path(buf, raw_path)
 end
@@ -926,28 +935,32 @@ function M.compute_preview_placement(ps, image, cell_w, cell_h)
   local block_h = M.markdown_plantuml_block_height(src_buf, start_row) or 1
   local end_row = start_row + math.max(1, block_h) - 1
 
-  local sp_top = M.safe_screenpos(src_win, start_row + 1, 1)
-  if sp_top.row <= 0 then return nil end
-  local block_top = sp_top.row - 1
-  local sp_bot = M.safe_screenpos(src_win, end_row + 1, 1)
-  local block_bottom = (sp_bot.row > 0) and (sp_bot.row - 1) or block_top
-
   local src_w = ps.w
-  local first_line = (vim.api.nvim_buf_get_lines(src_buf, start_row, start_row + 1, false) or {})[1] or ''
-  local leading = #(first_line:match('^%s*') or '')
-  local sp_left = M.safe_screenpos(src_win, start_row + 1, leading + 1)
-  local block_left = (sp_left.col and sp_left.col > 0)
-    and (sp_left.col - 1)
-    or ((tonumber(src_w.wincol) or 1) - 1 + (tonumber(src_w.textoff) or 0))
-
-  local block_right = block_left
   local block_lines = vim.api.nvim_buf_get_lines(src_buf, start_row, end_row + 1, false) or {}
+  local fallback_left = (tonumber(src_w.wincol) or 1) - 1 + (tonumber(src_w.textoff) or 0)
+  local block_top, block_bottom, block_left, block_right
+
   for i, line in ipairs(block_lines) do
-    local sp_end = M.safe_screenpos(src_win, start_row + i, #line + 1)
-    if sp_end.col and sp_end.col > 0 then
-      block_right = math.max(block_right, sp_end.col - 1)
+    local lnum = start_row + i
+    local leading = #(line:match('^%s*') or '')
+    local sp_left = M.safe_screenpos(src_win, lnum, leading + 1)
+    if sp_left.row and sp_left.row > 0 then
+      local row = sp_left.row - 1
+      local left = (sp_left.col and sp_left.col > 0) and (sp_left.col - 1) or fallback_left
+      block_top = block_top and math.min(block_top, row) or row
+      block_bottom = block_bottom and math.max(block_bottom, row) or row
+      block_left = block_left and math.min(block_left, left) or left
+
+      local sp_end = M.safe_screenpos(src_win, lnum, #line + 1)
+      local right = (sp_end.col and sp_end.col > 0)
+        and (sp_end.col - 1)
+        or (left + vim.fn.strdisplaywidth(line))
+      block_right = block_right and math.max(block_right, right) or right
     end
   end
+  if not block_top then return nil end
+  block_left = block_left or fallback_left
+  block_right = block_right or block_left
 
   local cols = math.max(1, tonumber(vim.o.columns) or 1)
   local rows = math.max(1, (tonumber(vim.o.lines) or 1) - (tonumber(vim.o.cmdheight) or 0))
@@ -964,6 +977,44 @@ function M.compute_preview_placement(ps, image, cell_w, cell_h)
 
   local function fits_cols(c) return c >= 0 and c + pw <= cols end
   local function fits_rows(r) return r >= 0 and r + ph <= rows end
+  local code_obstacles = {}
+  if type(M.plantuml_find_blocks) == 'function' then
+    for _, block in ipairs(M.plantuml_find_blocks(src_buf) or {}) do
+      local lines = vim.api.nvim_buf_get_lines(src_buf, block.start_row, block.end_row + 1, false) or {}
+      local top, bottom, left, right
+      for i, line in ipairs(lines) do
+        local lnum = block.start_row + i
+        local leading = #(line:match('^%s*') or '')
+        local sp_left = M.safe_screenpos(src_win, lnum, leading + 1)
+        if sp_left.row and sp_left.row > 0 then
+          local row = sp_left.row - 1
+          local lcol = (sp_left.col and sp_left.col > 0) and (sp_left.col - 1) or fallback_left
+          local sp_end = M.safe_screenpos(src_win, lnum, #line + 1)
+          local rcol = (sp_end.col and sp_end.col > 0)
+            and (sp_end.col - 1)
+            or (lcol + vim.fn.strdisplaywidth(line))
+          top = top and math.min(top, row) or row
+          bottom = bottom and math.max(bottom, row) or row
+          left = left and math.min(left, lcol) or lcol
+          right = right and math.max(right, rcol) or rcol
+        end
+      end
+      if top then
+        code_obstacles[#code_obstacles + 1] = { top = top, bottom = bottom, left = left, right = right }
+      end
+    end
+  end
+
+  local function avoids_code_blocks(r, c)
+    local bottom = r + ph - 1
+    local right = c + pw - 1
+    for _, ob in ipairs(code_obstacles) do
+      local row_overlap = r <= ob.bottom and ob.top <= bottom
+      local col_overlap = c <= ob.right and ob.left <= right
+      if row_overlap and col_overlap then return false end
+    end
+    return true
+  end
 
   local top_r, top_c = block_top - ph, math.min(block_left, cols - pw)
   local bot_r, bot_c = block_bottom + 1, top_c
@@ -971,13 +1022,13 @@ function M.compute_preview_placement(ps, image, cell_w, cell_h)
   local right_c, right_r = block_right + 1, left_r
 
   local fr, fc
-  if fits_rows(top_r) and fits_cols(top_c) then
+  if fits_rows(top_r) and fits_cols(top_c) and avoids_code_blocks(top_r, top_c) then
     fr, fc = top_r, top_c
-  elseif fits_rows(bot_r) and fits_cols(bot_c) then
+  elseif fits_rows(bot_r) and fits_cols(bot_c) and avoids_code_blocks(bot_r, bot_c) then
     fr, fc = bot_r, bot_c
-  elseif fits_cols(left_c) and fits_rows(left_r) then
+  elseif fits_cols(left_c) and fits_rows(left_r) and avoids_code_blocks(left_r, left_c) then
     fr, fc = left_r, left_c
-  elseif fits_cols(right_c) and fits_rows(right_r) then
+  elseif fits_cols(right_c) and fits_rows(right_r) and avoids_code_blocks(right_r, right_c) then
     fr, fc = right_r, right_c
   else
     fr = math.max(0, math.min(top_r, rows - ph))
@@ -1064,7 +1115,7 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
   end
 
   payload[#payload + 1] = {
-    id = 'preview:' .. info.buf .. ':' .. stable_hash(image.path) .. ':' .. place.disp_w .. 'x' .. place.disp_h,
+    id = M.preview_image_id(ps, place),
     buf = info.buf,
     row = image.row,
     col = image.col,

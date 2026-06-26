@@ -1,8 +1,11 @@
 local Backend = {}
 
 function Backend.new(host)
-  local live_ids = {}
-  local stub_store = {}
+  local state = rawget(_G, '__rendermark_image_backend')
+  if not state then
+    state = { live_ids = {}, stub_store = {} }
+    rawset(_G, '__rendermark_image_backend', state)
+  end
 
   local self = {}
 
@@ -23,9 +26,9 @@ function Backend.new(host)
     if not stub_requested() then return end
     vim.ui = vim.ui or {}
     vim.ui.img = {
-      set = function(id, path, opts) stub_store[id] = { path = path, opts = opts } end,
-      get = function(id) return stub_store[id] end,
-      del = function(id) stub_store[id] = nil end,
+      set = function(id, path, opts) state.stub_store[id] = { path = path, opts = opts } end,
+      get = function(id) return state.stub_store[id] end,
+      del = function(id) state.stub_store[id] = nil end,
     }
     host._stub_active = true
   end
@@ -42,16 +45,16 @@ function Backend.new(host)
       next_ids[id] = true
       vim.ui.img.set(id, path, opts)
     end
-    for id in pairs(live_ids) do
+    for id in pairs(state.live_ids) do
       if not next_ids[id] then vim.ui.img.del(id) end
     end
-    live_ids = next_ids
+    state.live_ids = next_ids
   end
 
   function self.clear_all_images()
-    if not self.img_available() then live_ids = {}; return end
-    for id in pairs(live_ids) do vim.ui.img.del(id) end
-    live_ids = {}
+    if not self.img_available() then state.live_ids = {}; return end
+    for id in pairs(state.live_ids) do vim.ui.img.del(id) end
+    state.live_ids = {}
   end
 
   function self.notify_redraw()

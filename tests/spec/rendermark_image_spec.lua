@@ -6,6 +6,7 @@
 -- plus regression coverage for adjacent pure helpers reachable from these paths.
 
 local image = require('rendermark.image')
+local image_backend = require('rendermark.image.backend')
 local util = require('util')
 
 -- Reload the module so module-local state (cursor_block_sig, image_size_cache)
@@ -414,6 +415,177 @@ describe('layout_image_line fit', function()
     local last_right_cell = last.grid_col + math.ceil(last.display_width_px / cell_w)
     local text_right_cell = math.floor(1000 / cell_w)
     assert.is_true(text_right_cell - last_right_cell >= 6)  -- room for ~6-cell trailing
+  end)
+end)
+
+describe('compute_preview_placement', function()
+  it('places a PlantUML preview when the fence start is scrolled above the viewport', function()
+    local img = fresh_image()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      'intro',
+      'more intro',
+      'still intro',
+      '```plantuml',
+      '@startuml',
+      'class Test1',
+      'class Base',
+      'class Test2',
+      'Base <-- Test1',
+      '@enduml',
+      '```',
+    })
+
+    local old_block_height = img.markdown_plantuml_block_height
+    local old_screenpos = img.safe_screenpos
+    local old_columns = vim.o.columns
+    local old_lines = vim.o.lines
+    local old_cmdheight = vim.o.cmdheight
+
+    img.markdown_plantuml_block_height = function() return 8 end
+    img.safe_screenpos = function(_, lnum, col)
+      if lnum < 7 then
+        return { row = 0, col = 0, curscol = 0, endcol = 0 }
+      end
+      return { row = lnum - 5, col = 7 + col - 1, curscol = 7 + col - 1, endcol = 7 + col - 1 }
+    end
+    vim.o.columns = 81
+    vim.o.lines = 40
+    vim.o.cmdheight = 1
+
+    local place = img.compute_preview_placement({
+      buf = buf,
+      win = 1007,
+      w = { wincol = 1, textoff = 6 },
+      start_row = 3,
+    }, {
+      source_width = 181,
+      source_height = 169,
+    }, 10, 18)
+
+    img.markdown_plantuml_block_height = old_block_height
+    img.safe_screenpos = old_screenpos
+    vim.o.columns = old_columns
+    vim.o.lines = old_lines
+    vim.o.cmdheight = old_cmdheight
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+
+    assert.is_truthy(place)
+    assert.equals(19, place.width)
+    assert.equals(10, place.height)
+    assert.equals(6, place.row)
+    assert.equals(6, place.col)
+    local visible_block_top = 1
+    local visible_block_bottom = 5
+    assert.is_false(place.row <= visible_block_bottom and visible_block_top < place.row + place.height)
+  end)
+
+  it('does not place a PlantUML preview over another visible PlantUML block', function()
+    local img = fresh_image()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      '# test',
+      '',
+      '## plantuml',
+      '```plantuml',
+      '@startuml',
+      'class Test1',
+      'class Base',
+      'class Test2',
+      'Base <-- Test1',
+      '@enduml',
+      '```',
+      '',
+      '```plantuml',
+      '@startuml',
+      'class What',
+      '@enduml',
+      '```',
+    })
+
+    local old_block_height = img.markdown_plantuml_block_height
+    local old_screenpos = img.safe_screenpos
+    local old_columns = vim.o.columns
+    local old_lines = vim.o.lines
+    local old_cmdheight = vim.o.cmdheight
+
+    img.markdown_plantuml_block_height = function(_, start_row)
+      return start_row == 12 and 5 or 8
+    end
+    img.safe_screenpos = function(_, lnum, col)
+      local rows = {
+        [5] = 2, [6] = 3, [7] = 4, [8] = 5, [9] = 6, [10] = 7, [11] = 8,
+        [13] = 10, [14] = 11, [15] = 12, [16] = 13, [17] = 14,
+      }
+      local row = rows[lnum]
+      if not row then
+        return { row = 0, col = 0, curscol = 0, endcol = 0 }
+      end
+      return { row = row, col = 7 + col - 1, curscol = 7 + col - 1, endcol = 7 + col - 1 }
+    end
+    vim.o.columns = 80
+    vim.o.lines = 24
+    vim.o.cmdheight = 1
+
+    local place = img.compute_preview_placement({
+      buf = buf,
+      win = 1000,
+      w = { wincol = 1, textoff = 6 },
+      start_row = 12,
+    }, {
+      source_width = 86,
+      source_height = 68,
+    }, 10, 18)
+
+    img.markdown_plantuml_block_height = old_block_height
+    img.safe_screenpos = old_screenpos
+    vim.o.columns = old_columns
+    vim.o.lines = old_lines
+    vim.o.cmdheight = old_cmdheight
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+
+    assert.is_truthy(place)
+    assert.equals(9, place.width)
+    assert.equals(4, place.height)
+    assert.equals(14, place.row)
+    assert.equals(6, place.col)
+  end)
+end)
+
+describe('image backend', function()
+  it('uses the source block, not the carrier buffer or temp path, for preview ids', function()
+    local img = fresh_image()
+    local id1 = img.preview_image_id({ buf = 6, start_row = 12 }, { disp_w = 86, disp_h = 68 })
+    local id2 = img.preview_image_id({ buf = 6, start_row = 12 }, { disp_w = 86, disp_h = 68 })
+    local id3 = img.preview_image_id({ buf = 6, start_row = 3 }, { disp_w = 86, disp_h = 68 })
+
+    assert.equals(id1, id2)
+    assert.equals('preview:6:12:86x68', id1)
+    assert.are_not.equals(id1, id3)
+  end)
+
+  it('keeps live ids across backend instances so reloads can delete stale images', function()
+    local old_ui = vim.ui
+    local old_store = rawget(_G, '__rendermark_image_backend')
+    rawset(_G, '__rendermark_image_backend', nil)
+
+    local calls = {}
+    vim.ui = {
+      img = {
+        set = function(id) calls[#calls + 1] = 'set:' .. id end,
+        del = function(id) calls[#calls + 1] = 'del:' .. id end,
+      },
+    }
+
+    local first = image_backend.new({})
+    first.apply_payload({ { id = 'old', path = '/tmp/old.png' } })
+    local second = image_backend.new({})
+    second.apply_payload({})
+
+    vim.ui = old_ui
+    rawset(_G, '__rendermark_image_backend', old_store)
+
+    assert.same({ 'set:old', 'del:old' }, calls)
   end)
 end)
 
