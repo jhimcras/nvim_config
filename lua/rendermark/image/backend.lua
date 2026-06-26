@@ -51,6 +51,12 @@ function Backend.new(host)
     state.live_ids = next_ids
   end
 
+  function self.delete_image(id)
+    if not id then return end
+    state.live_ids[id] = nil
+    if self.img_available() then vim.ui.img.del(id) end
+  end
+
   function self.clear_all_images()
     if not self.img_available() then state.live_ids = {}; return end
     for id in pairs(state.live_ids) do vim.ui.img.del(id) end

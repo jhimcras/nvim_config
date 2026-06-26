@@ -60,6 +60,10 @@ local function clear_all_images()
   backend.clear_all_images()
 end
 
+local function delete_image(id)
+  backend.delete_image(id)
+end
+
 local function notify_redraw()
   backend.notify_redraw()
 end
@@ -828,6 +832,15 @@ function M.preview_image_id(ps, place)
   }, ':')
 end
 
+function M.preview_legacy_image_id(carrier_buf, path, place)
+  return table.concat({
+    'preview',
+    tostring(carrier_buf or 0),
+    stable_hash(path or ''),
+    tostring(place and place.disp_w or 0) .. 'x' .. tostring(place and place.disp_h or 0),
+  }, ':')
+end
+
 function M.resolve_image_path(buf, raw_path)
   return image_scan.resolve_image_path(buf, raw_path)
 end
@@ -1031,8 +1044,7 @@ function M.compute_preview_placement(ps, image, cell_w, cell_h)
   elseif fits_cols(right_c) and fits_rows(right_r) and avoids_code_blocks(right_r, right_c) then
     fr, fc = right_r, right_c
   else
-    fr = math.max(0, math.min(top_r, rows - ph))
-    fc = math.max(0, math.min(top_c, cols - pw))
+    return nil
   end
 
   return { row = fr, col = fc, width = pw, height = ph, disp_w = disp_w, disp_h = disp_h }
@@ -1105,7 +1117,19 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
   if not image then return end
 
   local place = M.compute_preview_placement(ps, image, cell_w, cell_h)
-  if not place then return end
+  if not place then
+    pcall(function()
+      delete_image(vim.w[info.win].rendermark_plantuml_preview_image_id)
+      delete_image(vim.w[info.win].rendermark_plantuml_preview_legacy_image_id)
+    end)
+    if vim.api.nvim_win_is_valid(info.win) then
+      pcall(vim.api.nvim_win_close, info.win, true)
+    end
+    if vim.api.nvim_buf_is_valid(info.buf) then
+      pcall(vim.api.nvim_buf_delete, info.buf, { force = true })
+    end
+    return
+  end
   M.reposition_preview_float(info.win, place)
 
   if M._stub_active then
@@ -1114,8 +1138,15 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
     return
   end
 
+  local preview_id = M.preview_image_id(ps, place)
+  local legacy_preview_id = M.preview_legacy_image_id(info.buf, image.path, place)
+  pcall(function()
+    vim.w[info.win].rendermark_plantuml_preview_image_id = preview_id
+    vim.w[info.win].rendermark_plantuml_preview_legacy_image_id = legacy_preview_id
+  end)
+
   payload[#payload + 1] = {
-    id = M.preview_image_id(ps, place),
+    id = preview_id,
     buf = info.buf,
     row = image.row,
     col = image.col,
@@ -1315,6 +1346,10 @@ end
 local function plantuml_close_float(st)
   if not st or not st.float then return end
   if st.float.win and vim.api.nvim_win_is_valid(st.float.win) then
+    pcall(function()
+      delete_image(vim.w[st.float.win].rendermark_plantuml_preview_image_id)
+      delete_image(vim.w[st.float.win].rendermark_plantuml_preview_legacy_image_id)
+    end)
     pcall(vim.api.nvim_win_close, st.float.win, true)
   end
   if st.float.buf and vim.api.nvim_buf_is_valid(st.float.buf) then

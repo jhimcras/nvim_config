@@ -550,6 +550,77 @@ describe('compute_preview_placement', function()
     assert.equals(14, place.row)
     assert.equals(6, place.col)
   end)
+
+  it('uses the right-side preview when top and bottom are blocked but the code rectangle is clear', function()
+    local img = fresh_image()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      '# test',
+      '',
+      '## plantuml',
+      '```plantuml',
+      '@startuml',
+      'class Test1',
+      'class Base',
+      'class Test2',
+      'Base <-- Test1',
+      '@enduml',
+      '```',
+      '',
+      '```plantuml',
+      '@startuml',
+      'class What',
+      '@enduml',
+      '```',
+    })
+
+    local old_block_height = img.markdown_plantuml_block_height
+    local old_screenpos = img.safe_screenpos
+    local old_columns = vim.o.columns
+    local old_lines = vim.o.lines
+    local old_cmdheight = vim.o.cmdheight
+
+    img.markdown_plantuml_block_height = function(_, start_row)
+      return start_row == 3 and 8 or 5
+    end
+    img.safe_screenpos = function(_, lnum, col)
+      local rows = {
+        [4] = 2, [5] = 3, [6] = 4, [7] = 5, [8] = 6, [9] = 7, [10] = 8, [11] = 9,
+        [13] = 9, [14] = 10, [15] = 11, [16] = 12, [17] = 13,
+      }
+      local row = rows[lnum]
+      if not row then
+        return { row = 0, col = 0, curscol = 0, endcol = 0 }
+      end
+      return { row = row, col = 7 + col - 1, curscol = 7 + col - 1, endcol = 7 + col - 1 }
+    end
+    vim.o.columns = 81
+    vim.o.lines = 40
+    vim.o.cmdheight = 1
+
+    local place = img.compute_preview_placement({
+      buf = buf,
+      win = 1000,
+      w = { wincol = 1, textoff = 6 },
+      start_row = 3,
+    }, {
+      source_width = 181,
+      source_height = 169,
+    }, 10, 18)
+
+    img.markdown_plantuml_block_height = old_block_height
+    img.safe_screenpos = old_screenpos
+    vim.o.columns = old_columns
+    vim.o.lines = old_lines
+    vim.o.cmdheight = old_cmdheight
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+
+    assert.is_truthy(place)
+    assert.equals(19, place.width)
+    assert.equals(10, place.height)
+    assert.equals(1, place.row)
+    assert.equals(21, place.col)
+  end)
 end)
 
 describe('image backend', function()
@@ -562,6 +633,13 @@ describe('image backend', function()
     assert.equals(id1, id2)
     assert.equals('preview:6:12:86x68', id1)
     assert.are_not.equals(id1, id3)
+  end)
+
+  it('can still compute the old carrier-buffer preview id for cleanup', function()
+    local img = fresh_image()
+    local id = img.preview_legacy_image_id(14, '/tmp/source.png', { disp_w = 181, disp_h = 169 })
+
+    assert.matches('^preview:14:%x%x%x%x%x%x%x%x:181x169$', id)
   end)
 
   it('keeps live ids across backend instances so reloads can delete stale images', function()
@@ -586,6 +664,30 @@ describe('image backend', function()
     rawset(_G, '__rendermark_image_backend', old_store)
 
     assert.same({ 'set:old', 'del:old' }, calls)
+  end)
+
+  it('delete_image removes an id from the live set immediately', function()
+    local old_ui = vim.ui
+    local old_store = rawget(_G, '__rendermark_image_backend')
+    rawset(_G, '__rendermark_image_backend', nil)
+
+    local calls = {}
+    vim.ui = {
+      img = {
+        set = function(id) calls[#calls + 1] = 'set:' .. id end,
+        del = function(id) calls[#calls + 1] = 'del:' .. id end,
+      },
+    }
+
+    local b = image_backend.new({})
+    b.apply_payload({ { id = 'preview:old', path = '/tmp/old.png' } })
+    b.delete_image('preview:old')
+    b.apply_payload({})
+
+    vim.ui = old_ui
+    rawset(_G, '__rendermark_image_backend', old_store)
+
+    assert.same({ 'set:preview:old', 'del:preview:old' }, calls)
   end)
 end)
 
