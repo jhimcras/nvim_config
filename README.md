@@ -46,7 +46,7 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 - `hrsh7th/cmp-nvim-lsp`, `cmp-nvim-lsp-signature-help` — LSP sources
 
 **LSP**
-- `nvim-lua/lsp-status.nvim` — LSP status in statusline
+- LSP status is shown by the custom statusline using Neovim's built-in `vim.lsp.status()`
 
 **Navigation**
 - `nvim-telescope/telescope.nvim` — fuzzy finder
