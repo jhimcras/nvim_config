@@ -42,7 +42,6 @@ local orig_util_open_floating_preview = vim.lsp.util.open_floating_preview
 local fence_conceal_ns = api.nvim_create_namespace('lsp_hover_fence_conceal')
 function vim.lsp.util.open_floating_preview(contents, syntax, opts, ...)
     opts = opts or {}
-    opts.border = opts.border or 'rounded'
     local fbuf, fwin = orig_util_open_floating_preview(contents, syntax, opts, ...)
     -- Hide the markdown code-fence delimiter lines (```lang / ```) in hover/signature
     -- floats. Neovim stylizes the float as markdown + treesitter, so the fenced code

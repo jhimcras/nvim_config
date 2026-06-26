@@ -10,6 +10,27 @@ describe('lsp_setting', function()
         assert.is_string(lsp_setting.SymWarn)
     end)
 
+    it('does not inject a border into floating preview options', function()
+        local original_open_floating_preview = vim.lsp.util.open_floating_preview
+        local original_lsp_setting = package.loaded['lsp_setting']
+        local captured_opts
+
+        vim.lsp.util.open_floating_preview = function(_, _, opts)
+            captured_opts = opts
+            return nil, nil
+        end
+        package.loaded['lsp_setting'] = nil
+        require('lsp_setting')
+
+        vim.lsp.util.open_floating_preview({ 'hover' }, 'markdown', {})
+
+        assert.is_table(captured_opts)
+        assert.is_nil(captured_opts.border)
+
+        vim.lsp.util.open_floating_preview = original_open_floating_preview
+        package.loaded['lsp_setting'] = original_lsp_setting
+    end)
+
     describe('lua_ls settings', function()
         local original_executable
         local original_exepath

@@ -45,6 +45,7 @@ local function BasicSettings()
     vim.o.fileencodings = 'ucs-bom,utf-8,euckr' --,latin1'
     cmd.packadd 'cfilter'   -- enable Cfilter command
     vim.o.winblend = 20
+    vim.o.winborder = 'rounded'
     vim.o.jumpoptions = 'stack,clean'
 
     -- Disabling standard plugins
