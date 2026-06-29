@@ -107,6 +107,17 @@ function M.fcitx()
     return (check_proc and check_proc:read() == '2') and ' 한' or ''
 end
 
+-- IME state published by neopp (vim.g.neopp_ime); cross-platform. The bridge
+-- triggers redrawstatus on change so this %{} re-evaluates. Empty outside neopp.
+function M.neopp_ime()
+    local s = vim.g.neopp_ime
+    if s == 'korean_hangul' then return '한'
+    elseif s == 'korean_eng' then return 'A(KR)'
+    elseif s == 'off'        then return 'A'
+    elseif s == nil or s == '' then return ''
+    else return s end
+end
+
 function M.session()
     return vim.fn.fnamemodify(vim.v.this_session,':p:t')
 end
@@ -300,8 +311,8 @@ function M.ActiveWin()
         "%(%#StatusLineNormal# %{v:lua.require'status'.leftside()} %)",
         "%=",
         "%{v:lua.require'status'.lsp()}",
-        -- (env.os.unix) and "%(%#StatusLineMode#%{v:lua.require'status'.fcitx()}%)" or '',
-        -- (env.os.win) and "%(%#StatusLineMode#%{v:lua.require'status'.GetIMEStatus()}%)" or '',
+        -- IME state from neopp (vim.g.neopp_ime); cross-platform.
+        "%(%#StatusLineMode# %{v:lua.require'status'.neopp_ime()}%)",
         "%(%#StatusLineMode# %{v:lua.require'status'.search_result()}%)",
         "%(%#StatusLineMode# %p%% %v %)",
         -- "%{v:lua.require'status'.dur()}",

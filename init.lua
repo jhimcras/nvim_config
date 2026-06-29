@@ -254,25 +254,10 @@ local function KeyMappings()
     ut.nnoremap('<c-->', function() vim.g.neovide_scale_factor = vim.g.neovide_scale_factor * (1/1.25) end)
     ut.nnoremap('<c-0>', function() vim.g.neovide_scale_factor = 1.0 end)
 
-    local function GetIMEStatus()
-        local output = vim.fn.system('D:\\temp\\immcheck\\main.exe')
-        if vim.v.shell_error ~= 0 then
-            return "IME_ERR_" .. tostring(vim.v.shell_error)
-        end
-
-        output = vim.trim(output)
-        if output == "IME_KOREAN_HANGUL" then
-            return "한"
-        elseif output == "IME_KOREAN_ENG" then
-            return "A(KR)"
-        elseif output == "IME_OFF" then
-            return "A"
-        else
-            return output
-        end
-    end
-
-    ut.nnoremap('<leader>ccc', function() print (GetIMEStatus()) end)
+    -- IME state is now detected by neopp (Windows IMM / Linux ibus) and exposed
+    -- as vim.g.neopp_ime; the statusline (lua/status.lua) renders it. This just
+    -- echoes the current value for debugging.
+    ut.nnoremap('<leader>ccc', function() print(vim.g.neopp_ime or '(unset)') end)
 
     ut.nnoremap('<esc>', function()
         for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -291,24 +276,6 @@ end
 
 local function QuickFixSetting()
     ut.set_highlight('QuickFixLine', { gui='underline' })
-end
-
-local function NeovideIMESetting()
-    local function set_ime(args)
-        if args.event:match("Enter$") then
-            vim.g.neovide_input_ime = true
-        else
-            vim.g.neovide_input_ime = false
-        end
-    end
-
-    local ime_input = vim.api.nvim_create_augroup("ime_input", { clear = true })
-
-    vim.api.nvim_create_autocmd({ "InsertEnter", "InsertLeave", "CmdlineEnter", "CmdlineLeave", "TermEnter", "TermLeave" }, {
-        group = ime_input,
-        pattern = "*",
-        callback = set_ime
-    })
 end
 
 local function MarkdownHighlighting()
@@ -352,8 +319,4 @@ KeyMappings()
 QuickFixSetting()
 MarkdownHighlighting()
 C_CPP_HeaderCorrection()
-
-if vim.g.neovide then
-    NeovideIMESetting()
-end
 
