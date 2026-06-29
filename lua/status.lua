@@ -311,8 +311,6 @@ function M.ActiveWin()
         "%(%#StatusLineNormal# %{v:lua.require'status'.leftside()} %)",
         "%=",
         "%{v:lua.require'status'.lsp()}",
-        -- IME state from neopp (vim.g.neopp_ime); cross-platform.
-        "%(%#StatusLineMode# %{v:lua.require'status'.neopp_ime()}%)",
         "%(%#StatusLineMode# %{v:lua.require'status'.search_result()}%)",
         "%(%#StatusLineMode# %p%% %v %)",
         -- "%{v:lua.require'status'.dur()}",
@@ -671,6 +669,7 @@ local function general_statusline(activation, mode, winid)
             hl = hl(1), sep = ' │ ', pad = ' '
         },
         activation and {
+            sh(M.neopp_ime, 7),
             sh(search_count, 5),
             sh(percentage_loc, 10),
             sh(column_loc, 6),
