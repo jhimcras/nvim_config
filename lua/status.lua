@@ -102,11 +102,6 @@ function M.lsp()
     return ''
 end
 
-function M.fcitx()
-    local check_proc = io.popen('fcitx-remote')
-    return (check_proc and check_proc:read() == '2') and ' 한' or ''
-end
-
 -- IME state published by neopp (vim.g.neopp_ime); cross-platform. The bridge
 -- triggers redrawstatus on change so this %{} re-evaluates. Empty outside neopp.
 function M.neopp_ime()
