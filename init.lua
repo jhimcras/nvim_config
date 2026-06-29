@@ -33,6 +33,7 @@ local function BasicSettings()
     vim.o.showmatch = true
     vim.o.splitright = true
     vim.o.title = true
+    vim.o.titlestring = '%t (%{v:lua.require("status").titlecontext()})'
     vim.opt.path:append('**')
     vim.opt.wildignore:append { '*/.git/*', '*/.hg/*', '*/.svn/*', '*/.sass-cache/*', '*/x64/*', '*/.vs/*', '*/.clangd/*' }
     vim.opt.suffixes:remove('.h')

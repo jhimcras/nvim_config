@@ -111,6 +111,14 @@ function M.session()
     return vim.fn.fnamemodify(vim.v.this_session,':p:t')
 end
 
+function M.titlecontext()
+    local session = vim.fn.fnamemodify(vim.v.this_session, ':t:r')
+    if session ~= '' then
+        return session
+    end
+    return vim.fn.fnamemodify(vim.fn.getcwd(), ':~')
+end
+
 
 function M.current_function(bufnr, winid)
     local ok, parser = pcall(vim.treesitter.get_parser)
