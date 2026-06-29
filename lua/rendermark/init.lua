@@ -18,7 +18,7 @@ function M.setup(opts)
     -- Markdown image + PlantUML rendering: parses buffers, computes placement,
     -- and drives the neopp GUI image backend via vim.ui.img (set/del). neopp only
     -- loads/renders/deletes. READ mode is disabled pending rework.
-    image.setup()
+    image.setup(opts)
 end
 
 M.refresh = wrap.refresh

@@ -36,6 +36,86 @@ local function trim(s)
 end
 
 -- ---------------------------------------------------------------------------
+-- PlantUML preview configuration (set via require'rendermark'.setup{ plantuml =
+-- { preview = {...} } }). The "preview" is the diagram shown for the block the
+-- cursor is editing -- either a float beside the block (default) or a dedicated
+-- non-modifiable split window with the image centered.
+-- ---------------------------------------------------------------------------
+local preview_defaults = {
+  mode = 'float',            -- 'float' | 'split'
+  auto = true,               -- auto-open the preview when the cursor enters a block
+  split = {
+    position = 'right',      -- 'left'|'right' (vertical) | 'top'|'bottom' (horizontal)
+    size = 0.5,              -- 'half' | 0<n<1 fraction of editor | n>=1 absolute cells
+    lifecycle = 'persistent',-- 'persistent' (reuse pane, keep last when outside) | 'cursor'
+  },
+}
+local preview_cfg = vim.deepcopy(preview_defaults)
+
+-- nil  => follow preview_cfg.auto; true/false => explicit Show/Hide override.
+M._preview_user = nil
+
+-- Normalize a user-supplied preview opts table, falling back to defaults for any
+-- invalid field. `position` alone implies the split direction.
+local function normalize_preview(opts)
+  local cfg = vim.tbl_deep_extend('force', vim.deepcopy(preview_defaults), opts or {})
+  if cfg.mode ~= 'split' then cfg.mode = 'float' end
+  cfg.auto = cfg.auto ~= false
+  local sp = cfg.split
+  local pos = tostring(sp.position or 'right'):lower()
+  if pos ~= 'left' and pos ~= 'right' and pos ~= 'top' and pos ~= 'bottom' then
+    pos = 'right'
+  end
+  sp.position = pos
+  sp.direction = (pos == 'left' or pos == 'right') and 'vertical' or 'horizontal'
+  if sp.size == 'half' then sp.size = 0.5 end
+  if type(sp.size) ~= 'number' or sp.size <= 0 then sp.size = 0.5 end
+  if sp.lifecycle ~= 'cursor' then sp.lifecycle = 'persistent' end
+  return cfg
+end
+
+function M.preview_config() return preview_cfg end
+
+-- Whether the active-block preview should currently be shown: an explicit
+-- Show/Hide override wins, otherwise follow the configured auto flag.
+function M.preview_active()
+  if M._preview_user ~= nil then return M._preview_user end
+  return preview_cfg.auto ~= false
+end
+
+-- Resolve a split `size` (fraction <1 or absolute cells >=1) against the host
+-- editor extent (columns for a vertical split, rows for a horizontal one).
+function M.resolve_split_size(size, total)
+  total = math.max(1, tonumber(total) or 1)
+  local n = tonumber(size)
+  if not n or n <= 0 then n = 0.5 end
+  local cells = (n < 1) and math.floor(total * n + 0.5) or math.floor(n + 0.5)
+  return math.max(1, math.min(total, cells))
+end
+
+-- Fit an image (aspect-preserving) inside a screen-cell rect and center it.
+-- rect = { row, col, width, height } in 0-based screen grid cells. Returns the
+-- same placement shape compute_preview_placement produces.
+function M.center_in_rect(rect, image, cell_w, cell_h)
+  cell_w = math.max(1, tonumber(cell_w) or 10)
+  cell_h = math.max(1, tonumber(cell_h) or 18)
+  local avail_w = math.max(1, tonumber(rect.width) or 1)
+  local avail_h = math.max(1, tonumber(rect.height) or 1)
+  local iw = math.max(1, tonumber(image.source_width) or 1)
+  local ih = math.max(1, tonumber(image.source_height) or 1)
+  local scale = math.min(1, (avail_w * cell_w) / iw, (avail_h * cell_h) / ih)
+  local disp_w = math.max(1, math.floor(iw * scale))
+  local disp_h = math.max(1, math.floor(ih * scale))
+  local pw = math.max(1, math.min(avail_w, math.ceil(disp_w / cell_w)))
+  local ph = math.max(1, math.min(avail_h, math.ceil(disp_h / cell_h)))
+  return {
+    row = (tonumber(rect.row) or 0) + math.floor((avail_h - ph) / 2),
+    col = (tonumber(rect.col) or 0) + math.floor((avail_w - pw) / 2),
+    width = pw, height = ph, disp_w = disp_w, disp_h = disp_h,
+  }
+end
+
+-- ---------------------------------------------------------------------------
 -- GUI image backend (vim.ui.img) plumbing
 -- ---------------------------------------------------------------------------
 
@@ -643,7 +723,7 @@ end
 -- Terminal stub box drawn into the PlantUML preview float buffer (the GUI would
 -- paint the image over the float). Fills exactly the place.width x place.height
 -- geometry the placement logic already sized the window to -- no placement change.
-function M.draw_stub_preview_box(buf, place, path)
+function M.draw_stub_preview_box(buf, place, path, rect)
   local w = math.max(2, place.width or 2)
   local h = math.max(1, place.height or 1)
   local name = vim.fn.fnamemodify(path or '?', ':t')
@@ -662,6 +742,17 @@ function M.draw_stub_preview_box(buf, place, path)
       lines[i] = '|' .. fit(text) .. '|'
     end
     lines[h] = '+' .. string.rep('-', w - 2) .. '+'
+  end
+  -- Split carrier: the window is larger than the box, so pad the box to the
+  -- centered position (place already includes the window-origin offset).
+  if rect then
+    local pad_left = math.max(0, (place.col or 0) - (rect.col or 0))
+    if pad_left > 0 then
+      local prefix = string.rep(' ', pad_left)
+      for i = 1, #lines do lines[i] = prefix .. lines[i] end
+    end
+    local pad_top = math.max(0, (place.row or 0) - (rect.row or 0))
+    for _ = 1, pad_top do table.insert(lines, 1, '') end
   end
   -- Drop markdown ft so render-markdown/treesitter doesn't reflow the ASCII box
   -- (the `|...|` rows would otherwise be mistaken for a pipe table). Only assign
@@ -1116,25 +1207,41 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
   end
   if not image then return end
 
-  local place = M.compute_preview_placement(ps, image, cell_w, cell_h)
-  if not place then
-    pcall(function()
-      delete_image(vim.w[info.win].rendermark_plantuml_preview_image_id)
-      delete_image(vim.w[info.win].rendermark_plantuml_preview_legacy_image_id)
-    end)
-    if vim.api.nvim_win_is_valid(info.win) then
-      pcall(vim.api.nvim_win_close, info.win, true)
+  local place, stub_rect
+  if ps.kind == 'split' then
+    -- The split carrier IS info.win, sized by the user. Center the image within
+    -- its screen rect rather than moving/resizing the window.
+    local wi = info.w
+    local textoff = tonumber(wi.textoff) or 0
+    stub_rect = {
+      row = math.max(0, (tonumber(wi.winrow) or 1) - 1),
+      col = math.max(0, (tonumber(wi.wincol) or 1) - 1 + textoff),
+      width = math.max(1, (tonumber(wi.width) or 1) - textoff),
+      height = math.max(1, tonumber(wi.height) or 1),
+    }
+    place = M.center_in_rect(stub_rect, image, cell_w, cell_h)
+  else
+    place = M.compute_preview_placement(ps, image, cell_w, cell_h)
+    if not place then
+      pcall(function()
+        delete_image(vim.w[info.win].rendermark_plantuml_preview_image_id)
+        delete_image(vim.w[info.win].rendermark_plantuml_preview_legacy_image_id)
+      end)
+      if vim.api.nvim_win_is_valid(info.win) then
+        pcall(vim.api.nvim_win_close, info.win, true)
+      end
+      if vim.api.nvim_buf_is_valid(info.buf) then
+        pcall(vim.api.nvim_buf_delete, info.buf, { force = true })
+      end
+      return
     end
-    if vim.api.nvim_buf_is_valid(info.buf) then
-      pcall(vim.api.nvim_buf_delete, info.buf, { force = true })
-    end
-    return
+    M.reposition_preview_float(info.win, place)
   end
-  M.reposition_preview_float(info.win, place)
 
   if M._stub_active then
-    -- No pixels in a terminal: draw the box into the already-sized float instead.
-    M.draw_stub_preview_box(info.buf, place, image.path)
+    -- No pixels in a terminal: draw the box into the carrier buffer instead. For a
+    -- split, stub_rect lets the box be centered within the (larger) window.
+    M.draw_stub_preview_box(info.buf, place, image.path, stub_rect)
     return
   end
 
@@ -1404,6 +1511,71 @@ local function plantuml_open_float(buf, win, block, png)
   st.float = { buf = fbuf, win = fwin, path = png }
 end
 
+local split_dir_map = { left = 'left', right = 'right', top = 'above', bottom = 'below' }
+
+-- Open (or reuse) a dedicated, non-modifiable split window for the active block's
+-- preview. emit_preview_float centers the image inside it. The carrier slot is
+-- shared with the float (st.float), tagged kind='split', so the existing close /
+-- cleanup paths tear it down unchanged.
+local function plantuml_open_split(buf, win, block, png)
+  local st = plantuml_state_for(buf)
+  local line = (vim.api.nvim_buf_get_lines(buf, block.start_row, block.start_row + 1, false) or {})[1] or ''
+  local meta = {
+    buf = buf,
+    win = win,
+    start_row = block.start_row,
+    anchor_col = #(line:match('^%s*') or ''),
+    path = png,
+    kind = 'split',
+  }
+  local link = '![plantuml](' .. png:gsub('\\', '/') .. ')'
+
+  -- Reuse the existing split pane (persistent lifecycle / re-renders); just
+  -- refresh its image link and the source metadata.
+  if st.float and st.float.kind == 'split'
+      and st.float.win and vim.api.nvim_win_is_valid(st.float.win)
+      and st.float.buf and vim.api.nvim_buf_is_valid(st.float.buf) then
+    if st.float.path ~= png then
+      pcall(function() vim.bo[st.float.buf].modifiable = true end)
+      pcall(vim.api.nvim_buf_set_lines, st.float.buf, 0, -1, false, { link })
+      pcall(function() vim.bo[st.float.buf].modifiable = false end)
+      st.float.path = png
+    end
+    pcall(function() vim.w[st.float.win].rendermark_plantuml_preview_source = meta end)
+    return
+  end
+  plantuml_close_float(st)
+
+  local cfg = preview_cfg.split
+  local vertical = cfg.direction == 'vertical'
+  local total = vertical and (tonumber(vim.o.columns) or 80) or (tonumber(vim.o.lines) or 24)
+  local size = M.resolve_split_size(cfg.size, total)
+
+  local fbuf = vim.api.nvim_create_buf(false, true)
+  vim.bo[fbuf].buftype = 'nofile'
+  vim.bo[fbuf].bufhidden = 'wipe'
+  vim.bo[fbuf].filetype = 'markdown'
+  vim.api.nvim_buf_set_lines(fbuf, 0, -1, false, { link })
+  vim.bo[fbuf].modifiable = false
+
+  local wcfg = { split = split_dir_map[cfg.position] or 'right', win = win }
+  if vertical then wcfg.width = size else wcfg.height = size end
+  local ok, fwin = pcall(vim.api.nvim_open_win, fbuf, false, wcfg)
+  if not ok then
+    pcall(vim.api.nvim_buf_delete, fbuf, { force = true })
+    return
+  end
+  for opt, val in pairs({
+    number = false, relativenumber = false, wrap = false, list = false,
+    cursorline = false, signcolumn = 'no',
+    winfixwidth = vertical, winfixheight = not vertical,
+  }) do
+    pcall(vim.api.nvim_set_option_value, opt, val, { win = fwin })
+  end
+  pcall(function() vim.w[fwin].rendermark_plantuml_preview_source = meta end)
+  st.float = { buf = fbuf, win = fwin, path = png, kind = 'split' }
+end
+
 function M.plantuml_cleanup_buf(buf)
   local st = plantuml_states[buf]
   if not st then return end
@@ -1467,12 +1639,19 @@ function M.collect_plantuml_images(buf, result, errors)
     local is_active = active_block ~= nil and block.start_row == active_block.start_row
 
     if is_active then
-      -- Leave the source raw for editing; show a preview float instead. The
-      -- block text changes while typing, so debounce its render.
-      local entry = plantuml_debounce_active(buf, block)
-      if entry and entry.status == 'ready' then
-        plantuml_open_float(buf, active_win, block, entry.png)
-        active_floated = true
+      -- Leave the source raw for editing; show a preview (float or split) instead.
+      -- The block text changes while typing, so debounce its render. Honor the
+      -- show/hide state (M.preview_active()).
+      if M.preview_active() then
+        local entry = plantuml_debounce_active(buf, block)
+        if entry and entry.status == 'ready' then
+          if preview_cfg.mode == 'split' then
+            plantuml_open_split(buf, active_win, block, entry.png)
+          else
+            plantuml_open_float(buf, active_win, block, entry.png)
+          end
+          active_floated = true
+        end
       end
     else
       local entry = plantuml_ensure_render(buf, block)
@@ -1500,9 +1679,20 @@ function M.collect_plantuml_images(buf, result, errors)
     end
   end
 
+  -- Tear down the preview when no block is active. A persistent split pane is the
+  -- exception: it stays open and keeps showing the last diagram. A hidden/disabled
+  -- preview always closes.
   if not active_floated then
     local st = plantuml_states[buf]
-    if st then plantuml_close_float(st) end
+    if st then
+      local keep_persistent_split = preview_cfg.mode == 'split'
+        and preview_cfg.split.lifecycle == 'persistent'
+        and M.preview_active()
+        and st.float and st.float.kind == 'split'
+      if not keep_persistent_split then
+        plantuml_close_float(st)
+      end
+    end
   end
 end
 
@@ -1530,6 +1720,7 @@ local function resolve_preview_source(win)
     start_row = math.max(0, tonumber(source_meta.start_row) or 0),
     anchor_col = math.max(0, tonumber(source_meta.anchor_col) or 0),
     path = source_meta.path,
+    kind = source_meta.kind == 'split' and 'split' or 'float',
   }
 end
 
@@ -2227,7 +2418,8 @@ function M.handle_cursor_moved()
   notify_redraw()
 end
 
-function M.setup()
+function M.setup(opts)
+  preview_cfg = normalize_preview(opts and opts.plantuml and opts.plantuml.preview)
   install_terminal_stub()
   if backend.img_available() then
     M._init()
@@ -2247,6 +2439,21 @@ function M._init()
   if not backend.img_available() then return end
   M.ensure_image_namespace()
   autocmd_group = vim.api.nvim_create_augroup('rendermark_image', { clear = true })
+
+  -- Preview show/hide controls. These set an explicit override (M._preview_user)
+  -- that wins over the configured `auto` flag until toggled back.
+  vim.api.nvim_create_user_command('RendermarkPreviewShow', function()
+    M._preview_user = true
+    M.send_images()
+  end, { desc = 'Show the PlantUML preview for the current block' })
+  vim.api.nvim_create_user_command('RendermarkPreviewHide', function()
+    M._preview_user = false
+    M.send_images()
+  end, { desc = 'Hide the PlantUML preview' })
+  vim.api.nvim_create_user_command('RendermarkPreviewToggle', function()
+    M._preview_user = not M.preview_active()
+    M.send_images()
+  end, { desc = 'Toggle the PlantUML preview' })
 
   vim.api.nvim_create_autocmd(
     { 'BufEnter', 'BufReadPost', 'FileType' },

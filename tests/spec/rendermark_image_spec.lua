@@ -761,3 +761,132 @@ describe('scan_markdown_image_text', function()
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
   end)
 end)
+
+-- ---------------------------------------------------------------------------
+-- PlantUML preview configuration (mode/auto/split) + pure geometry helpers.
+-- ---------------------------------------------------------------------------
+
+describe('preview_config (setup normalization)', function()
+  local function cfg(opts)
+    local img = fresh_image()
+    img.setup({ plantuml = { preview = opts } })
+    return img.preview_config()
+  end
+
+  it('defaults to float/auto with a right vertical persistent split', function()
+    local c = cfg(nil)
+    assert.equals('float', c.mode)
+    assert.equals(true, c.auto)
+    assert.equals('right', c.split.position)
+    assert.equals('vertical', c.split.direction)
+    assert.equals(0.5, c.split.size)
+    assert.equals('persistent', c.split.lifecycle)
+  end)
+
+  it('falls back to float for an unknown mode', function()
+    assert.equals('float', cfg({ mode = 'bogus' }).mode)
+    assert.equals('split', cfg({ mode = 'split' }).mode)
+  end)
+
+  it("resolves size = 'half' to 0.5", function()
+    assert.equals(0.5, cfg({ split = { size = 'half' } }).split.size)
+  end)
+
+  it('falls back to right for an invalid position', function()
+    assert.equals('right', cfg({ split = { position = 'sideways' } }).split.position)
+  end)
+
+  it('infers direction from position', function()
+    assert.equals('vertical', cfg({ split = { position = 'left' } }).split.direction)
+    assert.equals('vertical', cfg({ split = { position = 'right' } }).split.direction)
+    assert.equals('horizontal', cfg({ split = { position = 'top' } }).split.direction)
+    assert.equals('horizontal', cfg({ split = { position = 'bottom' } }).split.direction)
+  end)
+
+  it('respects auto = false and the cursor lifecycle', function()
+    local c = cfg({ auto = false, split = { lifecycle = 'cursor' } })
+    assert.equals(false, c.auto)
+    assert.equals('cursor', c.split.lifecycle)
+  end)
+
+  it('falls back to persistent for an invalid lifecycle', function()
+    assert.equals('persistent', cfg({ split = { lifecycle = 'wat' } }).split.lifecycle)
+  end)
+end)
+
+describe('resolve_split_size', function()
+  it('treats a fraction < 1 as a ratio of the host extent', function()
+    assert.equals(60, image.resolve_split_size(0.5, 120))
+    assert.equals(30, image.resolve_split_size(0.3, 100))
+  end)
+
+  it('treats a value >= 1 as an absolute cell count', function()
+    assert.equals(80, image.resolve_split_size(80, 120))
+  end)
+
+  it('clamps to [1, total]', function()
+    assert.equals(120, image.resolve_split_size(200, 120))
+    assert.equals(1, image.resolve_split_size(0.001, 120))
+  end)
+
+  it('defaults to half on a non-positive / non-number size', function()
+    assert.equals(60, image.resolve_split_size(0, 120))
+    assert.equals(60, image.resolve_split_size(-1, 120))
+    assert.equals(60, image.resolve_split_size('nope', 120))
+  end)
+end)
+
+describe('center_in_rect', function()
+  it('centers an image that fits without scaling', function()
+    -- 40x20 cells = 400x360px; 100x50 image fits at scale 1 -> 10x3 cells.
+    local p = image.center_in_rect({ row = 0, col = 0, width = 40, height = 20 },
+      { source_width = 100, source_height = 50 }, 10, 18)
+    assert.equals(100, p.disp_w)
+    assert.equals(50, p.disp_h)
+    assert.equals(10, p.width)
+    assert.equals(3, p.height)
+    assert.equals(15, p.col)  -- (40-10)/2
+    assert.equals(8, p.row)   -- (20-3)/2
+  end)
+
+  it('scales an oversized image to fit and still centers it', function()
+    -- 1000x200 image into 40x20 cells (400x360px): scale 0.4 -> 400x80px -> 40x5.
+    local p = image.center_in_rect({ row = 2, col = 4, width = 40, height = 20 },
+      { source_width = 1000, source_height = 200 }, 10, 18)
+    assert.equals(400, p.disp_w)
+    assert.equals(40, p.width)
+    assert.equals(5, p.height)
+    assert.equals(4, p.col)   -- pad 0 + rect.col
+    assert.equals(9, p.row)   -- (20-5)/2 + rect.row(2)
+  end)
+
+  it('never produces a sub-1-cell placement on a degenerate rect', function()
+    local p = image.center_in_rect({ row = 0, col = 0, width = 1, height = 1 },
+      { source_width = 100, source_height = 50 }, 10, 18)
+    assert.equals(1, p.width)
+    assert.equals(1, p.height)
+  end)
+end)
+
+describe('preview_active (show/hide state machine)', function()
+  it('follows the configured auto flag when no override is set', function()
+    local img = fresh_image()
+    img.setup({ plantuml = { preview = { auto = true } } })
+    assert.is_true(img.preview_active())
+
+    img = fresh_image()
+    img.setup({ plantuml = { preview = { auto = false } } })
+    assert.is_false(img.preview_active())
+  end)
+
+  it('lets an explicit Show/Hide override win over auto', function()
+    local img = fresh_image()
+    img.setup({ plantuml = { preview = { auto = false } } })
+    img._preview_user = true   -- :RendermarkPreviewShow
+    assert.is_true(img.preview_active())
+    img._preview_user = false  -- :RendermarkPreviewHide
+    assert.is_false(img.preview_active())
+    img._preview_user = nil    -- back to following config
+    assert.is_false(img.preview_active())
+  end)
+end)
