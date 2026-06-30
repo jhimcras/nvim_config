@@ -102,17 +102,6 @@ function M.lsp()
     return ''
 end
 
--- IME state published by neopp (vim.g.neopp_ime); cross-platform. The bridge
--- triggers redrawstatus on change so this %{} re-evaluates. Empty outside neopp.
-function M.neopp_ime()
-    local s = vim.g.neopp_ime
-    if s == 'korean_hangul' then return '한'
-    elseif s == 'korean_eng' then return 'A(KR)'
-    elseif s == 'off'        then return 'A'
-    elseif s == nil or s == '' then return ''
-    else return s end
-end
-
 function M.session()
     return vim.fn.fnamemodify(vim.v.this_session,':p:t')
 end
@@ -664,7 +653,7 @@ local function general_statusline(activation, mode, winid)
             hl = hl(1), sep = ' │ ', pad = ' '
         },
         activation and {
-            sh(M.neopp_ime, 7),
+            -- sh(M.neopp_ime, 7),
             sh(search_count, 5),
             sh(percentage_loc, 10),
             sh(column_loc, 6),

@@ -11,6 +11,18 @@ local function is_tabline_ignored_buf(bufnum)
     return false
 end
 
+-- IME state published by neopp (vim.g.neopp_ime); cross-platform. neopp fires
+-- 'User NeoppImeChanged' on each toggle, which rebuilds the tabline (see setup).
+-- Empty outside neopp.
+local function neopp_ime()
+    local s = vim.g.neopp_ime
+    if s == 'korean_hangul' then return '한'
+    elseif s == 'korean_eng' then return 'A(KR)'
+    elseif s == 'off'        then return 'A'
+    elseif s == nil or s == '' then return ''
+    else return s end
+end
+
 function M.tabtitle(n)
     local num_wins = vim.fn.tabpagewinnr(n, '$')
     local buflist = {}
@@ -97,10 +109,12 @@ function M.tab_scroll(delta)
         end
         local session_text = vim.fn.fnamemodify(vim.v.this_session, ':p:t')
         local session_width = vim.fn.strdisplaywidth(' ' .. session_text .. ' ')
+        local ime_text = neopp_ime()
+        local ime_width = (ime_text ~= '') and vim.fn.strdisplaywidth(' ' .. ime_text .. ' ') or 0
         local max_offset = total
         for offset = 1, total do
             local left_ind_w = offset > 1 and 3 or 0
-            local avail = vim.o.columns - session_width - left_ind_w
+            local avail = vim.o.columns - session_width - ime_width - left_ind_w
             if tabline_vis_end(offset, widths_w, total, avail) >= total then
                 max_offset = offset
                 break
@@ -128,6 +142,8 @@ function M.TabLine()
 
     local session_text = vim.fn.fnamemodify(vim.v.this_session, ':p:t')
     local session_width = vim.fn.strdisplaywidth(' ' .. session_text .. ' ')
+    local ime_text = neopp_ime()
+    local ime_width = (ime_text ~= '') and vim.fn.strdisplaywidth(' ' .. ime_text .. ' ') or 0
 
     -- Auto-scroll on tab navigation (gt/gT): keep current tab visible
     if auto_scroll_next then
@@ -136,7 +152,7 @@ function M.TabLine()
             tab_offset = cur
         else
             local left_ind_w = tab_offset > 1 and 3 or 0
-            local avail = vim.o.columns - session_width - left_ind_w
+            local avail = vim.o.columns - session_width - ime_width - left_ind_w
             if cur > tabline_vis_end(tab_offset, widths, total, avail) then
                 tab_offset = cur
             end
@@ -149,7 +165,7 @@ function M.TabLine()
     local left_ind_w = tab_offset > 1 and (left_cur_hidden and (6 + #tostring(cur)) or 3) or 0
 
     -- Pass 1: no right indicator reserved
-    local avail = vim.o.columns - session_width - left_ind_w
+    local avail = vim.o.columns - session_width - ime_width - left_ind_w
     local vend_no_right = tabline_vis_end(tab_offset, widths, total, avail)
 
     -- Pass 2: if right overflow, reserve space for right indicator
@@ -187,6 +203,11 @@ function M.TabLine()
     end
     s[#s+1] = '%#MoreMsg#%=%#MoreMsg# ' .. session_text .. ' '
 
+    if ime_text ~= '' then
+        local hl = (ime_text == '한') and 'TabLineImeHangul' or 'TabLineImeEng'
+        s[#s+1] = ('%%#%s# %s '):format(hl, ime_text)
+    end
+
     return table.concat(s)
 end
 
@@ -198,7 +219,15 @@ function M.setup()
         {'WinEnter', 'WinLeave', 'TabEnter', 'TabLeave', 'TabClosed', 'BufNew', 'BufEnter', 'BufLeave', 'SessionLoadPost'},
         { callback = function() vim.go.tabline = M.TabLine() end }
     )
+    -- neopp publishes IME state via vim.g.neopp_ime and fires this on every toggle;
+    -- rebuild the tabline so the indicator updates live on the 한/영 key.
+    vim.api.nvim_create_autocmd('User', {
+        pattern = 'NeoppImeChanged',
+        callback = function() vim.go.tabline = M.TabLine() end,
+    })
     ut.set_highlight('TabLineSel', {gui = 'bold,italic'})
+    ut.set_highlight('TabLineImeHangul', { guibg = '#a6e3a1', guifg = '#1e1e2e', gui = 'bold' })
+    ut.set_highlight('TabLineImeEng',    { guibg = '#45475a', guifg = '#cdd6f4' })
     ut.nnoremap('<c-right>', function() M.tab_scroll(vim.v.count1) end)
     ut.nnoremap('<c-left>', function() M.tab_scroll(-vim.v.count1) end)
 end
