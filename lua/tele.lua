@@ -153,7 +153,7 @@ local function Tabs()
     local cur = vim.fn.tabpagenr()
     local entries = {}
     for i = 1, total do
-        local tabtitle = require'status'.tabtitle(i)
+        local tabtitle = require'tabline'.tabtitle(i)
         -- Collect all buffer file names in this tab for display/filtering
         local num_wins = vim.fn.tabpagewinnr(i, '$')
         local files = {}
