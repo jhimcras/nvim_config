@@ -5,6 +5,15 @@ local M = {}
 local tab_offset = 1
 local auto_scroll_next = false
 
+-- Cached render state. Each piece is rebuilt only by the event that can change
+-- it (see M.setup), so frequent events (IME toggle) reuse the rest untouched.
+local titles = {}        -- per-tab display title, index 1..tabcount
+local widths = {}        -- per-tab cell width incl. separators
+local session_text = ''
+local session_width = 0
+local ime_text = ''
+local ime_width = 0
+
 local function is_tabline_ignored_buf(bufnum)
     local buftype = vim.bo[bufnum].buftype
     if buftype == 'quickfix' then return true end
@@ -12,7 +21,7 @@ local function is_tabline_ignored_buf(bufnum)
 end
 
 -- IME state published by neopp (vim.g.neopp_ime); cross-platform. neopp fires
--- 'User NeoppImeChanged' on each toggle, which rebuilds the tabline (see setup).
+-- 'User NeoppImeChanged' on each toggle, which refreshes the IME segment (see setup).
 -- Empty outside neopp.
 local function neopp_ime()
     local s = vim.g.neopp_ime
@@ -95,55 +104,38 @@ local function tabline_vis_end(offset, widths, total, avail)
     return vend
 end
 
-function M.tab_scroll(delta)
+-- Rebuild the per-tab title/width cache. Expensive: M.tabtitle walks each tab's
+-- windows/buffers and resolves project roots. Only the tab-content events call it.
+local function rebuild_titles()
     local total = vim.fn.tabpagenr('$')
-    local new_offset = math.max(1, math.min(total, tab_offset + delta))
-
-    if delta > 0 then
-        -- Find the first offset where the last tab is visible; don't scroll past it
-        local titles_w = {}
-        local widths_w = {}
-        for i = 1, total do
-            titles_w[i] = M.tabtitle(i)
-            widths_w[i] = vim.fn.strdisplaywidth(string.format(' %d %s │', i, titles_w[i]))
-        end
-        local session_text = vim.fn.fnamemodify(vim.v.this_session, ':p:t')
-        local session_width = vim.fn.strdisplaywidth(' ' .. session_text .. ' ')
-        local ime_text = neopp_ime()
-        local ime_width = (ime_text ~= '') and vim.fn.strdisplaywidth(' ' .. ime_text .. ' ') or 0
-        local max_offset = total
-        for offset = 1, total do
-            local left_ind_w = offset > 1 and 3 or 0
-            local avail = vim.o.columns - session_width - ime_width - left_ind_w
-            if tabline_vis_end(offset, widths_w, total, avail) >= total then
-                max_offset = offset
-                break
-            end
-        end
-        new_offset = math.min(new_offset, max_offset)
-    end
-
-    tab_offset = new_offset
-    vim.go.tabline = M.TabLine()
-end
-
-function M.TabLine()
-    local total = vim.fn.tabpagenr('$')
-    local cur = vim.fn.tabpagenr()
-    tab_offset = math.max(1, math.min(total, tab_offset))
-    M.tab_update()
-
-    local titles = {}
-    local widths = {}
+    titles = {}
+    widths = {}
     for i = 1, total do
         titles[i] = M.tabtitle(i)
         widths[i] = vim.fn.strdisplaywidth(string.format(' %d %s │', i, titles[i]))
     end
+end
 
-    local session_text = vim.fn.fnamemodify(vim.v.this_session, ':p:t')
-    local session_width = vim.fn.strdisplaywidth(' ' .. session_text .. ' ')
-    local ime_text = neopp_ime()
-    local ime_width = (ime_text ~= '') and vim.fn.strdisplaywidth(' ' .. ime_text .. ' ') or 0
+local function rebuild_session()
+    session_text = vim.fn.fnamemodify(vim.v.this_session, ':p:t')
+    session_width = vim.fn.strdisplaywidth(' ' .. session_text .. ' ')
+end
+
+local function rebuild_ime()
+    ime_text = neopp_ime()
+    ime_width = (ime_text ~= '') and vim.fn.strdisplaywidth(' ' .. ime_text .. ' ') or 0
+end
+
+-- Assemble the tabline string from the cache only. Cheap: no title recompute, no
+-- highlight commands. Runs the scroll/visibility math every call so overflow
+-- indicators react to the live window width and IME width.
+local function render()
+    local total = vim.fn.tabpagenr('$')
+    local cur = vim.fn.tabpagenr()
+    -- Self-heal: keep the cache in sync with the live tab count in case a caller
+    -- rendered without rebuilding titles first (avoids nil width indexing).
+    if #widths ~= total then rebuild_titles() end
+    tab_offset = math.max(1, math.min(total, tab_offset))
 
     -- Auto-scroll on tab navigation (gt/gT): keep current tab visible
     if auto_scroll_next then
@@ -211,20 +203,78 @@ function M.TabLine()
     return table.concat(s)
 end
 
+function M.tab_scroll(delta)
+    rebuild_titles()
+    rebuild_session()
+    rebuild_ime()
+    local total = vim.fn.tabpagenr('$')
+    local new_offset = math.max(1, math.min(total, tab_offset + delta))
+
+    if delta > 0 then
+        -- Find the first offset where the last tab is visible; don't scroll past it
+        local max_offset = total
+        for offset = 1, total do
+            local left_ind_w = offset > 1 and 3 or 0
+            local avail = vim.o.columns - session_width - ime_width - left_ind_w
+            if tabline_vis_end(offset, widths, total, avail) >= total then
+                max_offset = offset
+                break
+            end
+        end
+        new_offset = math.min(new_offset, max_offset)
+    end
+
+    tab_offset = new_offset
+    vim.go.tabline = render()
+end
+
+-- Full refresh: rebuild every cached piece and render. Public entry point kept
+-- for external callers (lua/session.lua) that repaint outside the autocmds.
+function M.TabLine()
+    rebuild_titles()
+    rebuild_session()
+    rebuild_ime()
+    M.tab_update()
+    return render()
+end
+
 function M.setup()
     vim.o.showtabline = 2
-    -- Set flag before TabLine() is called so auto-scroll applies on tab navigation
+
+    -- Content changed within tabs: rebuild titles, repaint. Highlights unchanged
+    -- (tab count/selection did not move), so tab_update is skipped.
+    local function paint_content()
+        rebuild_titles()
+        vim.go.tabline = render()
+    end
+    -- Tab structure/selection changed: titles + highlights, then repaint.
+    local function paint_tabs()
+        rebuild_titles()
+        M.tab_update()
+        vim.go.tabline = render()
+    end
+    -- Session loaded: the session name (and everything else) may have changed.
+    local function paint_session()
+        rebuild_session()
+        rebuild_titles()
+        M.tab_update()
+        vim.go.tabline = render()
+    end
+    -- IME toggle: only the rightmost segment changes; reuse cached titles/highlights.
+    local function paint_ime()
+        rebuild_ime()
+        vim.go.tabline = render()
+    end
+
+    -- Set flag before paint_tabs runs so auto-scroll applies on tab navigation
     vim.api.nvim_create_autocmd('TabEnter', { callback = function() auto_scroll_next = true end })
-    vim.api.nvim_create_autocmd(
-        {'WinEnter', 'WinLeave', 'TabEnter', 'TabLeave', 'TabClosed', 'BufNew', 'BufEnter', 'BufLeave', 'SessionLoadPost'},
-        { callback = function() vim.go.tabline = M.TabLine() end }
-    )
+    vim.api.nvim_create_autocmd({'TabEnter', 'TabLeave', 'TabClosed'}, { callback = paint_tabs })
+    vim.api.nvim_create_autocmd({'WinEnter', 'WinLeave', 'BufNew', 'BufEnter', 'BufLeave'}, { callback = paint_content })
+    vim.api.nvim_create_autocmd('SessionLoadPost', { callback = paint_session })
     -- neopp publishes IME state via vim.g.neopp_ime and fires this on every toggle;
-    -- rebuild the tabline so the indicator updates live on the 한/영 key.
-    vim.api.nvim_create_autocmd('User', {
-        pattern = 'NeoppImeChanged',
-        callback = function() vim.go.tabline = M.TabLine() end,
-    })
+    -- refresh just the indicator so it updates live on the 한/영 key.
+    vim.api.nvim_create_autocmd('User', { pattern = 'NeoppImeChanged', callback = paint_ime })
+
     ut.set_highlight('TabLineSel', {gui = 'bold,italic'})
     ut.set_highlight('TabLineImeHangul', { guibg = '#a6e3a1', guifg = '#1e1e2e', gui = 'bold' })
     ut.set_highlight('TabLineImeEng',    { guibg = '#45475a', guifg = '#cdd6f4' })
