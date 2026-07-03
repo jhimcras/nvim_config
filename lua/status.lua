@@ -653,7 +653,6 @@ local function general_statusline(activation, mode, winid)
             hl = hl(1), sep = ' │ ', pad = ' '
         },
         activation and {
-            -- sh(M.neopp_ime, 7),
             sh(search_count, 5),
             sh(percentage_loc, 10),
             sh(column_loc, 6),
