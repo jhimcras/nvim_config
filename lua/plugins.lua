@@ -218,6 +218,77 @@ local function TreesitterConfig()
         },
     }
 
+    if vim.fn.has('nvim-0.12') == 1 then
+        -- Neovim 0.12 removed the `all` option from Query:iter_matches(), which
+        -- now always returns TSNode[] per capture instead of a single TSNode
+        -- (core's own highlighter/injection code was updated for this; third-
+        -- party nvim-treesitter wasn't). nvim-treesitter's textobjects
+        -- machinery (select/move/swap) stores those raw capture values into
+        -- `prepared_match` and downstream code (tsrange.from_nodes,
+        -- move.lua's filter_predicate/scoring_function, etc.) still calls
+        -- TSNode methods like :start()/:range() directly on them, crashing
+        -- with e.g. "attempt to call method 'start' (a nil value)" as soon as
+        -- [m/]m or af/if/etc. hits a query match. Reimplement
+        -- iter_prepared_matches with capture values unwrapped to a single
+        -- node (last one, matching the old all=false semantics) so every
+        -- consumer gets a plain TSNode again.
+        local nt_query = require'nvim-treesitter.query'
+        local tsrange = require'nvim-treesitter.tsrange'
+        local function last_node(node)
+            if type(node) == 'table' then
+                return node[#node]
+            end
+            return node
+        end
+        function nt_query.iter_prepared_matches(query, qnode, bufnr, start_row, end_row)
+            local function split(to_split)
+                local t = {}
+                for str in string.gmatch(to_split, "([^.]+)") do
+                    table.insert(t, str)
+                end
+                return t
+            end
+
+            local matches = query:iter_matches(qnode, bufnr, start_row, end_row, { all = false })
+
+            local function iterator()
+                local pattern, match, metadata = matches()
+                if pattern ~= nil then
+                    local prepared_match = {}
+
+                    for id, node in pairs(match) do
+                        local name = query.captures[id]
+                        if name ~= nil then
+                            local path = split(name .. ".node")
+                            nt_query.insert_to_path(prepared_match, path, last_node(node))
+                            local metadata_path = split(name .. ".metadata")
+                            nt_query.insert_to_path(prepared_match, metadata_path, metadata[id])
+                        end
+                    end
+
+                    local preds = query.info.patterns[pattern]
+                    if preds then
+                        for _, pred in pairs(preds) do
+                            if pred[1] == "set!" and type(pred[2]) == "string" then
+                                nt_query.insert_to_path(prepared_match, split(pred[2]), pred[3])
+                            end
+                            if pred[1] == "make-range!" and type(pred[2]) == "string" and #pred == 4 then
+                                nt_query.insert_to_path(
+                                    prepared_match,
+                                    split(pred[2] .. ".node"),
+                                    tsrange.TSRange.from_nodes(bufnr, last_node(match[pred[3]]), last_node(match[pred[4]]))
+                                )
+                            end
+                        end
+                    end
+
+                    return prepared_match
+                end
+            end
+            return iterator
+        end
+    end
+
     -- nvim-treesitter still registers a few directives as if query captures are
     -- single TSNode values. Neovim 0.12 passes TSNode[] per capture, which breaks
     -- markdown injection parsing through render-markdown.nvim.
