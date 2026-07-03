@@ -218,74 +218,69 @@ local function TreesitterConfig()
         },
     }
 
-    if vim.fn.has('nvim-0.12') == 1 then
-        -- Neovim 0.12 removed the `all` option from Query:iter_matches(), which
-        -- now always returns TSNode[] per capture instead of a single TSNode
-        -- (core's own highlighter/injection code was updated for this; third-
-        -- party nvim-treesitter wasn't). nvim-treesitter's textobjects
-        -- machinery (select/move/swap) stores those raw capture values into
-        -- `prepared_match` and downstream code (tsrange.from_nodes,
-        -- move.lua's filter_predicate/scoring_function, etc.) still calls
-        -- TSNode methods like :start()/:range() directly on them, crashing
-        -- with e.g. "attempt to call method 'start' (a nil value)" as soon as
-        -- [m/]m or af/if/etc. hits a query match. Reimplement
-        -- iter_prepared_matches with capture values unwrapped to a single
-        -- node (last one, matching the old all=false semantics) so every
-        -- consumer gets a plain TSNode again.
-        local nt_query = require'nvim-treesitter.query'
-        local tsrange = require'nvim-treesitter.tsrange'
-        local function last_node(node)
-            if type(node) == 'table' then
-                return node[#node]
+    -- Neovim 0.12 removed the `all` option from Query:iter_matches(): it now
+    -- always maps each capture to a TSNode[] array instead of a single TSNode
+    -- (core's highlighter/injection code was updated for this; the pinned
+    -- nvim-treesitter/-textobjects master branches were not). The textobjects
+    -- machinery (select/move/swap) stashes those raw capture values into
+    -- `prepared_match`, and consumers then call TSNode methods directly on
+    -- them -- e.g. tsrange.from_nodes' start_node:start(), or move.lua's
+    -- filter/scoring functions doing match.node:range()/:start(). A plain Lua
+    -- array has no such method, so [m/]m (and af/if/swap) crash with
+    -- "attempt to call method 'start'/'range' (a nil value)".
+    --
+    -- These patches are additive wrappers (no reimplementation of upstream
+    -- logic) so they stay correct across master commits, and they only unwrap
+    -- when a value is actually a TSNode[] array, so they're harmless on
+    -- Neovim <0.12 where captures are already single nodes.
+    do
+        -- A raw capture array is a plain table whose first element is a TSNode
+        -- (userdata). TSNodes are userdata, and TSRanges (from make-range!)
+        -- have a numeric [1], so neither is mistaken for an array to unwrap.
+        local function unwrap(v)
+            if type(v) == 'table' and type(v[1]) == 'userdata' then
+                return v[#v] -- last match, matching the old all=false semantics
             end
-            return node
+            return v
         end
-        function nt_query.iter_prepared_matches(query, qnode, bufnr, start_row, end_row)
-            local function split(to_split)
-                local t = {}
-                for str in string.gmatch(to_split, "([^.]+)") do
-                    table.insert(t, str)
-                end
-                return t
+
+        -- 1) make-range! path: keep upstream's own iter_prepared_matches, just
+        --    stop from_nodes from crashing when handed TSNode[] arrays.
+        local tsrange = require'nvim-treesitter.tsrange'
+        local TSRange = tsrange.TSRange
+        local orig_from_nodes = TSRange.from_nodes
+        function TSRange.from_nodes(buf, start_node, end_node)
+            start_node, end_node = unwrap(start_node), unwrap(end_node)
+            if not start_node and not end_node then
+                return nil
             end
+            return orig_from_nodes(buf, start_node, end_node)
+        end
 
-            local matches = query:iter_matches(qnode, bufnr, start_row, end_row, { all = false })
-
-            local function iterator()
-                local pattern, match, metadata = matches()
-                if pattern ~= nil then
-                    local prepared_match = {}
-
-                    for id, node in pairs(match) do
-                        local name = query.captures[id]
-                        if name ~= nil then
-                            local path = split(name .. ".node")
-                            nt_query.insert_to_path(prepared_match, path, last_node(node))
-                            local metadata_path = split(name .. ".metadata")
-                            nt_query.insert_to_path(prepared_match, metadata_path, metadata[id])
-                        end
-                    end
-
-                    local preds = query.info.patterns[pattern]
-                    if preds then
-                        for _, pred in pairs(preds) do
-                            if pred[1] == "set!" and type(pred[2]) == "string" then
-                                nt_query.insert_to_path(prepared_match, split(pred[2]), pred[3])
-                            end
-                            if pred[1] == "make-range!" and type(pred[2]) == "string" and #pred == 4 then
-                                nt_query.insert_to_path(
-                                    prepared_match,
-                                    split(pred[2] .. ".node"),
-                                    tsrange.TSRange.from_nodes(bufnr, last_node(match[pred[3]]), last_node(match[pred[4]]))
-                                )
-                            end
-                        end
-                    end
-
-                    return prepared_match
+        -- 2) regular captures: wrap iter_prepared_matches and unwrap every
+        --    `.node` array in the prepared_match it yields, so downstream
+        --    filter/scoring/goto code always sees a single TSNode.
+        local nt_query = require'nvim-treesitter.query'
+        local orig_iter = nt_query.iter_prepared_matches
+        local function unwrap_nodes(t)
+            if type(t) ~= 'table' or getmetatable(t) ~= nil then
+                return -- skip TSRange (has a metatable) and non-tables
+            end
+            for k, v in pairs(t) do
+                if k == 'node' then
+                    t[k] = unwrap(v)
+                else
+                    unwrap_nodes(v)
                 end
             end
-            return iterator
+        end
+        function nt_query.iter_prepared_matches(...)
+            local iter = orig_iter(...)
+            return function()
+                local prepared_match = iter()
+                unwrap_nodes(prepared_match)
+                return prepared_match
+            end
         end
     end
 
