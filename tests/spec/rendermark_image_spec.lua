@@ -868,6 +868,441 @@ describe('center_in_rect', function()
   end)
 end)
 
+-- ---------------------------------------------------------------------------
+-- Partially-visible PlantUML blocks (top fence scrolled above the window).
+-- ---------------------------------------------------------------------------
+
+describe('offscreen_anchor_grid_row', function()
+  local function scratch_win(lines)
+    vim.cmd('new')
+    local win = vim.api.nvim_get_current_win()
+    local buf = vim.api.nvim_create_buf(false, true)
+    local content = {}
+    for i = 1, lines do content[i] = 'line ' .. i end
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, content)
+    vim.api.nvim_win_set_buf(win, buf)
+    vim.cmd('resize 6')
+    return win, buf
+  end
+
+  local function teardown(win, buf)
+    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  end
+
+  it('returns nil when the anchor is at or below topline', function()
+    local win, buf = scratch_win(30)
+    vim.api.nvim_win_call(win, function()
+      vim.api.nvim_win_set_cursor(win, { 12, 0 })
+      vim.fn.winrestview({ topline = 11 })
+    end)
+    local w = vim.fn.getwininfo(win)[1]
+    assert.is_nil(image.offscreen_anchor_grid_row(win, w, 10))  -- row 10 = line 11 = topline
+    assert.is_nil(image.offscreen_anchor_grid_row(win, w, 15))  -- below topline
+    teardown(win, buf)
+  end)
+
+  it('counts plain hidden lines above topline', function()
+    local win, buf = scratch_win(30)
+    vim.api.nvim_win_call(win, function()
+      vim.api.nvim_win_set_cursor(win, { 12, 0 })
+      vim.fn.winrestview({ topline = 11 })
+    end)
+    local w = vim.fn.getwininfo(win)[1]
+    -- anchor row 4 (line 5): hidden lines 5..10 = 6 rows above the window top.
+    assert.equals((w.winrow - 1) - 6, image.offscreen_anchor_grid_row(win, w, 4))
+    teardown(win, buf)
+  end)
+
+  it('includes virt_lines below the anchor minus the visible topfill', function()
+    local win, buf = scratch_win(30)
+    local ns = vim.api.nvim_create_namespace('rendermark_offscreen_test')
+    -- 5 virt_lines below row 9 (line 10).
+    vim.api.nvim_buf_set_extmark(buf, ns, 9, 0, {
+      virt_lines = {
+        { { 'v1', '' } }, { { 'v2', '' } }, { { 'v3', '' } }, { { 'v4', '' } }, { { 'v5', '' } },
+      },
+    })
+    vim.api.nvim_win_call(win, function()
+      vim.api.nvim_win_set_cursor(win, { 11, 0 })
+      vim.fn.winrestview({ topline = 11, topfill = 2 })
+    end)
+    local w = vim.fn.getwininfo(win)[1]
+    -- hidden = line 10 (1) + virt_lines (5) - visible topfill (2) = 4.
+    assert.equals((w.winrow - 1) - 4, image.offscreen_anchor_grid_row(win, w, 9))
+    teardown(win, buf)
+  end)
+
+  it('returns nil for an invalid window', function()
+    assert.is_nil(image.offscreen_anchor_grid_row(99999, { topline = 11, winrow = 1 }, 4))
+  end)
+end)
+
+describe('partially visible plantuml block rendering', function()
+  local FENCE = 10       -- 0-based row of '```plantuml'
+  local FENCE_END = 16   -- 0-based row of closing '```'
+  local CELL_W, CELL_H = 10, 18
+
+  -- 100x600 PNG header: taller than the source block, like a real diagram, so
+  -- the reservation emits actual virt_lines (reserve_h = virt_h - span + 1 > 1)
+  -- and topfill scrolling through them is possible.
+  local TALL_PNG = bytes({
+    137, 80, 78, 71, 13, 10, 26, 10,  -- signature
+    0, 0, 0, 13,                      -- IHDR length
+    73, 72, 68, 82,                   -- "IHDR"
+    0, 0, 0, 100,                     -- width  = 100
+    0, 0, 2, 88,                      -- height = 600
+  })
+
+  -- Build a markdown-ish buffer: 10 intro lines, a 7-line plantuml block at
+  -- rows FENCE..FENCE_END, then `outro` trailing lines.
+  local function make_buf(outro)
+    local lines = {}
+    for i = 1, FENCE do lines[#lines + 1] = 'intro ' .. i end
+    lines[#lines + 1] = '```plantuml'
+    lines[#lines + 1] = '@startuml'
+    lines[#lines + 1] = 'a -> b'
+    lines[#lines + 1] = 'b -> c'
+    lines[#lines + 1] = 'c -> d'
+    lines[#lines + 1] = '@enduml'
+    lines[#lines + 1] = '```'
+    for i = 1, outro do lines[#lines + 1] = 'outro ' .. i end
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].filetype = 'markdown'
+    return buf
+  end
+
+  -- Fresh module + backend store + fake vim.ui.img capturing set/del calls.
+  -- Stubs collect_plantuml_images with a ready 100x600 PNG record for `buf`.
+  local function setup_e2e(outro, height)
+    local old_ui = vim.ui
+    local old_store = rawget(_G, '__rendermark_image_backend')
+    rawset(_G, '__rendermark_image_backend', nil)
+    local img = fresh_image()
+    local store = {}
+    vim.ui = {
+      img = {
+        set = function(id, path, opts) store[id] = { path = path, opts = opts } end,
+        del = function(id) store[id] = nil end,
+        get = function(id) return store[id] end,
+      },
+    }
+    local buf = make_buf(outro)
+    local png = tmpfile(TALL_PNG)
+    img.collect_plantuml_images = function(target, result)
+      if target ~= buf then return end
+      result[#result + 1] = {
+        row = FENCE, col = 0, end_col = 12, path = png, raw_path = png,
+        source_width = 100, source_height = 600,
+        source_span_height = FENCE_END - FENCE + 1, plantuml = true,
+        plantuml_end_row = FENCE_END, virtual = false,
+      }
+    end
+    vim.cmd('new')
+    local win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win, buf)
+    vim.cmd('resize ' .. height)
+    local function teardown()
+      pcall(vim.api.nvim_win_close, win, true)
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      vim.ui = old_ui
+      rawset(_G, '__rendermark_image_backend', old_store)
+    end
+    return img, buf, win, store, teardown
+  end
+
+  local function scroll(win, topline, topfill)
+    vim.api.nvim_win_call(win, function()
+      vim.api.nvim_win_set_cursor(win, { topline + 1, 0 })
+      vim.fn.winrestview({ topline = topline, topfill = topfill or 0 })
+    end)
+  end
+
+  local function buf_image(store)
+    for id, entry in pairs(store) do
+      if id:sub(1, 4) == 'buf:' then return entry end
+    end
+    return nil
+  end
+
+  local function conceal_rows(img, buf)
+    local ns = img.ensure_image_namespace()
+    local rows = {}
+    local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+    for _, m in ipairs(marks) do
+      if m[4] and m[4].conceal ~= nil then rows[m[2]] = true end
+    end
+    return rows
+  end
+
+  it('keeps rendering (clipped) when the top fence scrolls above the window', function()
+    local img, buf, win, store, teardown = setup_e2e(30, 6)
+    scroll(win, FENCE + 3)  -- topline 13: block rows 12..16 visible, fence hidden
+    img.send_images()       -- first send reserves virt_lines, skips apply
+    img.send_images()       -- second send applies the payload
+    local w = vim.fn.getwininfo(win)[1]
+    local expected_row = img.offscreen_anchor_grid_row(win, w, FENCE)
+
+    local entry = buf_image(store)
+    assert.is_truthy(entry)
+    assert.is_truthy(expected_row)
+    assert.is_true(expected_row < w.winrow - 1)  -- anchored above the window top
+    assert.equals(expected_row, entry.opts.grid_row)
+    assert.equals(expected_row * CELL_H, entry.opts.dest_y_px)
+    assert.equals((w.winrow - 1) * CELL_H, entry.opts.clip_y_px)
+    assert.equals(w.height * CELL_H, entry.opts.clip_height_px)
+    -- The owning window's band travels with the payload so the GUI can crop
+    -- at the window top instead of guessing the owner from the (offscreen) row.
+    assert.equals(w.winrow - 1, entry.opts.win_top)
+    assert.equals(w.height, entry.opts.win_height)
+
+    -- Every source row of the block stays concealed.
+    local rows = conceal_rows(img, buf)
+    for r = FENCE, FENCE_END do assert.is_truthy(rows[r], 'row ' .. r .. ' concealed') end
+
+    -- The virt_lines reservation on the fence row survives.
+    local ns = img.ensure_image_namespace()
+    local reserved = false
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+      if m[2] == FENCE and m[4] and m[4].virt_lines then reserved = true end
+    end
+    assert.is_true(reserved)
+    teardown()
+  end)
+
+  it('shifts the anchor one grid row per topfill step through the virt_lines', function()
+    local img, _, win, store, teardown = setup_e2e(30, 6)
+    scroll(win, FENCE + 2)  -- topline right below the fence's virt_lines
+    img.send_images(); img.send_images()
+    local a = buf_image(store)
+    assert.is_truthy(a)
+    local row_a = a.opts.grid_row
+
+    scroll(win, FENCE + 2, 1)
+    local applied_fill = vim.api.nvim_win_call(win, function()
+      return vim.fn.winsaveview().topfill
+    end)
+    assert.equals(1, applied_fill)
+    img.send_images()
+    local b = buf_image(store)
+    assert.is_truthy(b)
+    assert.equals(row_a + 1, b.opts.grid_row)
+    teardown()
+  end)
+
+  it('still renders clipped to the window when the block is cut at the bottom', function()
+    local img, _, win, store, teardown = setup_e2e(30, 4)
+    scroll(win, FENCE - 1)  -- fence visible near the bottom of a 4-row window
+    img.send_images(); img.send_images()
+    local w = vim.fn.getwininfo(win)[1]
+    local entry = buf_image(store)
+    assert.is_truthy(entry)
+    assert.is_true(entry.opts.grid_row >= w.winrow - 1)  -- on-screen anchor
+    assert.equals(w.height * CELL_H, entry.opts.clip_height_px)
+    -- Window band is sent for on-screen anchors too, not only offscreen ones.
+    assert.equals(w.winrow - 1, entry.opts.win_top)
+    assert.equals(w.height, entry.opts.win_height)
+    teardown()
+  end)
+
+  it('emits nothing once the block is fully scrolled past the margin', function()
+    local img, buf, win, store, teardown = setup_e2e(60, 6)
+    scroll(win, FENCE_END + 1 + 30 + 5)  -- beyond span and max_rows margins
+    img.send_images(); img.send_images()
+    assert.is_nil(buf_image(store))
+    local rows = conceal_rows(img, buf)
+    for r = FENCE, FENCE_END do assert.is_nil(rows[r]) end
+    teardown()
+  end)
+
+  it('emits nothing for an image link fully scrolled past the margin', function()
+    local old_ui = vim.ui
+    local old_store = rawget(_G, '__rendermark_image_backend')
+    rawset(_G, '__rendermark_image_backend', nil)
+    local img = fresh_image()
+    local store = {}
+    vim.ui = {
+      img = {
+        set = function(id, path, opts) store[id] = { path = path, opts = opts } end,
+        del = function(id) store[id] = nil end,
+      },
+    }
+    local png = tmpfile(PNG)
+    local lines = { 'intro', '![alt](' .. png .. ')' }
+    for i = 1, 70 do lines[#lines + 1] = 'outro ' .. i end
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].filetype = 'markdown'
+    vim.cmd('new')
+    local win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win, buf)
+    vim.cmd('resize 6')
+    vim.api.nvim_win_call(win, function()
+      vim.api.nvim_win_set_cursor(win, { 51, 0 })
+      vim.fn.winrestview({ topline = 50 })
+    end)
+    img.send_images(); img.send_images()
+    local found = false
+    for id in pairs(store) do
+      if id:sub(1, 4) == 'buf:' then found = true end
+    end
+    assert.is_false(found)
+    local ns = img.ensure_image_namespace()
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+      assert.is_nil(m[4].virt_lines, 'no reservation should remain past the margin')
+    end
+    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    vim.ui = old_ui
+    rawset(_G, '__rendermark_image_backend', old_store)
+  end)
+end)
+
+describe('partially visible inline image link rendering', function()
+  local IMG = 5          -- 0-based row of the image link line
+  local CELL_H = 18
+
+  -- 100x600 PNG header: taller than one text row so the reservation emits
+  -- virt_lines (virt_h = max_rows = 30 -> 29 reserved virt_lines) and topfill
+  -- scrolling through them is possible.
+  local TALL_PNG = bytes({
+    137, 80, 78, 71, 13, 10, 26, 10,  -- signature
+    0, 0, 0, 13,                      -- IHDR length
+    73, 72, 68, 82,                   -- "IHDR"
+    0, 0, 0, 100,                     -- width  = 100
+    0, 0, 2, 88,                      -- height = 600
+  })
+
+  -- Fresh module + backend store + fake vim.ui.img. Buffer: IMG intro lines,
+  -- one image link, `outro` trailing lines; shown in a `height`-row split.
+  local function setup_e2e(outro, height)
+    local old_ui = vim.ui
+    local old_store = rawget(_G, '__rendermark_image_backend')
+    rawset(_G, '__rendermark_image_backend', nil)
+    local img = fresh_image()
+    local store = {}
+    vim.ui = {
+      img = {
+        set = function(id, path, opts) store[id] = { path = path, opts = opts } end,
+        del = function(id) store[id] = nil end,
+        get = function(id) return store[id] end,
+      },
+    }
+    local png = tmpfile(TALL_PNG)
+    local lines = {}
+    for i = 1, IMG do lines[#lines + 1] = 'intro ' .. i end
+    lines[#lines + 1] = '![alt](' .. png .. ')'
+    for i = 1, outro do lines[#lines + 1] = 'outro ' .. i end
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].filetype = 'markdown'
+    vim.cmd('new')
+    local win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win, buf)
+    vim.cmd('resize ' .. height)
+    local function teardown()
+      pcall(vim.api.nvim_win_close, win, true)
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      vim.ui = old_ui
+      rawset(_G, '__rendermark_image_backend', old_store)
+    end
+    return img, buf, win, store, teardown
+  end
+
+  local function scroll(win, topline, topfill)
+    vim.api.nvim_win_call(win, function()
+      vim.api.nvim_win_set_cursor(win, { topline + 1, 0 })
+      vim.fn.winrestview({ topline = topline, topfill = topfill or 0 })
+    end)
+  end
+
+  local function buf_image(store)
+    for id, entry in pairs(store) do
+      if id:sub(1, 4) == 'buf:' then return entry end
+    end
+    return nil
+  end
+
+  local function reservation_mark(img, buf)
+    local ns = img.ensure_image_namespace()
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+      if m[2] == IMG and m[4].virt_lines then return m end
+    end
+    return nil
+  end
+
+  it('keeps the reservation and emits (clipped) when the link scrolls above the window', function()
+    local img, buf, win, store, teardown = setup_e2e(40, 6)
+    scroll(win, IMG + 2)    -- topline right below the link line
+    img.send_images()       -- first send reserves virt_lines, skips apply
+    img.send_images()       -- second send applies the payload
+    local w = vim.fn.getwininfo(win)[1]
+
+    local entry = buf_image(store)
+    assert.is_truthy(entry)
+    assert.is_true(entry.opts.grid_row < w.winrow - 1)  -- anchored above the window top
+    assert.equals((w.winrow - 1) * CELL_H, entry.opts.clip_y_px)
+    assert.equals(w.height * CELL_H, entry.opts.clip_height_px)
+
+    -- The virt_lines reservation on the link row survives: this is what keeps
+    -- the window's topfill valid so C-e/C-y scroll row-by-row through the image
+    -- instead of snapping back when the anchor leaves the viewport.
+    assert.is_truthy(reservation_mark(img, buf))
+    teardown()
+  end)
+
+  it('shifts the anchor one grid row per topfill step through the virt_lines', function()
+    local img, _, win, store, teardown = setup_e2e(40, 6)
+    scroll(win, IMG + 2)
+    img.send_images(); img.send_images()
+    local a = buf_image(store)
+    assert.is_truthy(a)
+    local row_a = a.opts.grid_row
+
+    scroll(win, IMG + 2, 1)
+    local applied_fill = vim.api.nvim_win_call(win, function()
+      return vim.fn.winsaveview().topfill
+    end)
+    assert.equals(1, applied_fill)
+    img.send_images()
+    local b = buf_image(store)
+    assert.is_truthy(b)
+    assert.equals(row_a + 1, b.opts.grid_row)
+    teardown()
+  end)
+end)
+
+describe('get_layout_sig topfill', function()
+  it('changes when only topfill differs', function()
+    local img = fresh_image()
+    local buf = vim.api.nvim_create_buf(false, true)
+    local lines = {}
+    for i = 1, 30 do lines[i] = 'line ' .. i end
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    local ns = vim.api.nvim_create_namespace('rendermark_sig_test')
+    vim.api.nvim_buf_set_extmark(buf, ns, 9, 0, {
+      virt_lines = { { { 'v1', '' } }, { { 'v2', '' } }, { { 'v3', '' } } },
+    })
+    vim.cmd('new')
+    local win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win, buf)
+    vim.cmd('resize 6')
+    vim.api.nvim_win_call(win, function()
+      vim.api.nvim_win_set_cursor(win, { 11, 0 })
+      vim.fn.winrestview({ topline = 11, topfill = 0 })
+    end)
+    local sig_a = img.get_layout_sig()
+    vim.api.nvim_win_call(win, function()
+      vim.fn.winrestview({ topline = 11, topfill = 2 })
+    end)
+    local sig_b = img.get_layout_sig()
+    assert.are_not.equals(sig_a, sig_b)
+    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  end)
+end)
+
 describe('preview_active (show/hide state machine)', function()
   it('follows the configured auto flag when no override is set', function()
     local img = fresh_image()

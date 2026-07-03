@@ -163,6 +163,30 @@ function M.screenpos_display_col(sp)
   return tonumber(sp.col) or 0
 end
 
+-- Grid row (0-based screen row, possibly negative) where a buffer line scrolled
+-- above the window top would sit. screenpos() returns 0 for off-screen lines, so
+-- for a PlantUML block whose top fence is above the viewport the anchor row is
+-- synthesized from the display height of the hidden lines. nvim_win_text_height
+-- counts folds, wraps and virt_lines, but NOT virt_lines below end_row -- so end
+-- the range at the topline line with end_vcol = 0: that contributes zero rows of
+-- the topline itself while still counting the fill above it. Subtracting the
+-- window's topfill (the part of that fill still visible at the top) leaves the
+-- rows truly hidden. The result may be negative / point into a window above;
+-- clip_* confines drawing.
+function M.offscreen_anchor_grid_row(win, w, anchor_row)
+  local topline = tonumber(w and w.topline) or 1
+  if anchor_row + 1 >= topline then return nil end
+  local ok, hidden = pcall(function()
+    local h = vim.api.nvim_win_text_height(win, { start_row = anchor_row, end_row = topline - 1, end_vcol = 0 })
+    local topfill = vim.api.nvim_win_call(win, function()
+      return vim.fn.winsaveview().topfill
+    end)
+    return (tonumber(h and h.all) or 0) - (tonumber(topfill) or 0)
+  end)
+  if not ok or type(hidden) ~= 'number' or hidden <= 0 then return nil end
+  return ((tonumber(w.winrow) or 1) - 1) - hidden
+end
+
 function M.strip_indent_space_chars(text)
   if type(text) ~= 'string' then return '' end
   return text
@@ -1899,7 +1923,17 @@ function M._send_images_impl()
       measured_image.above_floats = info.above_floats == true
 
       local lnum = measured_image.row + 1
-      if lnum >= math.max(1, measure_w.topline - max_rows - 1) and lnum <= measure_w.botline then
+      -- An image's display footprint extends max(source span, image rows) below
+      -- its anchor (reserve_h = virt_h - span + 1 virt_lines plus the concealed
+      -- source rows; virt_h <= max_rows, +1 margin for the fold/above
+      -- reservation). Keep it while any of that can intersect the viewport so
+      -- both PlantUML blocks and inline image lines stay concealed and
+      -- clipped-rendered -- and, critically, keep their virt_lines reservation
+      -- so scrolling through the block never collapses the layout.
+      local span = math.max(1, tonumber(measured_image.source_span_height) or 1)
+      local keep = lnum <= measure_w.botline
+        and lnum + math.max(span, max_rows + 1) - 1 >= measure_w.topline
+      if keep then
         by_row[measured_image.row] = by_row[measured_image.row] or {}
         by_row[measured_image.row][#by_row[measured_image.row] + 1] = measured_image
       end
@@ -1919,7 +1953,16 @@ function M._send_images_impl()
       local above_floats = first_image.above_floats == true
       local lnum = row + 1
       local sp_line = M.safe_screenpos(measure_win, lnum, 1)
-      if sp_line.row > 0 then
+      -- screenpos() is 0 for lines above topline. A block whose anchor line
+      -- scrolled off the top can still be partially visible; synthesize its
+      -- grid row so the image keeps rendering (clipped), the source lines stay
+      -- concealed, and -- most importantly -- the virt_lines reservation below
+      -- survives, keeping the window's topfill valid while scrolling through it.
+      local offscreen_grid_row = nil
+      if sp_line.row <= 0 and lnum < measure_w.topline then
+        offscreen_grid_row = M.offscreen_anchor_grid_row(measure_win, measure_w, row)
+      end
+      if sp_line.row > 0 or offscreen_grid_row then
         for _, image in ipairs(line_images) do
           local screen_col = ((image.virtual and image.virtual_mark_col) or image.col or 0) + 1
           local sp_image = M.safe_screenpos(measure_win, lnum, screen_col)
@@ -1949,7 +1992,7 @@ function M._send_images_impl()
             layout_text_right_px = text_left_px + screen_max_w_px
           end
         end
-        local source_grid_row = sp_line.row - 1
+        local source_grid_row = offscreen_grid_row or (sp_line.row - 1)
         -- Stack vertically below the previous block's image when this block's
         -- anchor is bunched against it (two adjacent closed folds, whose
         -- separating virt_lines nvim refuses to render) so images never overlap.
@@ -2134,6 +2177,10 @@ function M._send_images_impl()
             virtual = image.virtual == true,
             win_left = win_left_col,
             win_width = measure_w.width,
+            -- Owning window's row band: lets the GUI crop at the window top even
+            -- when grid_row is offscreen (or inside another window's band).
+            win_top = win_top_row,
+            win_height = measure_w.height or (measure_w.botline - measure_w.topline + 1),
             text_offset = measure_w.textoff,
             path = image.path,
             source_width = image.source_width,
@@ -2318,10 +2365,19 @@ function M.get_layout_sig()
       local height = cfg.height or info.height or 0
       local ft = vim.bo[buf].filetype or ''
       local changedtick = vim.b[buf].changedtick or 0
+      -- topfill: scrolling row-by-row through reservation virt_lines changes the
+      -- on-screen anchor of a partially-visible block without touching topline/
+      -- botline, and WinScrolled's v:event does not track it either -- this sig
+      -- is the only resync path for those scrolls.
+      local topfill = 0
+      local okf, tf = pcall(vim.api.nvim_win_call, w, function()
+        return vim.fn.winsaveview().topfill
+      end)
+      if okf then topfill = tonumber(tf) or 0 end
       s[#s + 1] = table.concat({
         tostring(w), tostring(buf), tostring(relative), tostring(row), tostring(col),
         tostring(width), tostring(height), tostring(info.topline or 0),
-        tostring(info.botline or 0), ft, tostring(changedtick),
+        tostring(info.botline or 0), tostring(topfill), ft, tostring(changedtick),
       }, ':')
     end
   end
