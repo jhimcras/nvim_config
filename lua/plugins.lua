@@ -468,7 +468,7 @@ function M.setup()
                 split = {
                     -- position is auto-selected from the source window's aspect:
                     -- landscape ⇒ right (vertical), portrait ⇒ bottom (horizontal).
-                    size      = 0.25,         -- 'half' | 0<n<1 fraction of editor | n≥1 absolute cols/rows
+                    size      = 0.20,         -- 'half' | 0<n<1 fraction of editor | n≥1 absolute cols/rows
                     lifecycle = 'cursor',    -- 'cursor' (open/close with block) | 'persistent' (pane stays, keeps last)
                 },
             },
