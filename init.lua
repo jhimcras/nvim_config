@@ -48,6 +48,7 @@ local function BasicSettings()
     vim.o.winblend = 20
     vim.o.winborder = 'rounded'
     vim.o.jumpoptions = 'stack,clean'
+    vim.o.equalalways = false
 
     -- Disabling standard plugins
     vim.g.loaded_netrw = 1
