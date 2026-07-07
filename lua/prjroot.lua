@@ -61,7 +61,7 @@ end
 
 function M.setup()
     ut.nnoremap('<m-t>v', function() ut.OpenProjectRootTerminal('vertical') end)
-    ut.nnoremap('<m-t>x', function() ut.OpenProjectRootTerminal('horizontal') end)
+    ut.nnoremap('<m-t>h', function() ut.OpenProjectRootTerminal('horizontal') end)
     ut.nnoremap('<m-t>t', function() ut.OpenProjectRootTerminal('tab') end)
     vim.api.nvim_create_autocmd({'BufRead', 'BufNew'}, {pattern = '.prjroot', callback = function() vim.bo.filetype = 'lua' end})
     vim.api.nvim_create_user_command('PrjRootConfig', function(t) vim.cmd.vsplit {mods = t.smods, args = {(M.GetCurrentProjectRoot() or '.') .. '/.prjroot'}} end, {})

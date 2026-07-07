@@ -377,7 +377,7 @@ local function FugitiveSetting()
         vim.notify('Not in a fugitive history buffer', vim.log.levels.WARN)
     end
     vim.api.nvim_create_user_command('GclogBack', gclog_back, {})
-    ut.nnoremap('<leader>gb', gclog_back)
+    -- ut.nnoremap('<leader>gb', gclog_back)
 end
 
 function M.setup()

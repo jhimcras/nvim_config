@@ -142,9 +142,6 @@ local function KeyMappings()
     ut.nnoremap('<LeftDrag>', '<NOP>')
     ut.nnoremap('<LeftRelease>', '<NOP>')
 
-    -- Easy yanking start from current position
-    ut.nnoremap('Y', 'y$')
-
     -- Easy to switch between windows
     ut.nnoremap('<c-h>', '<c-w><c-h>')
     ut.nnoremap('<c-j>', '<c-w><c-j>')
@@ -162,10 +159,10 @@ local function KeyMappings()
     -- For convinient
     ut.noremap('H', '^')
     ut.noremap('L', 'g_')
-    ut.inoremap('<C-k>', '<Up>')
-    ut.inoremap('<C-j>', '<Down>')
-    ut.inoremap('<C-h>', '<Left>')
-    ut.inoremap('<C-l>', '<Right>')
+    -- ut.inoremap('<C-k>', '<Up>')
+    -- ut.inoremap('<C-j>', '<Down>')
+    -- ut.inoremap('<C-h>', '<Left>')
+    -- ut.inoremap('<C-l>', '<Right>')
     ut.vnoremap('>', '>gv')
     ut.vnoremap('<', '<gv')
     -- ut.nnoremap('<ESC>', '<CMD>nohlsearch<CR>')
@@ -178,9 +175,7 @@ local function KeyMappings()
 
     -- Escaping Windows folder seperators
     -- TODO: Make it works on visual mode
-    if env.os.win then
-        ut.nnoremap('<leader>ds', [[<cmd>s/\\/\\\\/g<cr>]])
-    end
+    ut.nnoremap('<leader>s/', [[<cmd>s/\\/\\\\/g<cr>]])
 
     -- Quicker <Esc> in insert mode
     --inoremap('jk', '<Esc>')
@@ -205,10 +200,6 @@ local function KeyMappings()
     ut.nnoremap('<M-right>', '<C-w>L')
     ut.nnoremap('<M-up>', '<C-w>K')
     ut.nnoremap('<M-down>', '<C-w>J')
-
-    -- Change current working directory locally and print cwd after that,
-    -- see https://vim.fandom.com/wiki/Set_working_directory_to_the_current_file
-    ut.nnoremap('<leader>cd', ':lcd %:p:h<CR>:pwd<CR>')
 
     -- Use Esc to quit builtin terminal
     ut.tnoremap('<ESC>', [[<C-\><C-n>]])
@@ -249,16 +240,9 @@ local function KeyMappings()
         vim.fn.jobstart(args, { detach = true })
     end, { nargs = '?', complete = 'file' })
 
-    ut.nnoremap('<leader><leader>', function() vim.notify(os.date("%F %T"), vim.log.levels.INFO) end)
-
     ut.nnoremap('<c-+>', function() vim.g.neovide_scale_factor = vim.g.neovide_scale_factor * 1.25 end)
     ut.nnoremap('<c-->', function() vim.g.neovide_scale_factor = vim.g.neovide_scale_factor * (1/1.25) end)
     ut.nnoremap('<c-0>', function() vim.g.neovide_scale_factor = 1.0 end)
-
-    -- IME state is now detected by neopp (Windows IMM / Linux ibus) and exposed
-    -- as vim.g.neopp_ime; the statusline (lua/status.lua) renders it. This just
-    -- echoes the current value for debugging.
-    ut.nnoremap('<leader>ccc', function() print(vim.g.neopp_ime or '(unset)') end)
 
     ut.nnoremap('<esc>', function()
         for _, win in ipairs(vim.api.nvim_list_wins()) do

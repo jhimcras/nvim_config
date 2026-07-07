@@ -416,8 +416,8 @@ function M.setup()
     ut.nnoremap('<leader>gg', function() prompt_grep(false) end)
     ut.nnoremap('<leader>gw', function() prompt_grep(true) end)
 
-    ut.vnoremap('<leader>s', function() M.asyncGrep(ut.GetSelectWord(), false, vim.fn.win_getid()) end)
-    ut.nnoremap('<leader>s', function() M.asyncGrep(vim.fn.expand('<cword>'), true, vim.fn.win_getid()) end)
+    ut.vnoremap('<leader>g', function() M.asyncGrep(ut.GetSelectWord(), false, vim.fn.win_getid()) end)
+    ut.nnoremap('<leader>gc', function() M.asyncGrep(vim.fn.expand('<cword>'), true, vim.fn.win_getid()) end)
 
     local function filter_list(get_items, set_items, pat, bang)
         local items = get_items()
