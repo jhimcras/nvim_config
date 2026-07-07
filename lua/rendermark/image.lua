@@ -2256,13 +2256,16 @@ function M._send_images_impl()
             end
           end
           payload[#payload + 1] = {
-            -- Identity is the logical image (buf:row:col:path) only. The display size
-            -- is NOT part of the id: neopp keys its decode cache on path+size and remaps
-            -- the id to the new size on every set, so a size change (e.g. cell-metric
-            -- settling or a mid-scroll re-fit) is an in-place update instead of a
-            -- del+re-alloc of the same image -- which otherwise churns the overlay and
-            -- blinks the image for a frame while it slides.
-            id = 'buf:' .. payload_buf .. ':' .. image.row .. ':' .. image.col .. ':' .. stable_hash(image.path),
+            -- Identity is the logical image per window (buf:row:col:path scoped by
+            -- the owning window). The window handle scopes it so the SAME buffer shown
+            -- in several split windows yields a distinct placement (id) each -- otherwise
+            -- the per-window entries collide on one id and only the last window's image
+            -- draws. The display size is NOT part of the id: neopp keys its decode cache
+            -- on path+size and remaps the id to the new size on every set, so a size
+            -- change (e.g. cell-metric settling or a mid-scroll re-fit) is an in-place
+            -- update instead of a del+re-alloc of the same image -- which otherwise
+            -- churns the overlay and blinks the image for a frame while it slides.
+            id = 'buf:' .. payload_buf .. ':win:' .. info.win .. ':' .. image.row .. ':' .. image.col .. ':' .. stable_hash(image.path),
             buf = payload_buf,
             row = image.row,
             col = image.col,

@@ -1325,6 +1325,90 @@ describe('get_layout_sig topfill', function()
   end)
 end)
 
+describe('same buffer in multiple windows', function()
+  local FENCE = 10
+  local FENCE_END = 16
+
+  local TALL_PNG = bytes({
+    137, 80, 78, 71, 13, 10, 26, 10,
+    0, 0, 0, 13,
+    73, 72, 68, 82,
+    0, 0, 0, 100,
+    0, 0, 2, 88,   -- height = 600
+  })
+
+  local function make_buf()
+    local lines = {}
+    for i = 1, FENCE do lines[#lines + 1] = 'intro ' .. i end
+    lines[#lines + 1] = '```plantuml'
+    lines[#lines + 1] = '@startuml'
+    lines[#lines + 1] = 'a -> b'
+    lines[#lines + 1] = 'b -> c'
+    lines[#lines + 1] = 'c -> d'
+    lines[#lines + 1] = '@enduml'
+    lines[#lines + 1] = '```'
+    for i = 1, 30 do lines[#lines + 1] = 'outro ' .. i end
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].filetype = 'markdown'
+    return buf
+  end
+
+  it('draws the image once per window (distinct per-window ids)', function()
+    local old_ui = vim.ui
+    local old_store = rawget(_G, '__rendermark_image_backend')
+    rawset(_G, '__rendermark_image_backend', nil)
+    local img = fresh_image()
+    local store = {}
+    vim.ui = {
+      img = {
+        set = function(id, path, opts) store[id] = { path = path, opts = opts } end,
+        del = function(id) store[id] = nil end,
+        get = function(id) return store[id] end,
+      },
+    }
+    local buf = make_buf()
+    local png = tmpfile(TALL_PNG)
+    img.collect_plantuml_images = function(target, result)
+      if target ~= buf then return end
+      result[#result + 1] = {
+        row = FENCE, col = 0, end_col = 12, path = png, raw_path = png,
+        source_width = 100, source_height = 600,
+        source_span_height = FENCE_END - FENCE + 1, plantuml = true,
+        plantuml_end_row = FENCE_END, virtual = false,
+      }
+    end
+
+    -- Two windows, both showing the SAME buffer, both with the block visible.
+    vim.cmd('new')
+    local win1 = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win1, buf)
+    vim.cmd('resize 15')
+    vim.cmd('vsplit')
+    local win2 = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win2, buf)
+
+    img.send_images()  -- first send reserves virt_lines, skips apply
+    img.send_images()  -- second send applies the payload
+
+    -- One inline-image placement must survive per window. Keying the id on the
+    -- buffer alone collapses both windows' placements into one, so the image
+    -- draws in only a single window.
+    local ids = {}
+    for id in pairs(store) do
+      if id:sub(1, 4) == 'buf:' then ids[#ids + 1] = id end
+    end
+    assert.equals(2, #ids)
+    assert.are_not.equals(ids[1], ids[2])
+
+    pcall(vim.api.nvim_win_close, win2, true)
+    pcall(vim.api.nvim_win_close, win1, true)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    vim.ui = old_ui
+    rawset(_G, '__rendermark_image_backend', old_store)
+  end)
+end)
+
 describe('preview_active (show/hide state machine)', function()
   it('follows the configured auto flag when no override is set', function()
     local img = fresh_image()
