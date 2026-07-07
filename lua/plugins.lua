@@ -466,9 +466,10 @@ function M.setup()
                 mode = 'split',            -- 'float' (default, unchanged) | 'split'
                 auto = true,               -- auto-open when cursor enters a block
                 split = {
-                    position  = 'right',     -- 'left'/'right' ⇒ vertical, 'top'/'bottom' ⇒ horizontal
+                    -- position is auto-selected from the source window's aspect:
+                    -- landscape ⇒ right (vertical), portrait ⇒ bottom (horizontal).
                     size      = 0.25,         -- 'half' | 0<n<1 fraction of editor | n≥1 absolute cols/rows
-                    lifecycle = 'persistent',-- 'persistent' (pane stays, keeps last) | 'cursor' (open/close with block)
+                    lifecycle = 'cursor',    -- 'cursor' (open/close with block) | 'persistent' (pane stays, keeps last)
                 },
             },
         },

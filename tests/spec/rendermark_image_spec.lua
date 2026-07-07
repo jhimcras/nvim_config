@@ -773,14 +773,14 @@ describe('preview_config (setup normalization)', function()
     return img.preview_config()
   end
 
-  it('defaults to float/auto with a right vertical persistent split', function()
+  it('defaults to float/auto with a right vertical cursor split', function()
     local c = cfg(nil)
     assert.equals('float', c.mode)
     assert.equals(true, c.auto)
     assert.equals('right', c.split.position)
     assert.equals('vertical', c.split.direction)
     assert.equals(0.5, c.split.size)
-    assert.equals('persistent', c.split.lifecycle)
+    assert.equals('cursor', c.split.lifecycle)
   end)
 
   it('falls back to float for an unknown mode', function()
@@ -803,14 +803,14 @@ describe('preview_config (setup normalization)', function()
     assert.equals('horizontal', cfg({ split = { position = 'bottom' } }).split.direction)
   end)
 
-  it('respects auto = false and the cursor lifecycle', function()
-    local c = cfg({ auto = false, split = { lifecycle = 'cursor' } })
+  it('respects auto = false and an explicit persistent lifecycle', function()
+    local c = cfg({ auto = false, split = { lifecycle = 'persistent' } })
     assert.equals(false, c.auto)
-    assert.equals('cursor', c.split.lifecycle)
+    assert.equals('persistent', c.split.lifecycle)
   end)
 
-  it('falls back to persistent for an invalid lifecycle', function()
-    assert.equals('persistent', cfg({ split = { lifecycle = 'wat' } }).split.lifecycle)
+  it('falls back to cursor for an invalid lifecycle', function()
+    assert.equals('cursor', cfg({ split = { lifecycle = 'wat' } }).split.lifecycle)
   end)
 end)
 
@@ -833,6 +833,28 @@ describe('resolve_split_size', function()
     assert.equals(60, image.resolve_split_size(0, 120))
     assert.equals(60, image.resolve_split_size(-1, 120))
     assert.equals(60, image.resolve_split_size('nope', 120))
+  end)
+end)
+
+describe('smart_split_direction', function()
+  it('opens a horizontal split (preview bottom) for a portrait window', function()
+    -- 80x50 cells at 10x18px = 800x900px: taller than wide.
+    assert.equals('horizontal', image.smart_split_direction(80, 50, 10, 18))
+  end)
+
+  it('opens a vertical split (preview right) for a landscape window', function()
+    -- 120x20 cells at 10x18px = 1200x360px: wider than tall.
+    assert.equals('vertical', image.smart_split_direction(120, 20, 10, 18))
+  end)
+
+  it('compares pixel extents, not raw cell counts', function()
+    -- 50x40 cells: more columns than rows, but 500x720px in pixels -> portrait.
+    assert.equals('horizontal', image.smart_split_direction(50, 40, 10, 18))
+  end)
+
+  it('falls back to default cell metrics when unset', function()
+    -- nil cell sizes -> defaults 10x18; 50x40 -> 500x720 -> horizontal.
+    assert.equals('horizontal', image.smart_split_direction(50, 40, nil, nil))
   end)
 end)
 

@@ -47,7 +47,7 @@ local preview_defaults = {
   split = {
     position = 'right',      -- 'left'|'right' (vertical) | 'top'|'bottom' (horizontal)
     size = 0.5,              -- 'half' | 0<n<1 fraction of editor | n>=1 absolute cells
-    lifecycle = 'persistent',-- 'persistent' (reuse pane, keep last when outside) | 'cursor'
+    lifecycle = 'cursor',    -- 'cursor' (close when cursor leaves the block) | 'persistent' (reuse pane, keep last when outside)
   },
 }
 local preview_cfg = vim.deepcopy(preview_defaults)
@@ -70,7 +70,7 @@ local function normalize_preview(opts)
   sp.direction = (pos == 'left' or pos == 'right') and 'vertical' or 'horizontal'
   if sp.size == 'half' then sp.size = 0.5 end
   if type(sp.size) ~= 'number' or sp.size <= 0 then sp.size = 0.5 end
-  if sp.lifecycle ~= 'cursor' then sp.lifecycle = 'persistent' end
+  if sp.lifecycle ~= 'persistent' then sp.lifecycle = 'cursor' end
   return cfg
 end
 
@@ -113,6 +113,18 @@ function M.center_in_rect(rect, image, cell_w, cell_h)
     col = (tonumber(rect.col) or 0) + math.floor((avail_w - pw) / 2),
     width = pw, height = ph, disp_w = disp_w, disp_h = disp_h,
   }
+end
+
+-- Choose the preview split orientation from the SOURCE window's pixel aspect.
+-- A portrait (taller-than-wide) window opens a vertical split (preview on the
+-- right); a landscape window opens a horizontal split (preview on top). Cells
+-- are not square, so compare pixel extents, not raw cell counts.
+function M.smart_split_direction(w_cells, h_cells, cell_w, cell_h)
+  cell_w = math.max(1, tonumber(cell_w) or 10)
+  cell_h = math.max(1, tonumber(cell_h) or 18)
+  local w_px = math.max(1, tonumber(w_cells) or 1) * cell_w
+  local h_px = math.max(1, tonumber(h_cells) or 1) * cell_h
+  return (w_px >= h_px) and 'vertical' or 'horizontal'
 end
 
 -- ---------------------------------------------------------------------------
@@ -1474,8 +1486,29 @@ local function plantuml_debounce_active(buf, block)
   return nil
 end
 
+-- Keep global 'equalalways' disabled for as long as a preview split is open, so
+-- that carving it (open) and removing it (close -- including a user <C-w>z) resizes
+-- only the source window; sibling windows keep their size. The original value is
+-- stashed on the buffer's state and restored once the preview is gone.
+local function preview_suppress_equalize(st)
+  if st.saved_equalalways == nil then
+    st.saved_equalalways = vim.o.equalalways
+    vim.o.equalalways = false
+  end
+end
+local function preview_restore_equalize(st)
+  if st.saved_equalalways ~= nil then
+    vim.o.equalalways = st.saved_equalalways
+    st.saved_equalalways = nil
+  end
+end
+
 local function plantuml_close_float(st)
-  if not st or not st.float then return end
+  if not st then return end
+  if not st.float then preview_restore_equalize(st); return end
+  -- Mark this as a programmatic teardown so the WinClosed handler does not treat
+  -- it as a user <C-w>z dismissal.
+  st.programmatic_close = true
   if st.float.win and vim.api.nvim_win_is_valid(st.float.win) then
     pcall(function()
       delete_image(vim.w[st.float.win].rendermark_plantuml_preview_image_id)
@@ -1487,6 +1520,8 @@ local function plantuml_close_float(st)
     pcall(vim.api.nvim_buf_delete, st.float.buf, { force = true })
   end
   st.float = nil
+  st.programmatic_close = false
+  preview_restore_equalize(st)
 end
 
 -- Open (or refresh) the preview carrier float for the active block. The
@@ -1544,6 +1579,7 @@ local split_dir_map = { left = 'left', right = 'right', top = 'above', bottom = 
 local function plantuml_open_split(buf, win, block, png)
   local st = plantuml_state_for(buf)
   local line = (vim.api.nvim_buf_get_lines(buf, block.start_row, block.start_row + 1, false) or {})[1] or ''
+  local block_id = tostring(block.start_row) .. ':' .. tostring(block.end_row)
   local meta = {
     buf = buf,
     win = win,
@@ -1554,8 +1590,20 @@ local function plantuml_open_split(buf, win, block, png)
   }
   local link = '![plantuml](' .. png:gsub('\\', '/') .. ')'
 
-  -- Reuse the existing split pane (persistent lifecycle / re-renders); just
-  -- refresh its image link and the source metadata.
+  -- Record the source block on st.float so active-block resolution can keep the
+  -- preview alive while focus is inside the preview window, and so the WinClosed
+  -- dismissal handler knows which block was dismissed.
+  local function stamp_source(f)
+    f.source_win = win
+    f.source_buf = buf
+    f.start_row = block.start_row
+    f.end_row = block.end_row
+    f.block_id = block_id
+  end
+
+  -- Reuse the existing split pane (re-renders); just refresh its image link and
+  -- the source metadata. Orientation of an existing pane is kept as-is; a new
+  -- orientation is only chosen when the pane is (re)opened from closed.
   if st.float and st.float.kind == 'split'
       and st.float.win and vim.api.nvim_win_is_valid(st.float.win)
       and st.float.buf and vim.api.nvim_buf_is_valid(st.float.buf) then
@@ -1565,15 +1613,23 @@ local function plantuml_open_split(buf, win, block, png)
       pcall(function() vim.bo[st.float.buf].modifiable = false end)
       st.float.path = png
     end
+    stamp_source(st.float)
     pcall(function() vim.w[st.float.win].rendermark_plantuml_preview_source = meta end)
     return
   end
   plantuml_close_float(st)
 
-  local cfg = preview_cfg.split
-  local vertical = cfg.direction == 'vertical'
+  -- Smart position from the SOURCE window's pixel aspect: landscape -> vertical
+  -- split (preview right), portrait -> horizontal split (preview bottom).
+  local ok_w, w_cells = pcall(vim.api.nvim_win_get_width, win)
+  local ok_h, h_cells = pcall(vim.api.nvim_win_get_height, win)
+  local direction = M.smart_split_direction(
+    ok_w and w_cells or vim.o.columns, ok_h and h_cells or vim.o.lines,
+    vim.g.neopp_cell_width_px, vim.g.neopp_cell_height_px)
+  local vertical = direction == 'vertical'
+  local position = vertical and 'right' or 'bottom'
   local total = vertical and (tonumber(vim.o.columns) or 80) or (tonumber(vim.o.lines) or 24)
-  local size = M.resolve_split_size(cfg.size, total)
+  local size = M.resolve_split_size(preview_cfg.split.size, total)
 
   local fbuf = vim.api.nvim_create_buf(false, true)
   vim.bo[fbuf].buftype = 'nofile'
@@ -1582,10 +1638,14 @@ local function plantuml_open_split(buf, win, block, png)
   vim.api.nvim_buf_set_lines(fbuf, 0, -1, false, { link })
   vim.bo[fbuf].modifiable = false
 
-  local wcfg = { split = split_dir_map[cfg.position] or 'right', win = win }
+  local wcfg = { split = split_dir_map[position], win = win }
   if vertical then wcfg.width = size else wcfg.height = size end
+  -- Carve the split without re-equalizing sibling windows (only `win` shrinks);
+  -- equalize stays suppressed until the preview closes (see plantuml_close_float).
+  preview_suppress_equalize(st)
   local ok, fwin = pcall(vim.api.nvim_open_win, fbuf, false, wcfg)
-  if not ok then
+  if not ok or not fwin then
+    preview_restore_equalize(st)
     pcall(vim.api.nvim_buf_delete, fbuf, { force = true })
     return
   end
@@ -1593,11 +1653,15 @@ local function plantuml_open_split(buf, win, block, png)
     number = false, relativenumber = false, wrap = false, list = false,
     cursorline = false, signcolumn = 'no',
     winfixwidth = vertical, winfixheight = not vertical,
+    -- A real preview window: closable with <C-w>z / :pclose, no custom keymap.
+    -- May raise E590 if a preview window already exists; pcall degrades quietly.
+    previewwindow = true,
   }) do
     pcall(vim.api.nvim_set_option_value, opt, val, { win = fwin })
   end
   pcall(function() vim.w[fwin].rendermark_plantuml_preview_source = meta end)
   st.float = { buf = fbuf, win = fwin, path = png, kind = 'split' }
+  stamp_source(st.float)
 end
 
 function M.plantuml_cleanup_buf(buf)
@@ -1616,15 +1680,28 @@ end
 -- stale cursor must not keep the preview floating over the new UI.
 local function plantuml_active_block(buf, blocks)
   local cur = vim.api.nvim_get_current_win()
-  if not (vim.api.nvim_win_is_valid(cur) and vim.api.nvim_win_get_buf(cur) == buf) then
+  if not vim.api.nvim_win_is_valid(cur) then return nil, nil end
+
+  -- Focus in the source window with the cursor inside a block: that block is active.
+  if vim.api.nvim_win_get_buf(cur) == buf then
+    local row = vim.api.nvim_win_get_cursor(cur)[1] - 1
+    for _, block in ipairs(blocks) do
+      if row >= block.start_row and row <= block.end_row then
+        return block, cur
+      end
+    end
     return nil, nil
   end
-  local row = vim.api.nvim_win_get_cursor(cur)[1] - 1
-  for _, block in ipairs(blocks) do
-    if row >= block.start_row and row <= block.end_row then
-      return block, cur
-    end
+
+  -- Focus inside our own preview window: keep the block it was built for alive so
+  -- the preview stays open, attributed to the still-valid source window. Moving
+  -- focus to any other (third) window falls through to nil and closes it.
+  local st = plantuml_states[buf]
+  if st and st.float and st.float.win == cur
+      and st.float.source_win and vim.api.nvim_win_is_valid(st.float.source_win) then
+    return { start_row = st.float.start_row, end_row = st.float.end_row }, st.float.source_win
   end
+
   return nil, nil
 end
 
@@ -1656,7 +1733,27 @@ function M.collect_plantuml_images(buf, result, errors)
     end
   end
 
+  local st = plantuml_state_for(buf)
+
+  -- Install the buffer-local reopen keymap once. After the user dismisses the
+  -- preview with <C-w>z, `gpp` clears the dismissal and re-opens it.
+  if not st.mapped then
+    st.mapped = true
+    pcall(vim.keymap.set, 'n', 'gpp', function()
+      local s = plantuml_states[buf]
+      if s then s.dismissed_id = nil end
+      M.send_images()
+    end, { buffer = buf, desc = 'Reopen the PlantUML preview for the current block' })
+  end
+
   local active_block, active_win = plantuml_active_block(buf, blocks)
+  local active_id = active_block
+    and (tostring(active_block.start_row) .. ':' .. tostring(active_block.end_row)) or nil
+  -- Drop a stale dismissal once the cursor leaves the dismissed block, so
+  -- re-entering it re-opens the preview.
+  if st.dismissed_id and st.dismissed_id ~= active_id then
+    st.dismissed_id = nil
+  end
   local active_floated = false
 
   for _, block in ipairs(blocks) do
@@ -1665,8 +1762,8 @@ function M.collect_plantuml_images(buf, result, errors)
     if is_active then
       -- Leave the source raw for editing; show a preview (float or split) instead.
       -- The block text changes while typing, so debounce its render. Honor the
-      -- show/hide state (M.preview_active()).
-      if M.preview_active() then
+      -- show/hide state (M.preview_active()) and any user dismissal of this block.
+      if M.preview_active() and not st.dismissed_id then
         local entry = plantuml_debounce_active(buf, block)
         if entry and entry.status == 'ready' then
           if preview_cfg.mode == 'split' then
@@ -2342,6 +2439,14 @@ end
 function M.cursor_active_block_sig()
   local win = vim.api.nvim_get_current_win()
   if not vim.api.nvim_win_is_valid(win) then return '' end
+  -- Focus inside a preview window: mirror the sig of its source block, so moving
+  -- focus source<->preview within one block yields an identical sig and does not
+  -- thrash the render.
+  for _, st in pairs(plantuml_states) do
+    if st.float and st.float.win == win and st.float.source_win and st.float.block_id then
+      return tostring(st.float.source_win) .. '@' .. tostring(st.float.source_buf) .. '=' .. st.float.block_id
+    end
+  end
   local buf = vim.api.nvim_win_get_buf(win)
   local name = vim.api.nvim_buf_get_name(buf)
   local ext = vim.fn.fnamemodify(name, ':e'):lower()
@@ -2533,6 +2638,28 @@ function M._init()
   vim.api.nvim_create_autocmd(
     { 'WinScrolled', 'WinResized', 'WinNew', 'BufWinEnter', 'WinClosed' },
     { group = autocmd_group, callback = function() M.schedule_image_sync() end })
+
+  -- User dismissal of the preview (<C-w>z / :pclose). This fires synchronously
+  -- during the close, while st.programmatic_close is only true mid-teardown -- so
+  -- it must NOT be scheduled. A user close suppresses auto-reopen until the cursor
+  -- leaves the dismissed block.
+  vim.api.nvim_create_autocmd('WinClosed', {
+    group = autocmd_group,
+    callback = function(args)
+      local closed = tonumber(args.match)
+      if not closed then return end
+      for _, st in pairs(plantuml_states) do
+        if st.float and st.float.win == closed then
+          if not st.programmatic_close then
+            st.dismissed_id = st.float.block_id
+            st.float = nil
+            preview_restore_equalize(st)
+          end
+          break
+        end
+      end
+    end,
+  })
 
   vim.api.nvim_create_autocmd(
     { 'CursorMoved', 'CursorMovedI' },
