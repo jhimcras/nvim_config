@@ -456,7 +456,7 @@ function M.setup()
     require'session'.setup()
     require'status'.setup()
     require'file_info'.setup()
-    require'smart_colorcolumn'.setup(120)
+    -- require'smart_colorcolumn'.setup(120)
     require'smart_cursorline'.setup()
     require'lsp_setting'.setup()
     require'rendermark'.setup{
