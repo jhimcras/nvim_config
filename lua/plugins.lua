@@ -367,7 +367,8 @@ local function FugitiveSetting()
     local ut = require'util'
     local function gclog_back()
         local bufname = vim.api.nvim_buf_get_name(0)
-        if bufname:match('^fugitive://') then
+        local normalized = bufname:gsub('\\', '/'):lower()
+        if normalized:match('^fugitive://') then
             local real = vim.fn['fugitive#Real'](bufname)
             if real ~= '' then
                 vim.cmd('edit ' .. vim.fn.fnameescape(real))
