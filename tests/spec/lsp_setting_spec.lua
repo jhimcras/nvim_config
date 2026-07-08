@@ -189,6 +189,10 @@ describe('lsp_setting', function()
             assert.is_true(on_attach_with_buffer('fugitive:///repo/.git//0/main.cpp'))
         end)
 
+        it('detaches from a Windows fugitive blob buffer with backslash separators', function()
+            assert.is_true(on_attach_with_buffer([[fugitive:\\\D:\Source\proj\.git\\0\main.cpp]]))
+        end)
+
         it('does not detach from a normal file buffer', function()
             assert.is_false(on_attach_with_buffer('/repo/main.cpp'))
         end)

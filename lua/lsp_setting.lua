@@ -87,9 +87,18 @@ local function reference_highlighting()
     api.nvim_create_autocmd('CursorMoved', { buffer = 0, callback = function() vim.lsp.buf.clear_references() end })
 end
 
+-- Fugitive names its blob buffers with the OS path separator, so on Windows
+-- they look like `fugitive:\\\D:\...` rather than `fugitive://...`. Normalize
+-- backslashes before probing for a URI scheme (see commit 7bbc710), otherwise
+-- these buffers slip past the guard and clangd errors on their non-file URIs.
+local function has_uri_scheme(bufnr)
+    local name = vim.api.nvim_buf_get_name(bufnr):gsub('\\', '/')
+    return name:match('^%a[%w+.-]*://') ~= nil
+end
+
 local function make_on_attach(extras)
     return function(client, bufnr)
-        if vim.bo[bufnr].buftype ~= '' or ut.GetBufferProtocol(bufnr) then
+        if vim.bo[bufnr].buftype ~= '' or has_uri_scheme(bufnr) then
             vim.lsp.buf_detach_client(bufnr, client.id)
             return
         end
