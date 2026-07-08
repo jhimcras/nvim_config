@@ -358,7 +358,7 @@ function M.setup()
             if winid == -1 then return end
             if vim.bo[ev.buf].buftype ~= 'quickfix' then return end
             local winfo = vim.fn.getwininfo(winid)[1]
-            if not winfo or winfo.loclist ~= 1 then return end
+            if not winfo then return end
             -- Propagate loclist_tag from origin window if not already set.
             -- Also restore origin's tag from origin_tags when loclist is reopened
             -- after being closed (e.g. via lopen after lclose).
