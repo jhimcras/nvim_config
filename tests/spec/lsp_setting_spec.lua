@@ -129,4 +129,68 @@ describe('lsp_setting', function()
             assert.is_false(lua_config.settings.Lua.workspace.checkThirdParty)
         end)
     end)
+
+    describe('clangd on_attach guard', function()
+        local original_executable
+        local original_lsp_config
+        local original_lsp_enable
+        local original_lsp_log_set_level
+        local original_diagnostic_config
+        local original_luals
+        local original_buf_detach_client
+
+        before_each(function()
+            original_executable = vim.fn.executable
+            original_lsp_config = vim.lsp.config
+            original_lsp_enable = vim.lsp.enable
+            original_lsp_log_set_level = vim.lsp.log.set_level
+            original_diagnostic_config = vim.diagnostic.config
+            original_luals = vim.env.LUALS
+            original_buf_detach_client = vim.lsp.buf_detach_client
+
+            vim.env.LUALS = '/opt/lua-language-server'
+            vim.fn.executable = function(cmd) return cmd == 'clangd' and 1 or 0 end
+            vim.lsp.config = setmetatable({}, { __call = function() end })
+            vim.lsp.enable = function() end
+            vim.lsp.log.set_level = function() end
+            vim.diagnostic.config = function() end
+        end)
+
+        after_each(function()
+            vim.fn.executable = original_executable
+            vim.lsp.config = original_lsp_config
+            vim.lsp.enable = original_lsp_enable
+            vim.lsp.log.set_level = original_lsp_log_set_level
+            vim.diagnostic.config = original_diagnostic_config
+            vim.env.LUALS = original_luals
+            vim.lsp.buf_detach_client = original_buf_detach_client
+        end)
+
+        local function on_attach_with_buffer(bufname)
+            lsp_setting.setup()
+            local clangd_config = vim.lsp.config.clangd
+            assert.is_table(clangd_config)
+
+            local bufnr = vim.api.nvim_create_buf(false, true)
+            vim.api.nvim_buf_set_name(bufnr, bufname)
+            vim.bo[bufnr].buftype = ''
+            vim.api.nvim_set_current_buf(bufnr)
+
+            local detached = false
+            vim.lsp.buf_detach_client = function() detached = true end
+
+            clangd_config.on_attach({ id = 1 }, bufnr)
+
+            vim.api.nvim_buf_delete(bufnr, { force = true })
+            return detached
+        end
+
+        it('detaches from a fugitive blob buffer despite its empty buftype', function()
+            assert.is_true(on_attach_with_buffer('fugitive:///repo/.git//0/main.cpp'))
+        end)
+
+        it('does not detach from a normal file buffer', function()
+            assert.is_false(on_attach_with_buffer('/repo/main.cpp'))
+        end)
+    end)
 end)

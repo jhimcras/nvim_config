@@ -89,6 +89,10 @@ end
 
 local function make_on_attach(extras)
     return function(client, bufnr)
+        if vim.bo[bufnr].buftype ~= '' or ut.GetBufferProtocol(bufnr) then
+            vim.lsp.buf_detach_client(bufnr, client.id)
+            return
+        end
         general_mappings()
         reference_highlighting()
         if extras then extras(client, bufnr) end
@@ -108,18 +112,12 @@ local function on_init(client, initialize_result)
 end
 
 
-local function on_attach_clangd(client, bufnr)
-    if vim.bo[bufnr].buftype ~= '' then
-        vim.lsp.buf_detach_client(bufnr, client.id)
-        return
-    end
-    general_mappings()
+local on_attach_clangd = make_on_attach(function(client, bufnr)
     vim.api.nvim_buf_create_user_command(0, 'ClangdSwitchSourceHeader', function() switch_source_header(0) end, { desc = 'Switch between source/header' })
     ut.nnoremap('<m-o>', '<cmd>ClangdSwitchSourceHeader<cr>', { 'buffer' })
     ut.nnoremap('<m-O>', '<cmd>vertical split<cr><cmd>ClangdSwitchSourceHeader<cr>', { 'buffer' })
-    reference_highlighting()
     vim.bo.formatexpr = 'v:lua.vim.lsp.formatexpr()'
-end
+end)
 
 local on_attach_lua = make_on_attach(nil)
 
