@@ -269,6 +269,17 @@ function M.setup()
     -- Set flag before paint_tabs runs so auto-scroll applies on tab navigation
     vim.api.nvim_create_autocmd('TabEnter', { callback = function() auto_scroll_next = true end })
     vim.api.nvim_create_autocmd({'TabEnter', 'TabLeave', 'TabClosed'}, { callback = paint_tabs })
+    -- :tabmove/:tabm reorders tabs without firing TabEnter/TabLeave/TabClosed, so the
+    -- tabline goes stale; catch it via the typed command line and repaint after it runs.
+    vim.api.nvim_create_autocmd('CmdlineLeave', {
+        pattern = ':',
+        callback = function()
+            if vim.v.event.abort then return end
+            if vim.fn.getcmdline():match('^%s*tabm') then
+                vim.schedule(paint_tabs)
+            end
+        end,
+    })
     vim.api.nvim_create_autocmd({'WinEnter', 'WinLeave', 'BufNew', 'BufEnter', 'BufLeave'}, { callback = paint_content })
     vim.api.nvim_create_autocmd('SessionLoadPost', { callback = paint_session })
     -- neopp publishes IME state via vim.g.neopp_ime and fires this on every toggle;
