@@ -56,6 +56,7 @@ local function OilSetting()
             ['ss'] = { callback = function() toggle_sort('size')  end },
             ['st'] = { callback = function() toggle_sort('mtime') end },
             ['sn'] = { callback = function() toggle_sort('name')  end },
+            ['_'] = { callback = function() vim.cmd.vsplit(); end },
         },
     }
     vim.keymap.set("n", "-", function() oil.open() end)
