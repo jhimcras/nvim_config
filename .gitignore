@@ -9,3 +9,4 @@ backup
 packer_compiled.lua
 result_*.txt
 repro_result.txt
+HANDOFF.md
