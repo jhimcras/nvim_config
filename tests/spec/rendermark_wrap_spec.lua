@@ -63,6 +63,51 @@ describe('wrap.wrap_line', function()
         assert.are.same({ 'yyyy' }, r.lines)
         assert.are.same({ { 5, 9 } }, r.spans)
     end)
+
+    it('ignores concealed marker width when runs are supplied', function()
+        -- '**' at bytes [3,5) and [6,8) are concealed -> visible width 7.
+        local text = 'xx **b** yy'
+        local runs = {
+            { s = 3, e = 5, conceal = '', conceal_anchor = 3 },
+            { s = 6, e = 8, conceal = '', conceal_anchor = 6 },
+        }
+        assert.is_truthy(wrap.wrap_line(text, 8, 8, 0).first_end_byte) -- raw 11 > 8
+        assert.is_nil(wrap.wrap_line(text, 8, 8, 0, runs).first_end_byte) -- visible 7
+    end)
+
+    it('breaks later once concealed markers free up width', function()
+        -- '**' around 'aa' concealed -> visible 'aa bb cc'.
+        local text = '**aa** bb cc'
+        local runs = {
+            { s = 0, e = 2, conceal = '', conceal_anchor = 0 },
+            { s = 4, e = 6, conceal = '', conceal_anchor = 4 },
+        }
+        local raw = wrap.wrap_line(text, 6, 6, 0)
+        local con = wrap.wrap_line(text, 6, 6, 0, runs)
+        assert.is_truthy(con.first_end_byte)
+        assert.is_true(con.first_end_byte > raw.first_end_byte)
+    end)
+
+    it('reserves inline insert (icon) width, breaking earlier', function()
+        local text = 'abcd efgh' -- 9 columns, fits width 9
+        assert.is_nil(wrap.wrap_line(text, 9, 9, 0).first_end_byte)
+        -- a 2-column inline icon at byte 0 pushes the row past width 9
+        local inserts = { { b = 0, w = 2 } }
+        assert.is_truthy(wrap.wrap_line(text, 9, 9, 0, nil, inserts).first_end_byte)
+    end)
+
+    it('combines conceal and insert like a rendered link', function()
+        -- '[' and '](url)' concealed to nothing, a 2-col icon added at the start:
+        -- visible is icon + 't' + ' more' = 2 + 1 + 5 = 8, which fits width 8.
+        local text = '[t](url) more'
+        local runs = {
+            { s = 0, e = 1, conceal = '', conceal_anchor = 0 },
+            { s = 2, e = 8, conceal = '', conceal_anchor = 2 },
+        }
+        local inserts = { { b = 0, w = 2 } }
+        assert.is_truthy(wrap.wrap_line(text, 8, 8, 0).first_end_byte) -- raw 13 > 8
+        assert.is_nil(wrap.wrap_line(text, 8, 8, 0, runs, inserts).first_end_byte)
+    end)
 end)
 
 describe('wrap.split_cells', function()
@@ -510,6 +555,57 @@ describe('wrap behavior', function()
         local blob = table.concat(hls)
         assert.is_truthy(blob:find('markup%.strong'))
         assert.is_truthy(blob:find('markup%.raw'))
+    end)
+
+    it('accounts for a foreign inline insert in the wrap width', function()
+        wrap.setup({ left_pad = 0, right_pad = 0 })
+        local width = vim.api.nvim_win_get_width(0)
+        -- Short prose line: no markdown markers, so treesitter conceals nothing.
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'aaaa bbbb cccc', 'short' })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.api.nvim_win_set_cursor(0, { 2, 0 }) -- cursor off line 1
+
+        local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
+        wrap.refresh(0)
+        assert.are.equal(0, -- fits, so no continuation rows
+            #vim.api.nvim_buf_get_extmarks(0, ns, { 0, 0 }, { 0, -1 }, {}))
+
+        -- A foreign-namespace inline icon consumes columns and forces a wrap.
+        local foreign = vim.api.nvim_create_namespace('test_foreign_deco')
+        vim.api.nvim_buf_set_extmark(0, foreign, 0, 0, {
+            virt_text = { { string.rep('X', width), 'Comment' } },
+            virt_text_pos = 'inline',
+        })
+        wrap.refresh(0)
+        assert.is_true(
+            #vim.api.nvim_buf_get_extmarks(0, ns, { 0, 0 }, { 0, -1 }, {}) > 0)
+    end)
+
+    it('accounts for a foreign conceal in the wrap width', function()
+        wrap.setup({ left_pad = 0, right_pad = 0 })
+        local width = vim.api.nvim_win_get_width(0)
+        local head = string.rep('a', 10)
+        local line = head .. string.rep('b', width) -- overflows the text column
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { line, 'short' })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+        local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
+        wrap.refresh(0)
+        assert.is_true( -- wraps at its raw length
+            #vim.api.nvim_buf_get_extmarks(0, ns, { 0, 0 }, { 0, -1 }, {}) > 0)
+
+        -- Conceal the entire 'b' tail via a foreign extmark: the visible line is
+        -- just the 10 'a's, which fits, so it must no longer wrap.
+        local foreign = vim.api.nvim_create_namespace('test_foreign_deco2')
+        vim.api.nvim_buf_set_extmark(0, foreign, 0, #head, {
+            end_col = #line, conceal = '',
+        })
+        wrap.refresh(0)
+        assert.are.equal(0,
+            #vim.api.nvim_buf_get_extmarks(0, ns, { 0, 0 }, { 0, -1 }, {}))
     end)
 
     it('MarkdownWrapToggle flips the global flag', function()

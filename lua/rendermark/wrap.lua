@@ -112,7 +112,10 @@ end
 -- (0-based). Walks every language tree (markdown + injected markdown_inline) and
 -- collects highlight-query captures, so virtual continuation rows and table cells
 -- can re-create the styling that real buffer lines get from the highlighter.
-local function collect_inline(parser, buf, first, last)
+-- extra_conceals (from collect_deco) is an optional row -> interval list of
+-- foreign-namespace (render-markdown) conceal ranges. They are merged into the
+-- treesitter intervals before flattening so inline[row] is the conceal union.
+local function collect_inline(parser, buf, first, last, extra_conceals)
     local row_lines = vim.api.nvim_buf_get_lines(buf, first, last, false)
     local function line_len(row)
         return #(row_lines[row - first + 1] or '')
@@ -154,11 +157,68 @@ local function collect_inline(parser, buf, first, last)
             end
         end
     end)
+    if extra_conceals then
+        for row, list in pairs(extra_conceals) do
+            local dst = intervals[row] or {}
+            intervals[row] = dst
+            for _, iv in ipairs(list) do
+                dst[#dst + 1] = iv
+            end
+        end
+    end
     local marks = {}
     for row, list in pairs(intervals) do
         marks[row] = M.flatten_runs(list, line_len(row))
     end
     return marks
+end
+
+-- Gather display metrics from foreign-namespace buffer extmarks (render-markdown
+-- decorations) over rows [first, last). Returns two row-keyed tables:
+--   conceals[row] = { { s, e, hl = nil, conceal, priority, seq }, ... }
+--                   conceal ranges to merge into collect_inline (width + styling)
+--   inserts[row]  = { { b = byte_col, w = displaywidth }, ... }
+--                   inline virt_text (icons) that ADD width at a byte position
+-- own_ns/img_ns are skipped (our own decorations, and image-band marks whose
+-- lines are not wrapped anyway).
+local function collect_deco(buf, first, last, own_ns, img_ns)
+    local conceals, inserts = {}, {}
+    local ok, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, -1,
+        { first, 0 }, { last, -1 }, { details = true })
+    if not ok then
+        return conceals, inserts
+    end
+    local seq = 0
+    for _, m in ipairs(marks) do
+        local row, col, d = m[2], m[3], m[4]
+        local nsid = d.ns_id
+        if nsid ~= own_ns and nsid ~= img_ns then
+            if d.conceal ~= nil and d.end_col and d.end_col > col
+                and (d.end_row == nil or d.end_row == row) then
+                seq = seq + 1
+                local list = conceals[row] or {}
+                conceals[row] = list
+                list[#list + 1] = {
+                    s = col, e = d.end_col, hl = nil,
+                    conceal = d.conceal,
+                    priority = tonumber(d.priority) or 200,
+                    seq = 1000000 + seq,
+                }
+            end
+            if d.virt_text and d.virt_text_pos == 'inline' then
+                local w = 0
+                for _, ch in ipairs(d.virt_text) do
+                    w = w + dw(ch[1] or '')
+                end
+                if w > 0 then
+                    local list = inserts[row] or {}
+                    inserts[row] = list
+                    list[#list + 1] = { b = col, w = w }
+                end
+            end
+        end
+    end
+    return conceals, inserts
 end
 
 -- Core charwise break loop shared by wrap_line, wrap_cell and styled table cells.
@@ -180,8 +240,8 @@ end
 --   lines          : continuation rows (strings, already indented) for virt_lines.
 --   spans          : per continuation row, its { start, end } raw byte range in
 --                    `text` (0-based, end-exclusive, after trailing-space trim).
-function M.wrap_line(text, width1, widthN, indent)
-    return wrap_text.wrap_line(text, width1, widthN, indent)
+function M.wrap_line(text, width1, widthN, indent, runs, inserts)
+    return wrap_text.wrap_line(text, width1, widthN, indent, runs, inserts)
 end
 
 -- Split a table row into trimmed cells, dropping the outer pipes and unescaping
@@ -633,6 +693,11 @@ function M.refresh(win)
     -- still limited to the visible range. The parser/tree are cached.
     local in_code, in_table, tables = {}, {}, {}
     local inline = {} -- row -> flattened inline highlight/conceal runs
+    -- render-markdown (and other foreign) extmark metrics: concealed ranges are
+    -- merged into inline below; inline virt_text icon widths are added to the
+    -- wrap-point computation so the break matches the actually displayed width.
+    local img_ns = vim.api.nvim_create_namespace('rendermark_neopp_images')
+    local ex_conceals, inserts = collect_deco(buf, first, last, ns, img_ns)
     local ts_ok, parser = pcall(vim.treesitter.get_parser, buf, 'markdown')
     if ts_ok and parser then
         -- The ranged parse additionally parses injections (markdown_inline) in the
@@ -674,7 +739,7 @@ function M.refresh(win)
                     end
                 end
             end
-            inline = collect_inline(parser, buf, first, last)
+            inline = collect_inline(parser, buf, first, last, ex_conceals)
         end
     end
 
@@ -695,7 +760,8 @@ function M.refresh(win)
                 -- handled by rendermark.image
             elseif text and #text > 0 then
                 local indent = M.compute_indent(text)
-                local r = M.wrap_line(text, width, width - indent, indent)
+                local r = M.wrap_line(text, width, width - indent, indent,
+                    inline[lnum], inserts[lnum])
                 if r.first_end_byte then
                     vim.api.nvim_buf_set_extmark(buf, ns, lnum, r.first_end_byte, {
                         end_col = #text,

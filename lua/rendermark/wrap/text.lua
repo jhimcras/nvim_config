@@ -204,7 +204,52 @@ function M.char_items(chars)
     return items
 end
 
-function M.wrap_line(text, width1, widthN, indent)
+-- Conceal/insert-aware variant of char_items. `runs` are the flattened inline
+-- runs (sorted, non-overlapping, each { s, e, conceal, conceal_anchor }); a char
+-- inside a conceal-"" run gets width 0, a non-empty replacement contributes its
+-- width once at the run's anchor. `inserts` are inline virt_text widths keyed by
+-- byte position ({ b, w }); their columns are reserved on the char at that byte.
+-- Every char is kept so char-index <-> byte_at alignment is preserved.
+function M.conceal_items(chars, byte_at, runs, inserts)
+    if not runs and not inserts then
+        return M.char_items(chars)
+    end
+    local insert_at = {}
+    if inserts then
+        for _, ins in ipairs(inserts) do
+            insert_at[ins.b] = (insert_at[ins.b] or 0) + ins.w
+        end
+    end
+    local items = {}
+    local ri = 1
+    local emitted = {}
+    for i, c in ipairs(chars) do
+        local b = byte_at[i]
+        local w = M.dw(c)
+        if runs then
+            while ri <= #runs and runs[ri].e <= b do
+                ri = ri + 1
+            end
+            local r = runs[ri]
+            if r and b >= r.s then
+                if r.conceal == '' then
+                    w = 0
+                elseif r.conceal then
+                    if emitted[r.conceal_anchor] then
+                        w = 0
+                    else
+                        emitted[r.conceal_anchor] = true
+                        w = M.dw(r.conceal)
+                    end
+                end
+            end
+        end
+        items[i] = { w = w + (insert_at[b] or 0), sp = c:match('%s') ~= nil }
+    end
+    return items
+end
+
+function M.wrap_line(text, width1, widthN, indent, runs, inserts)
     local chars = vim.fn.split(text, '\\zs')
     if #chars == 0 then
         return { first_end_byte = nil, lines = {}, spans = {} }
@@ -218,7 +263,7 @@ function M.wrap_line(text, width1, widthN, indent)
     end
     byte_at[#chars + 1] = acc
 
-    local ranges = M.wrap_indices(M.char_items(chars), width1, widthN)
+    local ranges = M.wrap_indices(M.conceal_items(chars, byte_at, runs, inserts), width1, widthN)
     if #ranges < 2 then
         return { first_end_byte = nil, lines = {}, spans = {} }
     end
