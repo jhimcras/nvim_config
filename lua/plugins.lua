@@ -477,7 +477,6 @@ function M.setup()
         },
     }
     -- require'complete'.setup()
-    -- require'md'.setup()
 
     --require'focus_win'.setup{ active='#212121', inactive='#303030' }
 
