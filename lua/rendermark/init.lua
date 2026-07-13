@@ -12,6 +12,7 @@ local M = {}
 
 local wrap = require('rendermark.wrap')
 local image = require('rendermark.image')
+local link = require('rendermark.link')
 
 function M.setup(opts)
     wrap.setup(opts) -- soft-wrap + tables (registers its own autocmds/command)
@@ -19,6 +20,9 @@ function M.setup(opts)
     -- and drives the neopp GUI image backend via vim.ui.img (set/del). neopp only
     -- loads/renders/deletes. READ mode is disabled pending rework.
     image.setup(opts)
+    -- Tag-jump style navigation for [text](link): <C-]>/<C-}> follow the link
+    -- under the cursor (current window / vertical split).
+    link.setup(opts)
 end
 
 M.refresh = wrap.refresh
