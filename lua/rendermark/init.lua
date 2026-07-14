@@ -22,7 +22,7 @@ function M.setup(opts)
     image.setup(opts)
     -- Tag-jump style navigation for [text](link): <C-]>/<C-}> follow the link
     -- under the cursor (current window / vertical split).
-    link.setup(opts)
+    -- link.setup(opts)
 end
 
 M.refresh = wrap.refresh

@@ -31,8 +31,8 @@ function M.setup()
             end, {"i", "s"}),
         },
         sources = cmp.config.sources({
-            { name = 'markdown_link' },
-        }, {
+        --     { name = 'markdown_link' },
+        -- }, {
             { name = 'vsnip' },
             { name = 'nvim_lsp' },
             { name = 'nvim_lsp_signature_help' },

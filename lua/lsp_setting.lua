@@ -282,6 +282,21 @@ local function SetupPython()
     vim.lsp.enable('ty')
 end
 
+local function SetupMarkdown()
+    if vim.fn.executable('markdown-oxide') then
+        local capabilities = vim.lsp.protocol.make_client_capabilities()
+        capabilities.workspace.didChangeWatchedFiles.dynamicRegistration = true
+
+        vim.lsp.config('markdown_oxide', {
+            cmd = { 'markdown-oxide' },
+            filetypes = { 'markdown' },
+            root_markers = { '.git', '.obsidian', '.moxide.toml' },
+            capabilities = capabilities,
+        })
+        vim.lsp.enable('markdown_oxide')
+    end
+end
+
 M.SymError = ' '
 M.SymWarn = ' '
 M.SymInfo = ' '
@@ -318,6 +333,7 @@ function M.setup()
     -- SetupRust()
     -- SetupVim()
     SetupPython()
+    SetupMarkdown()
 
     local prjroot = require 'prjroot'
     local lsp_server_names = { 'clangd', 'lua_ls', 'ty' }
