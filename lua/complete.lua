@@ -6,6 +6,8 @@ local function feedkey(key, mode)
 end
 
 function M.setup()
+    cmp.register_source('markdown_link', require('rendermark.link_complete').new())
+
     cmp.setup {
         mapping = cmp.mapping.preset.insert {
             ['<c-k>'] = cmp.mapping.scroll_docs(-4),
@@ -29,6 +31,8 @@ function M.setup()
             end, {"i", "s"}),
         },
         sources = cmp.config.sources({
+            { name = 'markdown_link' },
+        }, {
             { name = 'vsnip' },
             { name = 'nvim_lsp' },
             { name = 'nvim_lsp_signature_help' },

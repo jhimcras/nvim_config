@@ -135,4 +135,8 @@ function M.setup(_)
     })
 end
 
+M.is_url = is_url
+M.parse_destination = parse_destination
+M.slugify = slugify
+
 return M
