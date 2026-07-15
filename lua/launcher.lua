@@ -723,6 +723,25 @@ local function SearchLauncherFileCandidates(prjroot, filename)
     return candidates
 end
 
+-- Mirrors native quickfix's own protection against opening the picked file
+-- back into the list window itself: never target a window currently showing
+-- the launcher output buffer (lc_parent_win can end up pointing at it, e.g.
+-- when the launch key is pressed again from inside the output buffer).
+local function FindSafeJumpWindow(exclude_buf)
+    local candidates = { vim.b.lc_parent_win, vim.fn.win_getid(vim.fn.winnr('#')) }
+    for _, w in ipairs(candidates) do
+        if w and w ~= 0 and api.nvim_win_is_valid(w) and api.nvim_win_get_buf(w) ~= exclude_buf then
+            return w
+        end
+    end
+    for _, w in ipairs(api.nvim_list_wins()) do
+        if api.nvim_win_get_buf(w) ~= exclude_buf then
+            return w
+        end
+    end
+    return nil
+end
+
 local function OpenLauncherCandidateQuickfix(candidates, match)
     local items = {}
     for _, path in ipairs(candidates) do
@@ -791,34 +810,39 @@ function M.Jump()
     end
 
     if match and match.filename then
-        local parent_win = vim.b.lc_parent_win
-        if parent_win and api.nvim_win_is_valid(parent_win) then
-            api.nvim_set_current_win(parent_win)
-        else
-            -- If parent window is gone, try to find a suitable one
-            vim.cmd('wincmd p')
-        end
-        
+        local launcher_buf = api.nvim_get_current_buf()
         local prjroot = vim.b.prjroot_folder or pr.GetCurrentProjectRoot()
         local filename = ResolveLauncherFilename(match.filename, { nil, match.base_dir, prjroot })
+        local candidates
 
         if not filename then
-            local candidates = SearchLauncherFileCandidates(prjroot, match.filename)
+            candidates = SearchLauncherFileCandidates(prjroot, match.filename)
             if #candidates == 1 then
                 filename = vim.fn.fnamemodify(candidates[1], ':p')
-            elseif #candidates > 1 then
-                OpenLauncherCandidateQuickfix(candidates, match)
-                return
-            else
+            elseif #candidates == 0 then
                 vim.notify('launcher: cannot resolve file: ' .. match.filename, vim.log.levels.WARN)
                 return
             end
         end
 
-        local edit_cmd = string.format('edit +%s %s', match.row or 1, vim.fn.fnameescape(filename))
-        vim.cmd(edit_cmd)
-        if match.column then
-            api.nvim_win_set_cursor(0, { tonumber(match.row or 1), tonumber(match.column) - 1 })
+        -- Only switch windows once we know we're actually opening something,
+        -- and never into the window showing this launcher buffer itself
+        -- (mirrors native quickfix's own protection against that).
+        local target_win = FindSafeJumpWindow(launcher_buf)
+        if target_win then
+            api.nvim_set_current_win(target_win)
+        else
+            vim.cmd('vsplit')
+        end
+
+        if filename then
+            local edit_cmd = string.format('edit +%s %s', match.row or 1, vim.fn.fnameescape(filename))
+            vim.cmd(edit_cmd)
+            if match.column then
+                api.nvim_win_set_cursor(0, { tonumber(match.row or 1), tonumber(match.column) - 1 })
+            end
+        else
+            OpenLauncherCandidateQuickfix(candidates, match)
         end
     end
 end

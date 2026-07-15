@@ -41,6 +41,11 @@ describe('launcher', function()
 end)
 
 describe('launcher.Jump filename resolution', function()
+    after_each(function()
+        -- Jump may open a split (vsplit fallback / copen); keep tests isolated.
+        vim.cmd('silent! only')
+    end)
+
     local function make_launcher_buf(vars)
         local win = vim.api.nvim_get_current_win()
         local buf = vim.api.nvim_create_buf(false, true)
@@ -189,5 +194,38 @@ describe('launcher.Jump filename resolution', function()
         vim.fn.executable = original_executable
         vim.fn.systemlist = original_systemlist
         vim.notify = original_notify
+    end)
+
+    it('never opens the resolved file into the window still showing the launcher buffer', function()
+        local root = vim.fn.tempname()
+        vim.fn.mkdir(root .. '/src', 'p')
+        local target = root .. '/src/LauncherTestFixtureF.cpp'
+        vim.fn.writefile({ 'content' }, target)
+
+        -- A second window exists (e.g. the user's original source window);
+        -- lc_parent_win nonetheless points back at the launcher's own window,
+        -- as happens when the launch key is pressed again from inside the
+        -- output buffer itself (BufMapping's keymap is global, not buffer-local).
+        vim.cmd('vsplit')
+        local other_win = vim.api.nvim_get_current_win()
+        vim.cmd('wincmd p')
+        local launcher_win = vim.api.nvim_get_current_win()
+
+        local launcher_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_win_set_buf(launcher_win, launcher_buf)
+        vim.api.nvim_buf_set_lines(launcher_buf, 0, -1, false, { 'dummy output line' })
+        vim.api.nvim_buf_set_var(launcher_buf, 'lc_parent_win', launcher_win)
+        vim.api.nvim_buf_set_var(launcher_buf, 'prjroot_folder', root)
+        vim.api.nvim_buf_set_var(launcher_buf, 'launcher_matches', {
+            { lnum = 1, filename = 'src\\LauncherTestFixtureF.cpp', row = '1' },
+        })
+        vim.api.nvim_win_set_cursor(launcher_win, { 1, 0 })
+
+        launcher.Jump()
+
+        assert.are.equal(launcher_buf, vim.api.nvim_win_get_buf(launcher_win))
+        assert.are.equal(vim.fn.fnamemodify(target, ':p'), vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(other_win)))
+
+        vim.fn.delete(root, 'rf')
     end)
 end)
