@@ -231,6 +231,9 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                                         end
                                     end
                                 end
+                                if pcfg.base_dir then
+                                    match_info.base_dir = pcfg.base_dir(match_info, line)
+                                end
                                 table.insert(matches, match_info)
 
                                 -- Apply highlights
@@ -692,6 +695,51 @@ function M.PrevMatch()
     end
 end
 
+local function ResolveLauncherFilename(filename, bases)
+    local normalized = ut.normalize_path_separator(filename)
+    for _, base in ipairs(bases) do
+        local path = base and (base .. '/' .. normalized) or normalized
+        local full = vim.fn.fnamemodify(path, ':p')
+        if ut.IsExist(full) then
+            return full
+        end
+    end
+    return nil
+end
+
+local function SearchLauncherFileCandidates(prjroot, filename)
+    if not prjroot or vim.fn.executable('rg') ~= 1 then
+        return {}
+    end
+    local suffix = ut.normalize_path_separator(filename)
+    while suffix:match('^%.%./') do
+        suffix = suffix:sub(4)
+    end
+    local candidates = vim.fn.systemlist({ 'rg', '--files', '-g', '**/' .. suffix, prjroot })
+    if #candidates == 0 then
+        local basename = vim.fn.fnamemodify(suffix, ':t')
+        candidates = vim.fn.systemlist({ 'rg', '--files', '-g', '**/' .. basename, prjroot })
+    end
+    return candidates
+end
+
+local function OpenLauncherCandidateQuickfix(candidates, match)
+    local items = {}
+    for _, path in ipairs(candidates) do
+        table.insert(items, {
+            filename = path,
+            lnum = tonumber(match.row) or 1,
+            col = match.column and tonumber(match.column) or 1,
+            text = path,
+        })
+    end
+    vim.fn.setqflist({}, ' ', {
+        title = 'launcher: select file for ' .. match.filename,
+        items = items,
+    })
+    vim.cmd('copen')
+end
+
 function M.Jump()
     local success, matches = pcall(api.nvim_buf_get_var, 0, 'launcher_matches')
     local cur_line = api.nvim_win_get_cursor(0)[1]
@@ -721,6 +769,9 @@ function M.Jump()
                             match[field] = m[idx]
                         end
                     end
+                    if pcfg.base_dir then
+                        match.base_dir = pcfg.base_dir(match, line)
+                    end
                     break
                 end
             end
@@ -749,9 +800,19 @@ function M.Jump()
         end
         
         local prjroot = vim.b.prjroot_folder or pr.GetCurrentProjectRoot()
-        local filename = vim.fn.fnamemodify(match.filename, ':p')
-        if not ut.IsExist(filename) and prjroot then
-            filename = vim.fn.fnamemodify(prjroot .. '/' .. match.filename, ':p')
+        local filename = ResolveLauncherFilename(match.filename, { nil, match.base_dir, prjroot })
+
+        if not filename then
+            local candidates = SearchLauncherFileCandidates(prjroot, match.filename)
+            if #candidates == 1 then
+                filename = vim.fn.fnamemodify(candidates[1], ':p')
+            elseif #candidates > 1 then
+                OpenLauncherCandidateQuickfix(candidates, match)
+                return
+            else
+                vim.notify('launcher: cannot resolve file: ' .. match.filename, vim.log.levels.WARN)
+                return
+            end
         end
 
         local edit_cmd = string.format('edit +%s %s', match.row or 1, vim.fn.fnameescape(filename))

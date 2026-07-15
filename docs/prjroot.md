@@ -102,6 +102,36 @@ return {
 | `env` | table | no | Extra environment variables as `{ KEY = 'value' }` |
 | `position` | table or `'external'` | no | Where to open the output buffer. `{ orientation = 'vertical' }` (default), `'horizontal'`, `'tab'`, or `'external'` (no window, background only) |
 | `highlight` | table | no | `{ pattern = 'HlGroup' }` pairs — matched with `matchadd` in the output buffer |
+| `patterns` | table | no | Named output-line matchers used to extract jump targets (`<CR>` in the output buffer). See below. |
+
+#### `patterns` — extracting jump targets from output lines
+
+Each entry in `patterns` matches a line of output and extracts fields (typically `filename`, `row`, `column`) used by `<CR>` to open the file:
+
+```lua
+patterns = {
+  error = {
+    pattern   = '%d+>(%S+)%((%d+)%): (error) (C%d+)',  -- Lua pattern, one capture per extract field
+    extract   = { 'filename', 'row', 'tag', 'errorcode' },
+    highlight = { [1] = '#BB0000', [3] = '#DD0000' },    -- capture index -> hl color/group
+
+    -- Optional: compute the base directory for resolving a *relative* filename.
+    -- Called with the extracted fields and the raw line; return an absolute
+    -- directory, or nil to fall through to the project root / an on-disk search.
+    -- Useful when relative paths in the output are relative to something other
+    -- than the project root (e.g. an MSVC project file's directory, which may
+    -- itself appear elsewhere on the same line).
+    base_dir = function(match, line)
+      local proj = line:match('%[([^%[%]]+%.vcxproj)%]%s*$')
+      if proj then
+        return vim.fn.fnamemodify(proj:gsub('\\', '/'), ':h')
+      end
+    end,
+  },
+}
+```
+
+Resolution order for a matched `filename` on `<CR>`: as-is, then under `base_dir` (if the pattern defines one), then under the project root, then (if still not found) an on-disk search under the project root — opening the file directly if exactly one candidate is found, or a quickfix list to pick from if there are several.
 
 ---
 
