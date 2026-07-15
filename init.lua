@@ -76,10 +76,12 @@ end
 -- TODO: Find out not to use global function
 function FoldText()
     local first_folded_line = vim.fn.getline(vim.v.foldstart)
+    local width = tonumber(vim.wo.colorcolumn) or vim.api.nvim_win_get_width(0)
+    local pad = math.max(width - first_folded_line:len() - 3, 0)
     local l = {
         first_folded_line,
         '  ',
-        string.rep('·', vim.wo.colorcolumn - first_folded_line:len() - 3)
+        string.rep('·', pad)
     }
     return table.concat(l)
 end
