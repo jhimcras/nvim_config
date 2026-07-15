@@ -380,6 +380,13 @@ local function FugitiveSetting()
     end
     vim.api.nvim_create_user_command('GclogBack', gclog_back, {})
     -- ut.nnoremap('<leader>gb', gclog_back)
+
+    vim.api.nvim_create_autocmd('FileType', {
+        pattern = 'fugitive',
+        callback = function()
+            vim.opt_local.winfixheight = true
+        end,
+    })
 end
 
 function M.setup()
