@@ -500,6 +500,18 @@ function M.debounce(fn, ms)
     return util_cache.debounce(fn, ms)
 end
 
+--- Throttle a function: run it at most once per `ms`, firing immediately on
+--- the leading edge and once more on the trailing edge if calls kept arriving
+--- during the cooldown. Unlike `debounce`, this keeps firing at a steady
+--- cadence during a sustained burst instead of waiting for it to go quiet.
+---
+--- @param fn function   The function to throttle.
+--- @param ms number     Minimum milliseconds between invocations.
+--- @return function      The throttled wrapper.
+function M.throttle(fn, ms)
+    return util_cache.throttle(fn, ms)
+end
+
 
 function M.insert_unique_by(t, value, eq)
     return util_serialize.insert_unique_by(t, value, eq)

@@ -95,11 +95,41 @@ local types = {
     { bt = 'quickfix', info = quickfix },
 }
 
-function M.lsp()
-    if next(vim.lsp.get_clients()) ~= nil then
-        return vim.lsp.status()
+function M.lsp(bufnr)
+    bufnr = bufnr or 0
+    local clients = vim.lsp.get_clients{bufnr = bufnr}
+    if next(clients) == nil then
+        return ''
     end
-    return ''
+    local ls = require 'lsp_setting'
+    local S = vim.diagnostic.severity
+    local counts = vim.diagnostic.count(bufnr)
+    local parts = {}
+    for _, seg in ipairs({
+        { counts[S.ERROR], ls.SymError },
+        { counts[S.WARN],  ls.SymWarn  },
+        { counts[S.INFO],  ls.SymInfo  },
+        { counts[S.HINT],  ls.SymHint  },
+    }) do
+        if seg[1] and seg[1] > 0 then
+            parts[#parts + 1] = seg[2] .. seg[1]
+        end
+    end
+    local prog = vim.trim(vim.lsp.status()):gsub('^%d+%%:%s*', '')
+    if prog ~= '' then
+        parts[#parts + 1] = prog
+    else
+        local any_running, any_done = false, false
+        for _, c in ipairs(clients) do
+            local state = ls.progress_state[c.id]
+            if state == 'running' then any_running = true end
+            if state == 'done' then any_done = true end
+        end
+        if any_done and not any_running and #parts == 0 then
+            parts[#parts + 1] = '✓'
+        end
+    end
+    return table.concat(parts, ' ')
 end
 
 function M.session()
@@ -399,9 +429,8 @@ end
 
 
 local function lsp_status(bufnr, winid)
-    if next(vim.lsp.get_clients{bufnr = bufnr}) ~= nil then
-        return vim.trim(vim.lsp.status())
-    end
+    local s = M.lsp(bufnr)
+    if s ~= '' then return s end
 end
 
 

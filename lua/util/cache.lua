@@ -125,4 +125,39 @@ function M.debounce(fn, ms)
     end
 end
 
+-- Rate-limit fn to at most once per `ms`, firing on the leading edge (so the
+-- first call in a burst renders immediately) and, if more calls arrived
+-- during the cooldown, once more on the trailing edge (so the final state
+-- is never dropped). Bounds call frequency during sustained bursts without
+-- debounce's "goes silent until the burst pauses" behavior.
+function M.throttle(fn, ms)
+    assert(type(fn) == "function", "throttle: fn must be a function")
+    ms = tonumber(ms) or 0
+
+    local cooldown
+    local pending
+
+    local function fire(args)
+        pending = nil
+        fn(unpack_fn(args, 1, args.n))
+        cooldown = vim.uv.new_timer()
+        cooldown:start(ms, 0, vim.schedule_wrap(function()
+            cooldown:close()
+            cooldown = nil
+            if pending then
+                fire(pending)
+            end
+        end))
+    end
+
+    return function(...)
+        local packed = pack(...)
+        if cooldown then
+            pending = packed
+        else
+            fire(packed)
+        end
+    end
+end
+
 return M
