@@ -81,10 +81,12 @@ local function general_mappings()
     ut.nnoremap('<leader>do', vim.diagnostic.setloclist, {'buffer'})
 end
 
-local function reference_highlighting()
-    api.nvim_create_autocmd('CursorHold', { buffer = 0, callback = function() vim.lsp.buf.document_highlight() end })
-    api.nvim_create_autocmd('CursorHoldI', { buffer = 0, callback = function() vim.lsp.buf.document_highlight() end })
-    api.nvim_create_autocmd('CursorMoved', { buffer = 0, callback = function() vim.lsp.buf.clear_references() end })
+local function reference_highlighting(client, bufnr)
+    if not client:supports_method('textDocument/documentHighlight', bufnr) then return end
+    local group = api.nvim_create_augroup('lsp_reference_highlight_' .. bufnr, { clear = true })
+    api.nvim_create_autocmd('CursorHold', { group = group, buffer = bufnr, callback = function() vim.lsp.buf.document_highlight() end })
+    api.nvim_create_autocmd('CursorHoldI', { group = group, buffer = bufnr, callback = function() vim.lsp.buf.document_highlight() end })
+    api.nvim_create_autocmd('CursorMoved', { group = group, buffer = bufnr, callback = function() vim.lsp.buf.clear_references() end })
 end
 
 -- Fugitive names its blob buffers with the OS path separator, so on Windows
@@ -103,7 +105,7 @@ local function make_on_attach(extras)
             return
         end
         general_mappings()
-        reference_highlighting()
+        reference_highlighting(client, bufnr)
         if extras then extras(client, bufnr) end
     end
 end
