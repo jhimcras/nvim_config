@@ -33,7 +33,7 @@ local function BasicSettings()
     vim.o.showmatch = true
     vim.o.splitright = true
     vim.o.title = true
-    vim.o.titlestring = '%t (%{v:lua.require("status").titlecontext()})'
+    vim.o.titlestring = '(%{v:lua.require("status").titlecontext()}) %t'
     vim.opt.path:append('**')
     vim.opt.wildignore:append { '*/.git/*', '*/.hg/*', '*/.svn/*', '*/.sass-cache/*', '*/x64/*', '*/.vs/*', '*/.clangd/*' }
     vim.opt.suffixes:remove('.h')
@@ -242,9 +242,18 @@ local function KeyMappings()
         vim.fn.jobstart(args, { detach = true })
     end, { nargs = '?', complete = 'file' })
 
-    ut.nnoremap('<c-+>', function() vim.g.neovide_scale_factor = vim.g.neovide_scale_factor * 1.25 end)
-    ut.nnoremap('<c-->', function() vim.g.neovide_scale_factor = vim.g.neovide_scale_factor * (1/1.25) end)
-    ut.nnoremap('<c-0>', function() vim.g.neovide_scale_factor = 1.0 end)
+    local function gui_zoom(dir)  -- dir = 'in' | 'out' | 'reset'
+        if vim.g.neopp_channel then
+            vim.cmd('NeoppFontZoom ' .. dir)
+        elseif vim.g.neovide then
+            if dir == 'reset' then vim.g.neovide_scale_factor = 1.0
+            else vim.g.neovide_scale_factor = vim.g.neovide_scale_factor * (dir == 'in' and 1.25 or 1/1.25) end
+        end
+    end
+    ut.nnoremap('<c-=>', function() gui_zoom('in') end)
+    ut.nnoremap('<c-+>', function() gui_zoom('in') end)   -- numpad + / Ctrl+Shift+=
+    ut.nnoremap('<c-->', function() gui_zoom('out') end)
+    ut.nnoremap('<c-0>', function() gui_zoom('reset') end)
 
     ut.nnoremap('<esc>', function()
         for _, win in ipairs(vim.api.nvim_list_wins()) do
