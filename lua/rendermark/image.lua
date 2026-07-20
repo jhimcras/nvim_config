@@ -802,17 +802,20 @@ function M.draw_stub_preview_box(buf, place, path, rect)
   pcall(function() vim.bo[buf].modifiable = false end)
 end
 
-function M.compute_image_display_size(image, max_w_px, max_rows, cell_h)
+function M.compute_image_display_size(image, max_w_px, max_rows, cell_h, zoom)
   if not image or not image.source_width or not image.source_height or image.source_width <= 0 or image.source_height <= 0 then
     return nil
   end
-  local display_w = math.min(image.source_width, math.max(1, math.floor(max_w_px or image.source_width)))
-  local display_h = math.max(1, math.floor(display_w * image.source_height / image.source_width + 0.5))
+  zoom = zoom or 1.0
+  local native_w = image.source_width * zoom
+  local native_h = image.source_height * zoom
+  local display_w = math.min(native_w, math.max(1, math.floor(max_w_px or native_w)))
+  local display_h = math.max(1, math.floor(display_w * native_h / native_w + 0.5))
   local virt_h = math.max(1, math.ceil(display_h / math.max(1, cell_h or 1)))
   if max_rows and max_rows > 0 and virt_h > max_rows then
     virt_h = max_rows
     display_h = virt_h * math.max(1, cell_h or 1)
-    display_w = math.max(1, math.floor(display_h * image.source_width / image.source_height + 0.5))
+    display_w = math.max(1, math.floor(display_h * native_w / native_h + 0.5))
     display_w = math.min(display_w, math.max(1, math.floor(max_w_px or display_w)))
   end
   return display_w, display_h
@@ -825,6 +828,7 @@ function M.layout_image_line(images, opts)
   local gap_px = math.max(0, tonumber(opts.gap_px) or cell_w)
   local max_ratio = tonumber(opts.max_ratio) or 1.0
   local max_rows = tonumber(opts.max_rows) or 30
+  local zoom = tonumber(opts.zoom) or 1.0
   local base_grid_row = tonumber(opts.base_grid_row) or 0
   local clip_x = tonumber(opts.clip_x_px) or 0
   local clip_y = tonumber(opts.clip_y_px) or 0
@@ -862,7 +866,7 @@ function M.layout_image_line(images, opts)
     local anchor_x = tonumber(image.anchor_x_px) or text_left_px
     anchor_x = math.max(text_left_px, math.min(anchor_x, text_right_px - 1))
     row_start_x = row_start_x or anchor_x
-    local display_w, display_h = M.compute_image_display_size(image, max_image_w, max_rows, cell_h)
+    local display_w, display_h = M.compute_image_display_size(image, max_image_w, max_rows, cell_h, zoom)
     if display_w and display_h then
       sized[#sized + 1] = { image = image, width = display_w, height = display_h }
       common_h = math.max(common_h, display_h)
@@ -1877,6 +1881,7 @@ function M._send_images_impl()
   local max_ratio = tonumber(vim.g.neopp_image_max_width_ratio) or 1.0
   local max_rows = tonumber(vim.g.neopp_image_max_height_rows) or 30
   local gap_px = tonumber(vim.g.neopp_image_gap_px) or cell_w
+  local zoom_scale = tonumber(vim.g.neopp_font_zoom_scale) or 1.0
   local buf_ranges = {}
   local wins = {}
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -2144,6 +2149,7 @@ function M._send_images_impl()
           gap_px = gap_px,
           max_ratio = max_ratio,
           max_rows = layout_max_rows,
+          zoom = zoom_scale,
           base_grid_row = layout_grid_row,
           dest_y_px = layout_grid_row * cell_h,
           clip_x_px = clip_x_px,
