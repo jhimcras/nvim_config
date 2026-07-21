@@ -1685,6 +1685,7 @@ end
 local function plantuml_active_block(buf, blocks)
   local cur = vim.api.nvim_get_current_win()
   if not vim.api.nvim_win_is_valid(cur) then return nil, nil end
+  if require('read_mode').is_active(cur) then return nil, nil end
 
   -- Focus in the source window with the cursor inside a block: that block is active.
   if vim.api.nvim_win_get_buf(cur) == buf then
@@ -2337,13 +2338,17 @@ function M._send_images_impl()
   end
   -- Cursor buffer-rows for each window, so the stub can step its overlay aside
   -- on the cursor's line (letting native conceal reveal the raw link there).
-  -- READ mode forces concealcursor='nvic' and pins the cursor, so suppress the
-  -- reveal in that mode.
+  -- READ mode forces concealcursor='nvic' and pins the cursor, so a READ
+  -- window's own cursor row is excluded here. Limitation: extmarks can't
+  -- render differently per window on the same buffer position, so if a
+  -- Normal-mode window on the same buffer has its cursor on the same row, that
+  -- row still reveals in both windows -- accepted Neovim limitation.
   local function cursor_rows_for(buf)
-    if vim.b[buf].markdown_read_mode then return nil end
+    local read_mode = require('read_mode')
     local set = nil
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-      if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+      if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf
+          and not read_mode.is_active(win) then
         set = set or {}
         set[vim.api.nvim_win_get_cursor(win)[1] - 1] = true
       end

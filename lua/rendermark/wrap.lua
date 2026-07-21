@@ -682,7 +682,11 @@ function M.refresh(win)
     -- READ mode wraps every visible line, including the one under the (hidden)
     -- cursor: a sentinel of -1 never matches a real line number, so the
     -- cursor-line exception below and in render_table is effectively disabled.
-    local cursor_row = vim.b[buf].markdown_read_mode and -1
+    -- Limitation: this namespace is buffer-scoped, so if the same buffer is
+    -- split across a READ window and a Normal window, whichever window's
+    -- refresh runs last wins the buffer's rendered wrapping -- accepted, not
+    -- fixed (would need cross-window refresh ordering).
+    local cursor_row = require('read_mode').is_active(win) and -1
         or vim.api.nvim_win_get_cursor(win)[1]
     local first = math.max(info.topline - 1, 0)
     local last = info.botline

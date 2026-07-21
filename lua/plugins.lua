@@ -467,6 +467,7 @@ function M.setup()
     require'file_info'.setup()
     -- require'smart_colorcolumn'.setup(120)
     require'smart_cursorline'.setup()
+    require'read_mode'.setup()
     require'lsp_setting'.setup()
     require'rendermark'.setup{
         max_width = 120,

@@ -465,7 +465,7 @@ describe('wrap behavior', function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { line })
         vim.bo.filetype = 'markdown'
         vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
-        vim.b.markdown_read_mode = true
+        require('read_mode').enter()
         vim.api.nvim_win_set_cursor(0, { 1, 0 })
         wrap.refresh(0)
 
@@ -476,6 +476,8 @@ describe('wrap behavior', function()
             assert.is_falsy(row:find('#', 1, true))
             assert.is_falsy(row:find('●', 1, true))
         end
+
+        require('read_mode').exit(0)
     end)
 
     it('renders a table as a grid and leaves the cursor row raw', function()
