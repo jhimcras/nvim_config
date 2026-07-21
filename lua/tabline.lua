@@ -4,6 +4,8 @@ local M = {}
 
 local tab_offset = 1
 local auto_scroll_next = false
+local current_tabpage = nil -- tab active as of the last TabEnter
+local prev_tabpage = nil    -- tab active immediately before that
 
 -- Cached render state. Each piece is rebuilt only by the event that can change
 -- it (see M.setup), so frequent events (IME toggle) reuse the rest untouched.
@@ -266,8 +268,28 @@ function M.setup()
         vim.go.tabline = render()
     end
 
-    -- Set flag before paint_tabs runs so auto-scroll applies on tab navigation
-    vim.api.nvim_create_autocmd('TabEnter', { callback = function() auto_scroll_next = true end })
+    -- Set flag before paint_tabs runs so auto-scroll applies on tab navigation.
+    -- prev_tabpage is derived here (not from TabLeave) because TabLeave also
+    -- fires for the tab being closed as part of :tabclose itself, which would
+    -- clobber it with the closing tab's own handle right before TabClosed runs.
+    vim.api.nvim_create_autocmd('TabEnter', { callback = function()
+        auto_scroll_next = true
+        prev_tabpage = current_tabpage
+        current_tabpage = vim.api.nvim_get_current_tabpage()
+    end })
+    -- Neovim focuses the next tab by default after the active tab closes;
+    -- jump back to whichever tab was active immediately before it instead.
+    -- Guarded by current_tabpage so closing a background (non-current) tab,
+    -- which doesn't move focus, is left untouched.
+    vim.api.nvim_create_autocmd('TabClosed', {
+        callback = function()
+            local now = vim.api.nvim_get_current_tabpage()
+            if now ~= current_tabpage and prev_tabpage and prev_tabpage ~= now
+                and vim.api.nvim_tabpage_is_valid(prev_tabpage) then
+                vim.cmd('tabnext ' .. vim.api.nvim_tabpage_get_number(prev_tabpage))
+            end
+        end,
+    })
     vim.api.nvim_create_autocmd({'TabEnter', 'TabLeave', 'TabClosed'}, { callback = paint_tabs })
     -- :tabmove/:tabm reorders tabs without firing TabEnter/TabLeave/TabClosed, so the
     -- tabline goes stale; catch it via the typed command line and repaint after it runs.
