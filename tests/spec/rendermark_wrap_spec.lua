@@ -610,6 +610,71 @@ describe('wrap behavior', function()
             #vim.api.nvim_buf_get_extmarks(0, ns, { 0, 0 }, { 0, -1 }, {}))
     end)
 
+    it('picks up a foreign hl_group extmark from a same-event CursorMoved reaction, even when its own autocmd fires first (large-jump race)', function()
+        -- Regression test: schedule_refresh (CursorMoved/WinScrolled/etc-driven)
+        -- used to defer via a single vim.schedule. A jump onto never-before-seen
+        -- lines (e.g. gg/G) can trigger a foreign plugin's own CursorMoved
+        -- reaction that recomputes its decorations via ITS OWN vim.schedule
+        -- (e.g. render-markdown's checkbox highlight). Whichever autocmd's
+        -- vim.schedule callback got enqueued first won the race; on a small
+        -- move this never showed since the lines were already decorated, but
+        -- on a large jump into fresh lines it could run wrap's own refresh
+        -- before the foreign highlight extmark existed -- and nothing else
+        -- re-triggered a refresh afterward. Register the foreign autocmd AFTER
+        -- wrap's own (so wrap's fires first -- the worst case) and confirm the
+        -- highlight still lands on the wrapped row.
+        wrap.setup({ left_pad = 0, right_pad = 0 })
+        local width = vim.api.nvim_win_get_width(0)
+        local filler = string.rep('word ', width)
+        local long = filler .. 'MARK ' .. filler .. 'target'
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { long, 'short' })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        local buf = vim.api.nvim_get_current_buf()
+
+        -- Flush any refresh already scheduled by the FileType handler above
+        -- (and any leftover from a prior test) before setting up the race, so
+        -- schedule_refresh's pending-dedup doesn't swallow the CursorMoved
+        -- call below.
+        vim.wait(50, function() return false end)
+
+        local foreign_ns = vim.api.nvim_create_namespace('test_foreign_large_jump_deco')
+        local mark_col = #filler
+        local mark_end = mark_col + #'MARK'
+        vim.api.nvim_create_autocmd('CursorMoved', {
+            once = true,
+            callback = function()
+                vim.schedule(function()
+                    pcall(vim.api.nvim_buf_set_extmark, buf, foreign_ns, 0, mark_col, {
+                        end_col = mark_end,
+                        hl_group = 'Comment',
+                    })
+                end)
+            end,
+        })
+
+        vim.api.nvim_win_set_cursor(0, { 2, 0 }) -- cursor off the long line
+        vim.api.nvim_exec_autocmds('CursorMoved', {})
+
+        local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
+        local function has_comment_chunk()
+            local marks = vim.api.nvim_buf_get_extmarks(buf, ns, { 0, 0 }, { 0, -1 }, { details = true })
+            for _, m in ipairs(marks) do
+                for _, row in ipairs(m[4].virt_lines or {}) do
+                    for _, chunk in ipairs(row) do
+                        if chunk[2] == 'Comment' then
+                            return true
+                        end
+                    end
+                end
+            end
+            return false
+        end
+        vim.wait(200, has_comment_chunk)
+
+        assert.is_true(has_comment_chunk())
+    end)
+
     it('MarkdownWrapToggle flips the global flag', function()
         wrap.setup()
         assert.is_true(vim.g.markdown_visual_wrap_enabled)

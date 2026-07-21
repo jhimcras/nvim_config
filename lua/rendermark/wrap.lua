@@ -700,14 +700,16 @@ function M.refresh(win)
         return
     end
 
-    -- READ mode wraps every visible line, including the one under the (hidden)
-    -- cursor: a sentinel of -1 never matches a real line number, so the
-    -- cursor-line exception below and in render_table is effectively disabled.
+    -- vim.w[win].read_mode_active (set/cleared by read_mode.lua, if loaded --
+    -- this module has no hard dependency on it) wraps every visible line,
+    -- including the one under the (hidden) cursor: a sentinel of -1 never
+    -- matches a real line number, so the cursor-line exception below and in
+    -- render_table is effectively disabled.
     -- Limitation: this namespace is buffer-scoped, so if the same buffer is
     -- split across a READ window and a Normal window, whichever window's
     -- refresh runs last wins the buffer's rendered wrapping -- accepted, not
     -- fixed (would need cross-window refresh ordering).
-    local cursor_row = require('read_mode').is_active(win) and -1
+    local cursor_row = vim.w[win].read_mode_active and -1
         or vim.api.nvim_win_get_cursor(win)[1]
     local first = math.max(info.topline - 1, 0)
     local last = info.botline
@@ -822,9 +824,21 @@ local function schedule_refresh(win)
         return
     end
     pending[win] = true
+    -- Double-deferred: a single vim.schedule can still run before a foreign
+    -- plugin's own same-event vim.schedule callback (e.g. render-markdown's
+    -- decorator recompute, also queued off this same CursorMoved/FileType/etc
+    -- event) -- whichever autocmd was registered first wins that race, and if
+    -- this one wins, collect_deco snapshots the buffer's extmarks before the
+    -- foreign highlight exists (only visible on a jump into never-rendered
+    -- lines, e.g. gg/G, since a small move stays inside the already-decorated
+    -- viewport). Nesting one more vim.schedule guarantees this refresh runs
+    -- after every plain single-defer callback already queued for this event,
+    -- regardless of autocmd registration order.
     vim.schedule(function()
-        pending[win] = nil
-        M.refresh(win)
+        vim.schedule(function()
+            pending[win] = nil
+            M.refresh(win)
+        end)
     end)
 end
 

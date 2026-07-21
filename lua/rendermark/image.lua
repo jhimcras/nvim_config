@@ -1685,7 +1685,7 @@ end
 local function plantuml_active_block(buf, blocks)
   local cur = vim.api.nvim_get_current_win()
   if not vim.api.nvim_win_is_valid(cur) then return nil, nil end
-  if require('read_mode').is_active(cur) then return nil, nil end
+  if vim.w[cur].read_mode_active then return nil, nil end
 
   -- Focus in the source window with the cursor inside a block: that block is active.
   if vim.api.nvim_win_get_buf(cur) == buf then
@@ -2344,11 +2344,10 @@ function M._send_images_impl()
   -- Normal-mode window on the same buffer has its cursor on the same row, that
   -- row still reveals in both windows -- accepted Neovim limitation.
   local function cursor_rows_for(buf)
-    local read_mode = require('read_mode')
     local set = nil
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf
-          and not read_mode.is_active(win) then
+          and not vim.w[win].read_mode_active then
         set = set or {}
         set[vim.api.nvim_win_get_cursor(win)[1] - 1] = true
       end
