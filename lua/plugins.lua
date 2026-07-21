@@ -90,7 +90,22 @@ local function FullscreenSettings()
     end
 end
 
+local function blend_fg(name1, name2, ratio)
+    local hl1 = vim.api.nvim_get_hl(0, { name = name1, link = false })
+    local hl2 = vim.api.nvim_get_hl(0, { name = name2, link = false })
+    if not hl1.fg or not hl2.fg then
+        return nil
+    end
+    local r1, g1, b1 = math.floor(hl1.fg / 65536) % 256, math.floor(hl1.fg / 256) % 256, hl1.fg % 256
+    local r2, g2, b2 = math.floor(hl2.fg / 65536) % 256, math.floor(hl2.fg / 256) % 256, hl2.fg % 256
+    local r = math.floor(r1 + (r2 - r1) * ratio)
+    local g = math.floor(g1 + (g2 - g1) * ratio)
+    local b = math.floor(b1 + (b2 - b1) * ratio)
+    return string.format('#%02x%02x%02x', r, g, b)
+end
+
 local function SetColorsAndHighlighting()
+    local ut = require'util'
     require('nvim-tundra').setup {
         -- transparent_background = true,
         dim_inactive_windows = {
@@ -111,6 +126,11 @@ local function SetColorsAndHighlighting()
         },
     }
     vim.cmd.colorscheme 'tundra'
+
+    local dim_fg = blend_fg('Normal', 'Comment', 0.3)
+    if dim_fg then
+        ut.set_highlight('RenderMarkdownCheckedDim', { guifg = dim_fg })
+    end
 
     -- require('catppuccin').setup {
     -- }
@@ -151,7 +171,7 @@ local function MarkdownConfig()
         },
         checkbox = {
             unchecked = { icon = ' ' },
-            checked   = { icon = ' ' },
+            checked   = { icon = '', scope_highlight = 'RenderMarkdownCheckedDim' },
             custom = {
                 todo = { raw = '[-]', rendered = ' ', highlight = 'RenderMarkdownTodo', scope_highlight = nil },
             },
