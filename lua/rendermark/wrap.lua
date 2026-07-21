@@ -175,8 +175,11 @@ end
 
 -- Gather display metrics from foreign-namespace buffer extmarks (render-markdown
 -- decorations) over rows [first, last). Returns two row-keyed tables:
---   conceals[row] = { { s, e, hl = nil, conceal, priority, seq }, ... }
---                   conceal ranges to merge into collect_inline (width + styling)
+--   conceals[row] = { { s, e, hl, conceal, priority, seq }, ... }
+--                   conceal ranges AND plain hl_group highlights (e.g.
+--                   render-markdown's checkbox scope_highlight, or our own
+--                   custom_handlers dim marks) to merge into collect_inline
+--                   (width + styling) so wrapped continuation rows stay styled
 --   inserts[row]  = { { b = byte_col, w = displaywidth }, ... }
 --                   inline virt_text (icons) that ADD width at a byte position
 -- own_ns/img_ns are skipped (our own decorations, and image-band marks whose
@@ -204,6 +207,24 @@ local function collect_deco(buf, first, last, own_ns, img_ns)
                     priority = tonumber(d.priority) or 200,
                     seq = 1000000 + seq,
                 }
+            end
+            if d.hl_group and d.end_col then
+                seq = seq + 1
+                local r2 = d.end_row or row
+                for rr = math.max(row, first), math.min(r2, last - 1) do
+                    local s = rr == row and col or 0
+                    local e = rr == r2 and d.end_col or math.huge
+                    if e > s then
+                        local list = conceals[rr] or {}
+                        conceals[rr] = list
+                        list[#list + 1] = {
+                            s = s, e = e, hl = d.hl_group,
+                            conceal = nil,
+                            priority = tonumber(d.priority) or 4096,
+                            seq = 1000000 + seq,
+                        }
+                    end
+                end
             end
             if d.virt_text and d.virt_text_pos == 'inline' then
                 local w = 0
