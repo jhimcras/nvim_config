@@ -889,9 +889,6 @@ function M.ShowProcessList()
 end
 
 function M.setup()
-    api.nvim_create_user_command('ProcessList', M.ShowProcessList, {})
-    api.nvim_create_user_command('WipeLauncherBuffers', M.WipeLauncherBuffers, {})
-    ut.nnoremap('<leader>lc', M.WipeLauncherBuffers)
     api.nvim_create_autocmd({'BufRead', 'BufNew'}, {callback = BufMapping})
 
     -- Intercept :bw, :bd, etc. for launcher buffers to ask before wiping
@@ -908,17 +905,6 @@ function M.setup()
             SafeCloseTimer(buf)
         end
     })
-
-    -- Initialize ANSI highlight groups
-    local set_hl = vim.api.nvim_set_hl
-    set_hl(0, 'AnsiBlack',   { fg = '#000000', bold = true })
-    set_hl(0, 'AnsiRed',     { fg = '#ff5555' })
-    set_hl(0, 'AnsiGreen',   { fg = '#50fa7b' })
-    set_hl(0, 'AnsiYellow',  { fg = '#f1fa8c' })
-    set_hl(0, 'AnsiBlue',    { fg = '#8be9fd' })
-    set_hl(0, 'AnsiMagenta', { fg = '#ff79c6' })
-    set_hl(0, 'AnsiCyan',    { fg = '#8be9fd' })
-    set_hl(0, 'AnsiWhite',   { fg = '#f8f8f2' })
 end
 
 return M

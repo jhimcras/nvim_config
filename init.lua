@@ -1,77 +1,5 @@
 local env = require 'env'
-local ut = require 'util'
 local api, cmd = vim.api, vim.cmd
-
-local function BasicSettings()
-    vim.g.mapleader = ' '
-    vim.o.background = 'dark'
-    vim.o.belloff = 'all'
-    vim.opt.clipboard:append('unnamedplus')
-    vim.opt.diffopt:append('vertical')
-    vim.opt.fillchars = { fold = ' ', eob = ' ', vert ='│', diff = '·' }
-    vim.o.hidden = true
-    vim.o.ignorecase = true
-    vim.o.smartcase = true
-    vim.o.inccommand = 'nosplit'
-    vim.opt.listchars = { tab = '→ ', eol = '¬', trail = '␣', extends = '>', precedes ='<', nbsp = '+' }
-    vim.o.showbreak = '↪'
-    vim.opt.matchpairs:append { '<:>', '「:」' }
-    vim.o.history = 1024
-    vim.o.maxmempattern = 10240
-    vim.o.undolevels = 2048
-    vim.o.mouse = 'nvi'
-    vim.o.lazyredraw = true
-    vim.o.showmode = false
-    vim.o.swapfile = false
-    vim.o.wrap = false
-    vim.o.pumheight = 20
-    vim.o.pyx = 3
-    vim.o.number = true
-    vim.o.relativenumber = true
-    vim.o.scrolloff = 1
-    vim.o.sidescrolloff = 5
-    vim.o.showmatch = true
-    vim.o.splitright = true
-    vim.o.title = true
-    vim.o.titlestring = '(%{v:lua.require("status").titlecontext()}) %t'
-    vim.opt.path:append('**')
-    vim.opt.wildignore:append { '*/.git/*', '*/.hg/*', '*/.svn/*', '*/.sass-cache/*', '*/x64/*', '*/.vs/*', '*/.clangd/*' }
-    vim.opt.suffixes:remove('.h')
-    vim.o.updatetime = 500
-    vim.o.signcolumn = 'yes:1'
-    vim.o.timeoutlen = 1000
-    vim.o.ttimeoutlen = 0       -- This solves the problem on linux terminal esc dealy
-    vim.o.breakindent = true
-    vim.g.original_path = vim.env.PATH
-    vim.o.fileencodings = 'ucs-bom,utf-8,euckr' --,latin1'
-    cmd.packadd 'cfilter'   -- enable Cfilter command
-    vim.o.winblend = 20
-    vim.o.winborder = 'rounded'
-    vim.o.jumpoptions = 'stack,clean'
-    vim.o.equalalways = false
-
-    -- Disabling standard plugins
-    vim.g.loaded_netrw = 1
-    vim.g.loaded_netrwPlugin = 1
-    vim.g.loaded_matchit = 1
-    vim.g.loaded_matchparen = 1
-    vim.opt.sessionoptions:remove("terminal")
-
-    vim.o.guifont = 'D2Coding:h15'
-
-    api.nvim_create_autocmd('BufEnter', { callback = function()
-        vim.opt_local.formatoptions:append('j')
-        vim.opt_local.formatoptions:remove{'r', 'o'}
-    end })
-
-    -- Clean up stale shada tmp files left by previous crashes (Windows)
-    api.nvim_create_autocmd('VimEnter', { once = true, callback = function()
-        local shada = vim.fn.stdpath('data') .. '/shada/main.shada'
-        for _, f in ipairs(vim.fn.glob(shada .. '.tmp.*', false, true)) do
-            vim.fn.delete(f)
-        end
-    end })
-end
 
 -- TODO: Find out not to use global function
 function FoldText()
@@ -84,10 +12,6 @@ function FoldText()
         string.rep('·', pad)
     }
     return table.concat(l)
-end
-
-local function FoldSetting()
-    vim.o.foldtext = "v:lua.FoldText()"
 end
 
 local function TerminalSetting()
@@ -113,181 +37,6 @@ local function SetAutoChangedFileReloading()
     end })
 end
 
-local function SetTabAndIndent()
-    vim.o.expandtab = true
-    vim.o.shiftround = true
-    vim.o.shiftwidth = 4
-    vim.o.softtabstop = 4
-    vim.o.tabstop = 8
-    api.nvim_create_autocmd('FileType', {pattern = {'cpp', 'c'}, callback = function()
-        vim.opt_local.cinoptions:append {'g0', ':0'}
-    end})
-    api.nvim_create_autocmd('FileType', {pattern = 'make', callback = function()
-        vim.bo.expandtab = false
-    end})
-end
-
-local function KeyMappings()
-    ut.nnoremap('<Up>', '<C-y>')
-    ut.nnoremap('<Down>', '<C-e>')
-    ut.nnoremap('<Left>', 'zh')
-    ut.nnoremap('<Right>', 'zl')
-    ut.inoremap('<Up>', '<NOP>')
-    ut.inoremap('<Down>', '<NOP>')
-    ut.inoremap('<Left>', '<NOP>')
-    ut.inoremap('<Right>', '<NOP>')
-
-    ut.noremap('<F1>', '<NOP>')
-    ut.inoremap('<F1>', '<NOP>')
-    ut.nnoremap('Q', '<NOP>')
-
-    ut.nnoremap('<LeftDrag>', '<NOP>')
-    ut.nnoremap('<LeftRelease>', '<NOP>')
-
-    -- Easy to switch between windows
-    ut.nnoremap('<c-h>', '<c-w><c-h>')
-    ut.nnoremap('<c-j>', '<c-w><c-j>')
-    ut.nnoremap('<c-k>', '<c-w><c-k>')
-    ut.nnoremap('<c-l>', '<c-w><c-l>')
-
-    -- Insert blank line
-    ut.nnoremap('[<space>', 'O<c-[>')
-    ut.nnoremap(']<space>', 'o<c-[>')
-
-    -- Start a new Undo group before making changes in INSERT mode.
-    ut.inoremap('<C-W>', '<C-G>u<C-W>')
-    ut.inoremap('<C-R>', '<C-G>u<C-R>')
-
-    -- For convinient
-    ut.noremap('H', '^')
-    ut.noremap('L', 'g_')
-    -- ut.inoremap('<C-k>', '<Up>')
-    -- ut.inoremap('<C-j>', '<Down>')
-    -- ut.inoremap('<C-h>', '<Left>')
-    -- ut.inoremap('<C-l>', '<Right>')
-    ut.vnoremap('>', '>gv')
-    ut.vnoremap('<', '<gv')
-    -- ut.nnoremap('<ESC>', '<CMD>nohlsearch<CR>')
-
-    -- Mapping to insert today and current time
-    cmd.inoreabbrev 'todayy <C-R>=strftime("%F")<CR>'
-    cmd.inoreabbrev 'noww <C-R>=strftime("%T")<CR>'
-    cmd.inoreabbrev 'thisfilee <C-R>=expand("%:t")<CR>'
-    cmd.inoreabbrev '--> →'
-
-    -- Escaping Windows folder seperators
-    -- TODO: Make it works on visual mode
-    ut.nnoremap('<leader>s/', [[<cmd>s/\\/\\\\/g<cr>]])
-
-    -- Quicker <Esc> in insert mode
-    --inoremap('jk', '<Esc>')
-
-    -- Paste non-linewise text above or below current cursor,
-    -- see https://stackoverflow.com/a/1346777/6064933
-    ut.nnoremap('<leader>p', 'm`o<ESC>p``')
-    ut.nnoremap('<leader>P', 'm`O<ESC>p``')
-
-    -- Move the cursor based on physical lines, not the actual lines.
-    ut.nnoremap('j', 'v:count == 0 ? "gj" : "j"', { 'expr' })
-    ut.nnoremap('k', 'v:count == 0 ? "gk" : "k"', { 'expr' })
-    ut.vnoremap('j', 'v:count == 0 ? "gj" : "j"', { 'expr' })
-    ut.vnoremap('k', 'v:count == 0 ? "gk" : "k"', { 'expr' })
-
-    -- Resize and change position windows
-    ut.nnoremap('<M-h>', '<C-w><')
-    ut.nnoremap('<M-l>', '<C-w>>')
-    ut.nnoremap('<M-j>', '<C-W>-')
-    ut.nnoremap('<M-k>', '<C-W>+')
-    ut.nnoremap('<M-left>', '<C-w>H')
-    ut.nnoremap('<M-right>', '<C-w>L')
-    ut.nnoremap('<M-up>', '<C-w>K')
-    ut.nnoremap('<M-down>', '<C-w>J')
-
-    -- Use Esc to quit builtin terminal
-    ut.tnoremap('<ESC>', [[<C-\><C-n>]])
-
-    -- Reselect the text that has just been pasted
-    ut.nnoremap('<leader>v', '`[v`]')
-    ut.nnoremap('<leader>V', '`[V`]')
-
-    -- Move lines up and down
-    ut.vnoremap('K', ":m '<-2<CR>gv=gv")
-    ut.vnoremap('J', ":m '>+1<CR>gv=gv")
-
-    -- Convinients
-    ut.nnoremap('<m-cr>', '<cmd>buffer #<cr><cmd>vertical sbuffer #<cr>')
-    cmd.cnoreabbrev 'W w'
-    cmd.cnoreabbrev 'Wa wa'
-    cmd.cnoreabbrev 'Q q'
-    cmd.cnoreabbrev 'Qa qa'
-
-    ut.inoremap('{<cr>', '{<cr>}<esc>O')
-
-    api.nvim_create_user_command('Config', function(opts)
-        if opts.args ~= '' then
-            require'tele'.ConfigFiles(opts.args)
-        else
-            ut.OpenConfig(opts)
-        end
-    end, { nargs='?' })
-    api.nvim_create_user_command('StripTrailingWhitespace', ut.StripTrailingWhitespace, {})
-    api.nvim_create_user_command('OpenAllHiddenBuffer', ut.OpenAllHiddenBuffers, {})
-    api.nvim_create_user_command('WipeHiddenBuffers', ut.wipeout_hidden_buffers, {})
-    api.nvim_create_user_command('NewInstance', function(opts)
-        local cmd_name = vim.g.neovide and 'neovide' or 'nvim'
-        local args = { cmd_name }
-        if opts.args ~= '' then
-            table.insert(args, opts.args)
-        end
-        vim.fn.jobstart(args, { detach = true })
-    end, { nargs = '?', complete = 'file' })
-
-    local function gui_zoom(dir)  -- dir = 'in' | 'out' | 'reset'
-        if vim.g.neopp_channel then
-            vim.cmd('NeoppFontZoom ' .. dir)
-        elseif vim.g.neovide then
-            if dir == 'reset' then vim.g.neovide_scale_factor = 1.0
-            else vim.g.neovide_scale_factor = vim.g.neovide_scale_factor * (dir == 'in' and 1.25 or 1/1.25) end
-        end
-    end
-    ut.nnoremap('<c-=>', function() gui_zoom('in') end)
-    ut.nnoremap('<c-+>', function() gui_zoom('in') end)   -- numpad + / Ctrl+Shift+=
-    ut.nnoremap('<c-->', function() gui_zoom('out') end)
-    ut.nnoremap('<c-0>', function() gui_zoom('reset') end)
-
-    ut.nnoremap('<esc>', function()
-        for _, win in ipairs(vim.api.nvim_list_wins()) do
-            if vim.api.nvim_win_get_config(win).relative ~= '' then
-                pcall(vim.api.nvim_win_close, win, false)
-            end
-        end
-        vim.cmd.nohlsearch()
-    end)
-
-    -- nvim-treesitter-textobjects keymaps (select/move/swap) are declared in
-    -- TreesitterConfig via require'nvim-treesitter.configs'.setup{ textobjects = ... }.
-
-end
-
-
-local function QuickFixSetting()
-    ut.set_highlight('QuickFixLine', { gui='underline' })
-end
-
-local function MarkdownHighlighting()
-    ut.set_highlight('RenderMarkdownH1Bg', { guibg='#3B2C3C' })
-    ut.set_highlight('RenderMarkdownH2Bg', { guibg='#3A352C' })
-    ut.set_highlight('RenderMarkdownH3Bg', { guibg='#1F343D' })
-    ut.set_highlight('RenderMarkdownH4Bg', { guibg='#28304D' })
-    ut.set_highlight('RenderMarkdownH5Bg', { guibg='#32313A' })
-    ut.set_highlight('@markup.heading.1.markdown', { guifg='#FECDD3' })
-    ut.set_highlight('@markup.heading.2.markdown', { guifg='#E8D4B0' })
-    ut.set_highlight('@markup.heading.3.markdown', { guifg='#B5E8B0' })
-    ut.set_highlight('@markup.heading.4.markdown', { guifg='#A5B4FC' })
-    ut.set_highlight('@markup.heading.5.markdown', { guifg='#DDD6FE' })
-end
-
-
 local function C_CPP_HeaderCorrection()
     vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
         pattern = "*.h",
@@ -305,14 +54,11 @@ local function C_CPP_HeaderCorrection()
 end
 
 ----------------------------------------------------------------------------------------------------
-BasicSettings()
-FoldSetting()
+require'setting'.setup()
 TerminalSetting()
 SetAutoChangedFileReloading()
-SetTabAndIndent()
 require'plugins'.setup()
-KeyMappings()
-QuickFixSetting()
-MarkdownHighlighting()
+require'keymap'.setup()
+require'highlight'.setup()
 C_CPP_HeaderCorrection()
 

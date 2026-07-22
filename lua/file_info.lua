@@ -132,8 +132,6 @@ function M.show()
 end
 
 function M.setup()
-    vim.api.nvim_create_user_command('FileInfo', M.show, {})
-    ut.nnoremap('<C-g>', M.show)
 end
 
 return M

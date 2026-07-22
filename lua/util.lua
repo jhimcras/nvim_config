@@ -427,6 +427,31 @@ function M.set_highlight(name, args)
     end
 end
 
+function M.set_highlights(hls)
+    for group, value in pairs(hls) do
+        if type(value) ~= "table" then
+            -- ignore non-table values
+        elseif value[1] then
+            -- indexed table: [1], [2], ...
+            for idx, sub in pairs(value) do
+                local has_modes
+                for k, v in pairs(sub) do
+                    if type(v) == "table" then
+                        vim.api.nvim_set_hl(0, ("%s_%s_%s"):format(group, idx, k), v)
+                        has_modes = true
+                    end
+                end
+                if not has_modes then
+                    vim.api.nvim_set_hl(0, ("%s_%s"):format(group, idx), sub)
+                end
+            end
+        else
+            -- plain highlight definition
+            vim.api.nvim_set_hl(0, group, value)
+        end
+    end
+end
+
 local function map_general(mode, lh, rh, opts)
     if opts then
         local check_validation = function(o)

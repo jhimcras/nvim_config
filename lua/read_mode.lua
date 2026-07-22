@@ -340,8 +340,6 @@ end
 function M.setup()
     local group = vim.api.nvim_create_augroup('read_mode', { clear = true })
 
-    ut.nnoremap('<leader>r', function() M.toggle() end)
-
     vim.api.nvim_create_autocmd('WinEnter', {
         group = group,
         callback = function() sync_global() end,

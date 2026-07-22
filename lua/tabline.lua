@@ -241,8 +241,6 @@ function M.TabLine()
 end
 
 function M.setup()
-    vim.o.showtabline = 2
-
     -- Content changed within tabs: rebuild titles, repaint. Highlights unchanged
     -- (tab count/selection did not move), so tab_update is skipped.
     local function paint_content()
@@ -307,12 +305,6 @@ function M.setup()
     -- neopp publishes IME state via vim.g.neopp_ime and fires this on every toggle;
     -- refresh just the indicator so it updates live on the 한/영 key.
     vim.api.nvim_create_autocmd('User', { pattern = 'NeoppImeChanged', callback = paint_ime })
-
-    ut.set_highlight('TabLineSel', {gui = 'bold,italic'})
-    ut.set_highlight('TabLineImeHangul', { guibg = '#a6e3a1', guifg = '#1e1e2e', gui = 'bold' })
-    ut.set_highlight('TabLineImeEng',    { guibg = '#45475a', guifg = '#cdd6f4' })
-    ut.nnoremap('<c-right>', function() M.tab_scroll(vim.v.count1) end)
-    ut.nnoremap('<c-left>', function() M.tab_scroll(-vim.v.count1) end)
 end
 
 return M

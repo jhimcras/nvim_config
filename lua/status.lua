@@ -815,70 +815,7 @@ local statusline_setup = {
         man         = man_statusline,
         -- oil = oil_statusline,
     },
-    highlights = {
-        StatuslineGeneralActive = {
-            [1] = {
-                n = { bg = '#1F2937', fg = '#9CA3AF' },
-                i = { bg = '#1F2937', fg = '#98BC99' },
-                v = { bg = '#1F2937', fg = '#FBC19D' },
-                c = { bg = '#1F2937', fg = '#99BBBD' },
-                r = { bg = '#1F2937', fg = '#E8D4B0' },
-            },
-            [2] = {
-                n = { bg = '#334155', fg = '#D1D5DB' },
-                i = { bg = '#98BC99', fg = '#111827' },
-                v = { bg = '#FBC19D', fg = '#111827' },
-                c = { bg = '#99BBBD', fg = '#111827' },
-                r = { bg = '#E8D4B0', fg = '#111827' },
-            },
-        },
-        StatuslineGeneralInactive = { bg = '#1F2937', fg = '#6B7280' },
-        StatuslineQuickfix = {
-            [1] = { link = 'StatuslineGeneralActive_1' },
-            [2] = { link = 'StatuslineGeneralActive_2' },
-        },
-        StatuslineTermActive = {
-            [1] = {
-                n = { link = 'StatuslineGeneralActive_1_n' },
-                t = { link = 'StatuslineGeneralActive_1_i' },
-            }
-        },
-        StatuslineTermInactive = { link = 'StatuslineGeneralInactive' },
-        StatuslineTag1 = { fg = '#1e1e2e', bg = '#89b4fa' },
-        StatuslineTag2 = { fg = '#1e1e2e', bg = '#a6e3a1' },
-        StatuslineTag3 = { fg = '#1e1e2e', bg = '#fab387' },
-        StatuslineTag4 = { fg = '#1e1e2e', bg = '#cba6f7' },
-        StatuslineTag5 = { fg = '#1e1e2e', bg = '#f38ba8' },
-        StatuslineSearch_1 = { bg = '#1F2937', fg = '#0284c7' },
-        StatuslineSearch_2 = { bg = '#0c4a6e', fg = '#7dd3fc' },
-    },
-    -- seperator = { '│', hl = { bg = '', fg = '' } },
 }
-
-local function set_all_highlight(hls)
-    for group, value in pairs(hls) do
-        if type(value) ~= "table" then
-            -- ignore non-table values
-        elseif value[1] then
-            -- indexed table: [1], [2], ...
-            for idx, sub in pairs(value) do
-                local has_modes
-                for k, v in pairs(sub) do
-                    if type(v) == "table" then
-                        vim.api.nvim_set_hl(0, ("%s_%s_%s"):format(group, idx, k), v)
-                        has_modes = true
-                    end
-                end
-                if not has_modes then
-                    vim.api.nvim_set_hl(0, ("%s_%s"):format(group, idx), sub)
-                end
-            end
-        else
-            -- plain highlight definition
-            vim.api.nvim_set_hl(0, group, value)
-        end
-    end
-end
 
 local function get_entry_func(buftype, filetype, protocol)
     local components = statusline_setup.components
@@ -935,7 +872,6 @@ function M.setup()
 
     vim.o.laststatus = 2
     vim.o.statusline = "%!v:lua.require'status'.statusline_entry()"
-    set_all_highlight(statusline_setup.highlights)
 
     require'tabline'.setup()
 end

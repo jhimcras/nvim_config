@@ -3,17 +3,6 @@ local M = {}
 
 local function LoupeSetting()
     vim.g.LoupeCenterResults = 0
-    local ut = require'util'
-    ut.nnoremap('n', '<cmd>let v:searchforward=1<cr><Plug>(Loupen)')
-    ut.nnoremap('N', '<cmd>let v:searchforward=1<cr><Plug>(LoupeN)')
-    -- Apply * mapping after VimEnter so it's never overridden by plugin files
-    vim.api.nvim_create_autocmd('VimEnter', { once = true, callback = function()
-        ut.nnoremap('*', function()
-            local view = vim.fn.winsaveview()
-            vim.cmd('keepjumps normal! *')
-            vim.fn.winrestview(view)
-        end)
-    end })
 end
 
 local function DirvishSetting()
@@ -59,8 +48,6 @@ local function OilSetting()
             ['_'] = { callback = function() vim.cmd.vsplit(); end },
         },
     }
-    vim.keymap.set("n", "-", function() oil.open() end)
-    vim.keymap.set("n", "_", function() vim.cmd.vsplit(); oil.open(); end)
 end
 
 local function SlimeSetting()
@@ -82,12 +69,6 @@ local function BarbaricSetting()
     vim.g.barbaric_fcitx_cmd = 'fcitx-remote'
     vim.g.barbaric_scope = 'buffer'
     vim.g.barbaric_timeout = -1
-end
-
-local function FullscreenSettings()
-    if vim.g.neovide then
-        require'util'.nnoremap('<s-cr>', function() vim.g.neovide_fullscreen = not vim.g.neovide_fullscreen end)
-    end
 end
 
 local function SetColorsAndHighlighting()
@@ -402,22 +383,6 @@ local function bootstrap_pckr()
 end
 
 local function FugitiveSetting()
-    local ut = require'util'
-    local function gclog_back()
-        local bufname = vim.api.nvim_buf_get_name(0)
-        local normalized = bufname:gsub('\\', '/'):lower()
-        if normalized:match('^fugitive://') then
-            local real = vim.fn['fugitive#Real'](bufname)
-            if real ~= '' then
-                vim.cmd('edit ' .. vim.fn.fnameescape(real))
-                return
-            end
-        end
-        vim.notify('Not in a fugitive history buffer', vim.log.levels.WARN)
-    end
-    vim.api.nvim_create_user_command('GclogBack', gclog_back, {})
-    -- ut.nnoremap('<leader>gb', gclog_back)
-
     vim.api.nvim_create_autocmd('FileType', {
         pattern = 'fugitive',
         callback = function()
@@ -524,8 +489,6 @@ function M.setup()
     -- require'complete'.setup()
 
     --require'focus_win'.setup{ active='#212121', inactive='#303030' }
-
-    FullscreenSettings()
 end
 
 return M

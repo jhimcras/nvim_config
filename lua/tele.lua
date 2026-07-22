@@ -11,13 +11,13 @@ local action_state = require 'telescope.actions.state'
 local make_entry = require 'telescope.make_entry'
 
 
-local function Files()
+function M.Files()
     local cwd = pr.GetCurrentProjectRoot() or ut.GetCurrentBufferDir()
     require 'telescope.builtin'.find_files { cwd = cwd }
 end
 
 -- TODO: cannot swipe current diplayed buffer
-local function Buffers()
+function M.Buffers()
     local default_selection_idx = 1
     local buffer_list = function(opts)
         opts = opts or {}
@@ -107,7 +107,7 @@ local function Buffers()
 end
 
 
-local function Sessions()
+function M.Sessions()
     local session = require 'session'
     pickers.new({}, {
         prompt_title = 'Sessions',
@@ -127,7 +127,7 @@ local function Sessions()
     }):find()
 end
 
-local function RunLauncher()
+function M.RunLauncher()
     local opts = {}
     pickers.new(opts, {
         prompt_title = 'Launch',
@@ -144,11 +144,11 @@ local function RunLauncher()
     }):find()
 end
 
-local function Notes()
+function M.Notes()
     require 'telescope.builtin'.find_files { cwd = '~/notes/' }
 end
 
-local function Tabs()
+function M.Tabs()
     local total = vim.fn.tabpagenr('$')
     local cur = vim.fn.tabpagenr()
     local entries = {}
@@ -218,7 +218,7 @@ function M.ConfigFiles(query)
     }
 end
 
-local function LSPWorkspaceSymbols()
+function M.LSPWorkspaceSymbols()
    require'telescope.builtin'.lsp_dynamic_workspace_symbols {
        fname_width = 120,
    }
@@ -235,13 +235,6 @@ function M.setup()
             preview = false,
         }
     }
-    ut.nmap('<Leader>ff', Files)
-    ut.nmap('<Leader>fb', Buffers)
-    ut.nmap('<Leader>fs', Sessions)
-    ut.nmap('<Leader>fu', RunLauncher)
-    ut.nmap('<Leader>fn', Notes)
-    ut.nmap('<Leader>fw', LSPWorkspaceSymbols)
-    ut.nmap('<Leader>ft', Tabs)
 end
 
 return M

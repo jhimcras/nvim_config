@@ -25,9 +25,6 @@ function M.setup()
     if vim.fn.executable('jq') ~= 1 then return end
 
     local api = vim.api
-    api.nvim_create_user_command('JsonPretty', function(t) M.pretty(t.line1, t.line2) end, { range = '%' })
-    api.nvim_create_user_command('JsonOneline', function(t) M.oneline(t.line1, t.line2) end, { range = '%' })
-
     api.nvim_create_autocmd('FileType', { pattern = 'json', callback = function()
         ut.nnoremap('<leader>jp', '<cmd>JsonPretty<cr>', { 'buffer' })
         ut.nnoremap('<leader>jo', '<cmd>JsonOneline<cr>', { 'buffer' })

@@ -340,7 +340,7 @@ function M.asyncGrep(term, word, wndidforll)
     end, {buffer = true})
 end
 
-local function prompt_grep(word)
+function M.prompt_grep(word)
     local prompt = word and "GrepWord > " or "Grep > "
     vim.schedule(function()
         -- local input = vim.fn.input(prompt)
@@ -409,15 +409,6 @@ function M.setup()
             M.restore_highlight(winid)
         end,
     })
-
-    api.nvim_create_user_command('Grep', function(t) M.asyncGrep(t.args, false, vim.fn.win_getid()) end, { nargs='+', bar=true })
-    api.nvim_create_user_command('GrepWord', function(t) M.asyncGrep(t.args, true, vim.fn.win_getid()) end, { nargs='+', bar=true })
-
-    ut.nnoremap('<leader>gg', function() prompt_grep(false) end)
-    ut.nnoremap('<leader>gw', function() prompt_grep(true) end)
-
-    ut.vnoremap('<leader>g', function() M.asyncGrep(ut.GetSelectWord(), false, vim.fn.win_getid()) end)
-    ut.nnoremap('<leader>gc', function() M.asyncGrep(vim.fn.expand('<cword>'), true, vim.fn.win_getid()) end)
 
     local function filter_list(get_items, set_items, pat, bang)
         local items = get_items()

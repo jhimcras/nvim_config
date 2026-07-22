@@ -60,12 +60,8 @@ function M.GetPrjrootConfig(filepath, root_markers)
 end
 
 function M.setup()
-    ut.nnoremap('<leader>tv', function() ut.OpenProjectRootTerminal('vertical') end)
-    ut.nnoremap('<leader>tx', function() ut.OpenProjectRootTerminal('horizontal') end)
-    ut.nnoremap('<leader>tt', function() ut.OpenProjectRootTerminal('tab') end)
     vim.api.nvim_create_autocmd({'BufRead', 'BufNew'}, {pattern = '.prjroot', callback = function() vim.bo.filetype = 'lua' end})
-    vim.api.nvim_create_user_command('PrjRootConfig', function(t) vim.cmd.vsplit {mods = t.smods, args = {(M.GetCurrentProjectRoot() or '.') .. '/.prjroot'}} end, {})
-    vim.api.nvim_create_autocmd('BufRead', { callback = function() 
+    vim.api.nvim_create_autocmd('BufRead', { callback = function()
         local cfg = M.GetCurrentConfig()
         if type(cfg) == 'table' and cfg.options then
             for opt, value in pairs(cfg.options) do
