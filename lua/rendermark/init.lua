@@ -19,9 +19,10 @@ function M.setup(opts)
     -- and drives the neopp GUI image backend via vim.ui.img (set/del). neopp only
     -- loads/renders/deletes.
     image.setup(opts)
-    -- Tag-jump style navigation for [text](link): <C-]>/<C-}> follow the link
-    -- under the cursor (current window / vertical split).
-    -- link.setup(opts)
+    -- Tag-jump navigation for [text](link) / [[wikilink]]: <C-]>/<C-}> defer to
+    -- markdown-oxide's go-to-definition when it resolves something; otherwise
+    -- create the missing target file (and parent dirs) and open it.
+    link.setup(opts)
 end
 
 M.refresh = wrap.refresh

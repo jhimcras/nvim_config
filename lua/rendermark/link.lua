@@ -35,6 +35,18 @@ local function link_destination_text(node, buf)
     return nil
 end
 
+local function get_wikilink_at_cursor()
+    local _, col = unpack(vim.api.nvim_win_get_cursor(0))
+    local line = vim.api.nvim_get_current_line()
+    local search_start = 1
+    while true do
+        local s, e, inner = line:find('%[%[(.-)%]%]', search_start)
+        if not s then return nil end
+        if col + 1 >= s and col + 1 <= e then return inner end
+        search_start = e + 1
+    end
+end
+
 local function is_url(raw)
     return raw:match('^%a[%w+.-]*://') ~= nil
 end
@@ -91,9 +103,13 @@ local function open_target(dest, split, buf)
         return
     end
     local resolved = scan.resolve_image_path(buf, dest.path)
-    if not resolved or vim.fn.filereadable(resolved) ~= 1 then
+    if not resolved then
         vim.notify('rendermark: file not found: ' .. dest.path, vim.log.levels.WARN)
         return
+    end
+    if vim.fn.filereadable(resolved) ~= 1 then
+        vim.fn.mkdir(vim.fn.fnamemodify(resolved, ':h'), 'p')
+        vim.fn.writefile({}, resolved)
     end
     if split then
         vim.cmd.vsplit { args = { resolved } }
@@ -105,21 +121,57 @@ local function open_target(dest, split, buf)
     end
 end
 
-function M.follow_link(split)
+local function follow_link_or_create(split)
     local buf = vim.api.nvim_get_current_buf()
+    local dest
     local node = get_link_node_at_cursor()
-    if not node then
-        vim.notify('rendermark: no link under cursor', vim.log.levels.WARN)
-        return
+    if node then
+        local raw = link_destination_text(node, buf)
+        if raw and raw ~= '' then dest = parse_destination(raw) end
     end
-    local raw = link_destination_text(node, buf)
-    if not raw or raw == '' then
-        vim.notify('rendermark: no link under cursor', vim.log.levels.WARN)
-        return
+    if not dest then
+        local wiki = get_wikilink_at_cursor()
+        if wiki then
+            local name, anchor = wiki:match('^([^#]*)#?(.*)$')
+            if not name:match('%.%w+$') then name = name .. '.md' end
+            dest = { kind = 'file', path = name, anchor = anchor or '' }
+        end
     end
-    local dest = parse_destination(raw)
+    if not dest then return false end
     vim.cmd("normal! m'")
     open_target(dest, split, buf)
+    return true
+end
+
+local function location_target_exists(loc)
+    local uri = loc.uri or loc.targetUri
+    if not uri then return false end
+    return vim.fn.filereadable(vim.uri_to_fname(uri)) == 1
+end
+
+local function lsp_definition_found(buf)
+    local win = vim.api.nvim_get_current_win()
+    local clients = vim.tbl_filter(function(c)
+        return c:supports_method('textDocument/definition')
+    end, vim.lsp.get_clients({ bufnr = buf }))
+    if #clients == 0 then return false end
+    local params = vim.lsp.util.make_position_params(win, clients[1].offset_encoding)
+    local responses = vim.lsp.buf_request_sync(buf, 'textDocument/definition', params, 1000)
+    if not responses then return false end
+    for _, resp in pairs(responses) do
+        local result = resp and resp.result
+        if result then
+            local locations = vim.islist(result) and result or { result }
+            for _, loc in ipairs(locations) do
+                if location_target_exists(loc) then return true end
+            end
+        end
+    end
+    return false
+end
+
+local function feed_tagjump()
+    vim.cmd('normal! ' .. vim.api.nvim_replace_termcodes('<C-]>', true, false, true))
 end
 
 function M.setup(_)
@@ -129,8 +181,21 @@ function M.setup(_)
         pattern = { 'markdown', 'markdown.mdx' },
         callback = function(args)
             local buf = args.buf
-            ut.nnoremap('<C-]>', function() M.follow_link(false) end, { buffer = buf })
-            ut.nnoremap('<C-}>', function() M.follow_link(true) end, { buffer = buf })
+            ut.nnoremap('<C-]>', function()
+                if lsp_definition_found(buf) then
+                    feed_tagjump()
+                elseif not follow_link_or_create(false) then
+                    feed_tagjump()
+                end
+            end, { buffer = buf })
+            ut.nnoremap('<C-}>', function()
+                if lsp_definition_found(buf) then
+                    vim.cmd('vsplit')
+                    feed_tagjump()
+                elseif not follow_link_or_create(true) then
+                    feed_tagjump()
+                end
+            end, { buffer = buf })
         end,
     })
 end
