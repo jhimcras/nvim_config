@@ -60,6 +60,31 @@ require'setting'.setup()
 TerminalSetting()
 SetAutoChangedFileReloading()
 require'plugins'.setup()
+require'prjroot'.setup()
+require'launcher'.setup()
+require'grep'.setup()
+require'json'.setup()
+require'session'.setup()
+require'status'.setup()
+require'file_info'.setup()
+require'smart_cursorline'.setup()
+require'read_mode'.setup()
+require'lsp_setting'.setup()
+require'rendermark'.setup{
+    max_width = 120,
+    plantuml = {
+        preview = {
+            mode = 'split',            -- 'float' (default, unchanged) | 'split'
+            auto = true,               -- auto-open when cursor enters a block
+            split = {
+                -- position is auto-selected from the source window's aspect:
+                -- landscape ⇒ right (vertical), portrait ⇒ bottom (horizontal).
+                size      = 0.20,         -- 'half' | 0<n<1 fraction of editor | n≥1 absolute cols/rows
+                lifecycle = 'cursor',    -- 'cursor' (open/close with block) | 'persistent' (pane stays, keeps last)
+            },
+        },
+    },
+}
 require'keymap'.setup()
 require'highlight'.setup()
 C_CPP_HeaderCorrection()
