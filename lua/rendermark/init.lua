@@ -11,7 +11,6 @@ local M = {}
 
 local wrap = require('rendermark.wrap')
 local image = require('rendermark.image')
-local link = require('rendermark.link')
 local checkbox = require('rendermark.checkbox')
 
 function M.setup(opts)
