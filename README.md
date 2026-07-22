@@ -20,15 +20,27 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 
 | Module | Description |
 |---|---|
-| `lua/launcher.lua` | Asynchronous program launcher |
+| `lua/setting.lua` | Core options and autocmds (auto-reload, terminal, folding, …) |
+| `lua/keymap.lua` | Global keymaps |
+| `lua/env.lua` | OS/environment detection helpers |
+| `lua/launcher.lua` | Asynchronous program launcher (`lua/launcher/registry.lua`: job registry) |
+| `lua/process_list.lua` | List/inspect/kill running launcher jobs |
 | `lua/prjroot.lua` | Project root detection (`.git`, `.prjroot`, etc.) — see [docs/prjroot.md](docs/prjroot.md) |
 | `lua/session.lua` | Session management per project root |
-| `lua/status.lua` | Custom statusline with LSP, git branch/commit, diagnostics |
+| `lua/status.lua` | Custom statusline with LSP, git branch/commit, diagnostics (`lua/status/mode.lua`: mode indicator) |
+| `lua/tabline.lua` | Custom tabline |
+| `lua/highlight.lua` | Statusline/UI highlight group definitions |
 | `lua/git.lua` | Git branch and commit info with TTL caching |
 | `lua/grep.lua` | RipGrep integration |
 | `lua/msbuild.lua` | MSBuild integration |
-| `lua/util.lua` | Shared utilities (memoize, serialize, keymaps, …) |
-| `lua/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables, distraction-free READ mode |
+| `lua/lsp_setting.lua` | LSP client configuration (`lua/lsp_setting/`: per-server tweaks — clangd, lua_ls, python, markdown) |
+| `lua/read_mode.lua` | Distraction-free READ mode, per window, any filetype |
+| `lua/smart_cursorline.lua` | Cursorline shown only where useful (active window, normal mode) |
+| `lua/file_info.lua` | File size/info display (`<C-g>`, `:FileInfo`) |
+| `lua/ansi_parser.lua` | ANSI SGR color codes → Neovim highlight groups |
+| `lua/json.lua` | jq-backed JSON pretty-print/minify (`:JsonPretty`, `:JsonOneline`) |
+| `lua/util.lua` | Shared utilities (memoize, keymaps, … `lua/util/cache.lua`, `lua/util/serialize.lua`) |
+| `lua/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables, inline image previews, link navigation/completion (`<C-]>`/`<C-}>`, creates missing link/wikilink targets), Obsidian-style checkbox toggle (`<C-Space>`) |
 
 ## Plugins
 
@@ -60,10 +72,11 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 **UI**
 - `sam4llis/nvim-tundra` — colorscheme
 - `norcalli/nvim-colorizer.lua` — color preview
-- `MeanderingProgrammer/render-markdown.nvim` — rendered markdown in buffer (configured via `lua/rendermark/`; headings/checkboxes/links/code blocks, slated to be superseded by the `rendermark` plugin)
+- `MeanderingProgrammer/render-markdown.nvim` — draws headings/checkboxes/links/code blocks; `lua/rendermark/` layers soft-wrap, image previews, link navigation/completion and checkbox toggling on top (only `lua/rendermark/rm_compat.lua` touches the plugin directly)
 
 **Misc**
 - `weirongxu/plantuml-previewer.vim` — PlantUML preview
+- `andythigpen/nvim-coverage` — code coverage overlay (Unix only)
 
 ## Testing
 
@@ -73,4 +86,4 @@ Tests use [plenary.nvim](https://github.com/nvim-lua/plenary.nvim).
 bash run_tests.sh
 ```
 
-Specs in `tests/spec/`: `util_spec.lua`, `prjroot_spec.lua`, `git_spec.lua`, `rendermark_wrap_spec.lua`.
+Specs live in `tests/spec/` (one file per module, e.g. `util_spec.lua`, `prjroot_spec.lua`, `git_spec.lua`, `rendermark_wrap_spec.lua`, `rendermark_image_spec.lua`).
