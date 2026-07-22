@@ -12,6 +12,7 @@ local M = {}
 local wrap = require('rendermark.wrap')
 local image = require('rendermark.image')
 local link = require('rendermark.link')
+local checkbox = require('rendermark.checkbox')
 
 function M.setup(opts)
     wrap.setup(opts) -- soft-wrap + tables (registers its own autocmds/command)
@@ -23,6 +24,8 @@ function M.setup(opts)
     -- markdown-oxide's go-to-definition when it resolves something; otherwise
     -- create the missing target file (and parent dirs) and open it.
     link.setup(opts)
+    -- Obsidian-compatible checkbox toggle ([ ]/[x]) on <C-Space>.
+    checkbox.setup(opts)
 end
 
 M.refresh = wrap.refresh
