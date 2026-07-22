@@ -20,10 +20,9 @@ function M.setup(opts)
     -- and drives the neopp GUI image backend via vim.ui.img (set/del). neopp only
     -- loads/renders/deletes.
     image.setup(opts)
-    -- Tag-jump navigation for [text](link) / [[wikilink]]: <C-]>/<C-}> defer to
-    -- markdown-oxide's go-to-definition when it resolves something; otherwise
-    -- fall back to manually following the link (existing targets only).
-    link.setup(opts)
+    -- Tag-jump navigation for [text](link) / [[wikilink]]: disabled in favor of
+    -- markdown-oxide's own go-to-definition, so <C-]>/<C-}> just use plain LSP.
+    -- link.setup(opts)
     -- Obsidian-compatible checkbox toggle ([ ]/[x]) on <C-Space>.
     checkbox.setup(opts)
 end
