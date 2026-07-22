@@ -659,15 +659,16 @@ local function make_statusline_text(bufnr, winid, components, sep, ctx)
 end
 
 
+local proj_or_git_branch_memoized          = ut.memoize_ttl(project_or_git_branch_name,  {ttl_ms=1000})
+local filename_and_status_memoized         = ut.memoize_ttl(filename_and_status,          {ttl_ms=300})
+local filename_and_status_compact_memoized = ut.memoize_ttl(filename_and_status_compact,  {ttl_ms=300})
+local encoding_memoized                    = ut.memoize_ttl(encoding,                     {ttl_ms=2000})
+local current_function_memoized            = ut.memoize_ttl(current_function,             {ttl_ms=200})
+
 local function general_statusline(activation, mode, winid)
     local hl = function(num)
         return 'StatuslineGeneral' .. (activation and ('Active_%d_%s'):format(num, mode) or 'Inactive')
     end
-    local proj_or_git_branch_memoized          = ut.memoize_ttl(project_or_git_branch_name,  {ttl_ms=1000})
-    local filename_and_status_memoized         = ut.memoize_ttl(filename_and_status,          {ttl_ms=300})
-    local filename_and_status_compact_memoized = ut.memoize_ttl(filename_and_status_compact,  {ttl_ms=300})
-    local encoding_memoized                    = ut.memoize_ttl(encoding,                     {ttl_ms=2000})
-    local current_function_memoized            = ut.memoize_ttl(current_function,             {ttl_ms=200})
     return {
         {
             sh(proj_or_git_branch_memoized, 9),

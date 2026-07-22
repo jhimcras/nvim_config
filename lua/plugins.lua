@@ -370,6 +370,7 @@ function M.setup()
 
     local cmd = require'pckr.loader.cmd'
     local keys = require'pckr.loader.keys'
+    local event = require'pckr.loader.event'
 
     require'pckr'.add {
         { 'johngrib/vim-f-hangul' },
@@ -383,7 +384,7 @@ function M.setup()
         { 'tpope/vim-fugitive', config = FugitiveSetting },
         { 'tpope/vim-surround' },
         { 'stevearc/oil.nvim', config = OilSetting },
-        { 'weirongxu/plantuml-previewer.vim', ft = { 'plantuml' }, requires = {'tyru/open-browser.vim', 'aklt/plantuml-syntax'} },
+        { 'weirongxu/plantuml-previewer.vim', cond = event({'FileType'}, {'plantuml'}), requires = {'tyru/open-browser.vim', 'aklt/plantuml-syntax'} },
         -- { 'will133/vim-dirdiff' },
         { 'junegunn/gv.vim' },
         { 'wincent/loupe', branch = 'main', config = LoupeSetting },
@@ -403,7 +404,7 @@ function M.setup()
             'MeanderingProgrammer/render-markdown.nvim',
             requires = {'nvim-treesitter/nvim-treesitter'},
             config = MarkdownConfig,
-            ft = { 'markdown' },
+            cond = event({'FileType'}, {'markdown'}),
         },
         { 'norcalli/nvim-colorizer.lua' },
     }

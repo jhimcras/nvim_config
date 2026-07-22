@@ -1,3 +1,5 @@
+vim.loader.enable()
+
 local env = require 'env'
 local api, cmd = vim.api, vim.cmd
 
