@@ -123,7 +123,7 @@ function M.setup()
 
     api.nvim_create_user_command('Config', function(opts)
         if opts.args ~= '' then
-            require'tele'.ConfigFiles(opts.args)
+            require'plugins.tele'.ConfigFiles(opts.args)
         else
             ut.OpenConfig(opts)
         end
@@ -223,13 +223,13 @@ function M.setup()
     ut.nnoremap('<c-left>', function() require'tabline'.tab_scroll(-vim.v.count1) end)
 
     -- tele
-    ut.nmap('<Leader>ff', function() require'tele'.Files() end)
-    ut.nmap('<Leader>fb', function() require'tele'.Buffers() end)
-    ut.nmap('<Leader>fs', function() require'tele'.Sessions() end)
-    ut.nmap('<Leader>fu', function() require'tele'.RunLauncher() end)
-    ut.nmap('<Leader>fn', function() require'tele'.Notes() end)
-    ut.nmap('<Leader>fw', function() require'tele'.LSPWorkspaceSymbols() end)
-    ut.nmap('<Leader>ft', function() require'tele'.Tabs() end)
+    ut.nmap('<Leader>ff', function() require'plugins.tele'.Files() end)
+    ut.nmap('<Leader>fb', function() require'plugins.tele'.Buffers() end)
+    ut.nmap('<Leader>fs', function() require'plugins.tele'.Sessions() end)
+    ut.nmap('<Leader>fu', function() require'plugins.tele'.RunLauncher() end)
+    ut.nmap('<Leader>fn', function() require'plugins.tele'.Notes() end)
+    ut.nmap('<Leader>fw', function() require'plugins.tele'.LSPWorkspaceSymbols() end)
+    ut.nmap('<Leader>ft', function() require'plugins.tele'.Tabs() end)
 end
 
 return M

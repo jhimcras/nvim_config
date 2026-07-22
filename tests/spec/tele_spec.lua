@@ -1,4 +1,4 @@
-local tele = require('tele')
+local tele = require('plugins.tele')
 
 describe('tele', function()
     it('should have a setup function', function()

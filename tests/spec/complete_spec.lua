@@ -18,10 +18,10 @@ describe('complete', function()
                 window = { bordered = function() end }
             }
         }
-        package.loaded['complete'] = nil
-        local complete = require('complete')
+        package.loaded['plugins.complete'] = nil
+        local complete = require('plugins.complete')
         assert.is_function(complete.setup)
-        package.loaded['complete'] = nil
+        package.loaded['plugins.complete'] = nil
         package.loaded['cmp'] = original_cmp
     end)
     
@@ -60,8 +60,8 @@ describe('complete', function()
         }
         
         -- Reload complete module to use mock
-        package.loaded['complete'] = nil
-        local complete = require('complete')
+        package.loaded['plugins.complete'] = nil
+        local complete = require('plugins.complete')
         
         -- Since setup calls cmp.setup, this will trigger our mock
         -- Note: this requires nvim-cmp to be available or mocked properly in the environment
