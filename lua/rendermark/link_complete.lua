@@ -1,7 +1,28 @@
-local link = require 'rendermark.link'
 local scan = require 'rendermark.image.scan'
 
 local M = {}
+
+local function is_url(raw)
+  return raw:match('^%a[%w+.-]*://') ~= nil
+end
+
+local function parse_destination(raw)
+  if is_url(raw) then
+    return { kind = 'url', raw = raw }
+  end
+  local path, anchor = raw:match('^([^#]*)#?(.*)$')
+  if path == '' then
+    return { kind = 'anchor', anchor = anchor }
+  end
+  return { kind = 'file', path = path, anchor = anchor }
+end
+
+local function slugify(text)
+  text = text:gsub('^%s+', ''):gsub('%s+$', ''):lower()
+  text = text:gsub('%s+', '-')
+  text = text:gsub('[^%w%-_]', '')
+  return text
+end
 
 function M.new()
   return setmetatable({}, { __index = M })
@@ -94,7 +115,7 @@ local function heading_items(buf, dest)
   local cmp_kind = require('cmp').lsp.CompletionItemKind
   local items = {}
   for _, heading in ipairs(list_headings(resolved)) do
-    local slug = link.slugify(heading)
+    local slug = slugify(heading)
     if slug:sub(1, #dest.anchor) == dest.anchor then
       items[#items + 1] = {
         label = slug,
@@ -109,13 +130,13 @@ end
 
 function M:complete(params, callback)
   local prefix = destination_prefix(params.context.cursor_before_line)
-  if not prefix or link.is_url(prefix) then
+  if not prefix or is_url(prefix) then
     return callback({ items = {}, isIncomplete = false })
   end
 
   local buf = params.context.bufnr
   if prefix:find('#', 1, true) then
-    local dest = link.parse_destination(prefix)
+    local dest = parse_destination(prefix)
     return callback({ items = heading_items(buf, dest), isIncomplete = true })
   end
 
