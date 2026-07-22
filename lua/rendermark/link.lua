@@ -103,13 +103,9 @@ local function open_target(dest, split, buf)
         return
     end
     local resolved = scan.resolve_image_path(buf, dest.path)
-    if not resolved then
+    if not resolved or vim.fn.filereadable(resolved) ~= 1 then
         vim.notify('rendermark: file not found: ' .. dest.path, vim.log.levels.WARN)
         return
-    end
-    if vim.fn.filereadable(resolved) ~= 1 then
-        vim.fn.mkdir(vim.fn.fnamemodify(resolved, ':h'), 'p')
-        vim.fn.writefile({}, resolved)
     end
     if split then
         vim.cmd.vsplit { args = { resolved } }
@@ -121,7 +117,7 @@ local function open_target(dest, split, buf)
     end
 end
 
-local function follow_link_or_create(split)
+local function follow_link(split)
     local buf = vim.api.nvim_get_current_buf()
     local dest
     local node = get_link_node_at_cursor()
@@ -184,7 +180,7 @@ function M.setup(_)
             ut.nnoremap('<C-]>', function()
                 if lsp_definition_found(buf) then
                     feed_tagjump()
-                elseif not follow_link_or_create(false) then
+                elseif not follow_link(false) then
                     feed_tagjump()
                 end
             end, { buffer = buf })
@@ -192,7 +188,7 @@ function M.setup(_)
                 if lsp_definition_found(buf) then
                     vim.cmd('vsplit')
                     feed_tagjump()
-                elseif not follow_link_or_create(true) then
+                elseif not follow_link(true) then
                     feed_tagjump()
                 end
             end, { buffer = buf })

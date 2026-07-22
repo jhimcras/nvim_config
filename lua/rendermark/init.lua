@@ -22,7 +22,7 @@ function M.setup(opts)
     image.setup(opts)
     -- Tag-jump navigation for [text](link) / [[wikilink]]: <C-]>/<C-}> defer to
     -- markdown-oxide's go-to-definition when it resolves something; otherwise
-    -- create the missing target file (and parent dirs) and open it.
+    -- fall back to manually following the link (existing targets only).
     link.setup(opts)
     -- Obsidian-compatible checkbox toggle ([ ]/[x]) on <C-Space>.
     checkbox.setup(opts)
