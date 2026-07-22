@@ -179,7 +179,7 @@ describe('lsp_setting', function()
             local detached = false
             vim.lsp.buf_detach_client = function() detached = true end
 
-            clangd_config.on_attach({ id = 1 }, bufnr)
+            clangd_config.on_attach({ id = 1, supports_method = function() return true end }, bufnr)
 
             vim.api.nvim_buf_delete(bufnr, { force = true })
             return detached

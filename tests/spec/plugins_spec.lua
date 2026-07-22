@@ -14,9 +14,11 @@ describe('plugins', function()
         package.loaded['session'] = { setup = function() end }
         package.loaded['status'] = { setup = function() end }
         package.loaded['file_info'] = { setup = function() end }
-        package.loaded['smart_colorcolumn'] = { setup = function() end }
         package.loaded['smart_cursorline'] = { setup = function() end }
         package.loaded['lsp_setting'] = { setup = function() end }
+        package.loaded['json'] = { setup = function() end }
+        package.loaded['read_mode'] = { setup = function() end }
+        package.loaded['rendermark'] = { setup = function() end }
         
         -- Mock vim.api functions to avoid errors during setup execution
         local original_create_autocmd = vim.api.nvim_create_autocmd

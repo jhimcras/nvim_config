@@ -5,15 +5,6 @@ local function LoupeSetting()
     vim.g.LoupeCenterResults = 0
 end
 
-local function DirvishSetting()
-    local ut, api = require'util', vim.api
-    api.nvim_create_autocmd('FileType', {pattern = 'dirvish', callback = function()
-        require'util'.nnoremap('gx', ut.ExecFileOnDirvish, {'silent', 'buffer'})
-    end})
-    ut.nnoremap('_', [[<cmd>execute 'vertical split | Dirvish %'<cr>]])
-    vim.g.dirvish_mode = [[:sort ,^.*[\/],]]
-end
-
 local function OilSetting()
     local oil = require('oil')
 
@@ -50,25 +41,8 @@ local function OilSetting()
     }
 end
 
-local function SlimeSetting()
-    vim.g.slime_target = 'neovim'
-end
-
 local function VsnipSetting()
     vim.g.vsnip_snippet_dir = vim.fn.stdpath('config') .. '/vsnip'
-end
-
-local function MatchupSetting()
-    vim.g.matchup_matchparen_offscreen = {}
-    -- ut.set_highlight('MatchParen', { gui='bold', guifg='#ff0000', guibg='NONE' })
-end
-
-local function BarbaricSetting()
-    vim.g.barbaric_ime = 'fcitx'
-    vim.g.barbaric_default = '-c'
-    vim.g.barbaric_fcitx_cmd = 'fcitx-remote'
-    vim.g.barbaric_scope = 'buffer'
-    vim.g.barbaric_timeout = -1
 end
 
 local function SetColorsAndHighlighting()
@@ -408,16 +382,12 @@ function M.setup()
         -- { 'iamcco/markdown-preview.nvim', ft = { 'markdown' }, run = 'cd app & yarn install' },
         { 'tpope/vim-fugitive', config = FugitiveSetting },
         { 'tpope/vim-surround' },
-        -- { 'justinmk/vim-dirvish', config = DirvishSetting },
         { 'stevearc/oil.nvim', config = OilSetting },
         { 'weirongxu/plantuml-previewer.vim', ft = { 'plantuml' }, requires = {'tyru/open-browser.vim', 'aklt/plantuml-syntax'} },
         -- { 'will133/vim-dirdiff' },
         { 'junegunn/gv.vim' },
         { 'wincent/loupe', branch = 'main', config = LoupeSetting },
-        -- { 'andymass/vim-matchup', config = MatchupSetting },
         { 'monkoose/matchparen.nvim', config = function() require'matchparen'.setup() end },
-        -- { 'rlue/vim-barbaric', disable = not env.os.unix, config = BarbaricSetting },
-        -- { 'jpalardy/vim-slime', config = SlimeSetting },
         { 'nvim-telescope/telescope.nvim', requires = 'nvim-lua/plenary.nvim', config = function() require'tele'.setup() end },
         { 'numToStr/Comment.nvim', config = function() require'Comment'.setup() end },
         { 'hrsh7th/vim-vsnip', config = VsnipSetting },
@@ -467,7 +437,6 @@ function M.setup()
     require'session'.setup()
     require'status'.setup()
     require'file_info'.setup()
-    -- require'smart_colorcolumn'.setup(120)
     require'smart_cursorline'.setup()
     require'read_mode'.setup()
     require'lsp_setting'.setup()
@@ -487,8 +456,6 @@ function M.setup()
         },
     }
     -- require'complete'.setup()
-
-    --require'focus_win'.setup{ active='#212121', inactive='#303030' }
 end
 
 return M

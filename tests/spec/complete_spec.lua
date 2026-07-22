@@ -28,9 +28,12 @@ describe('complete', function()
     it('should attempt to setup cmp', function()
         -- Mock cmp.setup
         local original_cmp = package.loaded['cmp']
+        local original_link_complete = package.loaded['rendermark.link_complete']
+        package.loaded['rendermark.link_complete'] = { new = function() return {} end }
         local captured_opts
         local bordered_calls = 0
         package.loaded['cmp'] = {
+            register_source = function() end,
             setup = function(opts)
                 captured_opts = opts
                 assert.is_table(opts)
@@ -71,5 +74,6 @@ describe('complete', function()
         
         -- Restore original
         package.loaded['cmp'] = original_cmp
+        package.loaded['rendermark.link_complete'] = original_link_complete
     end)
 end)

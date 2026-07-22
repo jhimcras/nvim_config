@@ -387,18 +387,6 @@ function M.CreateMarkdownNote()
 end
 
 
-function M.ExecFileOnDirvish()
-    local old_reg = vim.fn.getreg('@')
-    vim.cmd('normal yy')
-    local execute_file = vim.fn.shellescape(vim.fn.trim(vim.fn.getreg('@')), 1)
-    if env.os.win then
-        vim.cmd('silent !start explorer ' .. execute_file)
-    elseif env.os.unix and vim.fn.executable('kde-open5') then
-        vim.cmd('silent !kde-open5 ' .. execute_file .. ' &')
-    end
-    vim.fn.setreg('@', old_reg)
-end
-
 -- show difference of current file and saved file
 function M.DiffOrig()
     vim.cmd('vert new | set bt=nofile | r ++edit # | 0d_ | diffthis | wincmd p | diffthis')
