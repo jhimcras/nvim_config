@@ -16,6 +16,7 @@ function M.setup()
     end
 
     oil.setup {
+        watch_for_changes = true,
         columns = { {"mtime", format = "%Y%m%d %T"}, "size", },
         view_options = {
             show_hidden = true,
