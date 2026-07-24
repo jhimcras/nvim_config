@@ -63,6 +63,25 @@ Applied on `BufReadPre`, before the LSP server starts.
 
 ---
 
+### `clangd_args` — extra clangd command-line flags
+
+Appended to the default clangd command line for this project. Use it to throttle a
+project whose background index is too heavy — see [clangd.md](clangd.md).
+
+```lua
+return {
+  clangd_args = { '-j=2' },
+}
+```
+
+clangd takes the **last** occurrence of a repeated flag, so an entry here overrides the
+matching default.
+
+Applied on `BufReadPre`, before the LSP server starts — so it only affects servers
+started afterwards. If clangd is already attached to this project, run `:LspRestart`.
+
+---
+
 ### Launcher objects — named build/run tasks
 
 Any launcher definition should be placed inside a `launchers` table. Each object defines a command that can be run asynchronously in a scratch buffer.
@@ -156,6 +175,8 @@ return {
   lsp_env = {
     VIRTUAL_ENV = '/home/user/projects/myapp/.venv',
   },
+
+  clangd_args = { '-j=2' },
 
   launchers = {
     build = {

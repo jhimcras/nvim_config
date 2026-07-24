@@ -157,14 +157,19 @@ function M.setup()
     local lsp_server_names = { 'clangd', 'lua_ls', 'ty' }
 
     api.nvim_create_autocmd('BufReadPre', {
-        desc = 'Apply per-project LSP env vars from .prjroot',
+        desc = 'Apply per-project LSP settings from .prjroot',
         callback = function(ev)
             local fname = vim.api.nvim_buf_get_name(ev.buf)
             if fname == '' then return end
             local cfg = prjroot.GetPrjrootConfig(fname)
-            if not cfg or not cfg.lsp_env then return end
-            for _, name in ipairs(lsp_server_names) do
-                vim.lsp.config(name, { cmd_env = cfg.lsp_env })
+            if not cfg then return end
+            if cfg.lsp_env then
+                for _, name in ipairs(lsp_server_names) do
+                    vim.lsp.config(name, { cmd_env = cfg.lsp_env })
+                end
+            end
+            if cfg.clangd_args then
+                vim.lsp.config('clangd', { cmd = require('lsp_setting.clangd').cmd(cfg.clangd_args) })
             end
         end,
     })

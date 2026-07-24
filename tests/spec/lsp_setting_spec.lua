@@ -197,4 +197,28 @@ describe('lsp_setting', function()
             assert.is_false(on_attach_with_buffer('/repo/main.cpp'))
         end)
     end)
+
+    describe('clangd command line', function()
+        local clangd = require('lsp_setting.clangd')
+
+        local function index_of(cmd, pattern)
+            for i, arg in ipairs(cmd) do
+                if arg:match(pattern) then return i end
+            end
+        end
+
+        it('caps the async workers and lowers the background index priority', function()
+            local cmd = clangd.cmd()
+            local j = index_of(cmd, '^%-j=')
+            assert.is_number(j)
+            assert.is_true(tonumber(cmd[j]:match('^%-j=(%d+)$')) >= 2)
+            assert.is_number(index_of(cmd, '^%-%-background%-index%-priority=background$'))
+        end)
+
+        it('appends project arguments after the defaults so they win', function()
+            local cmd = clangd.cmd({ '-j=2' })
+            assert.are.equal('-j=2', cmd[#cmd])
+            assert.is_true(index_of(cmd, '^%-j=') < #cmd)
+        end)
+    end)
 end)
