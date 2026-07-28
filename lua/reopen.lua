@@ -275,9 +275,26 @@ local function fill_buffer(win, state)
     return false
 end
 
+-- True when `win` has a neighbour along the given axis, i.e. when there is
+-- somewhere for the rows or columns it gives up to actually go.
+local function has_neighbour(win, a, b)
+    local ok, res = pcall(api.nvim_win_call, win, function()
+        local self = vim.fn.winnr()
+        return vim.fn.winnr(a) ~= self or vim.fn.winnr(b) ~= self
+    end)
+    return ok and res
+end
+
 local function apply_view(win, state)
-    pcall(api.nvim_win_set_width, win, state.width)
-    pcall(api.nvim_win_set_height, win, state.height)
+    -- Resizing a window with no neighbour on that axis leaves rows unaccounted
+    -- for, and Neovim absorbs them by growing cmdheight. Dropping a quickfix
+    -- window from a restored tab is exactly how a lone window arises here.
+    if has_neighbour(win, 'h', 'l') then
+        pcall(api.nvim_win_set_width, win, state.width)
+    end
+    if has_neighbour(win, 'j', 'k') then
+        pcall(api.nvim_win_set_height, win, state.height)
+    end
     local lines = api.nvim_buf_line_count(api.nvim_win_get_buf(win))
     local row = math.min(state.cursor[1], math.max(lines, 1))
     pcall(api.nvim_win_set_cursor, win, { row, state.cursor[2] })

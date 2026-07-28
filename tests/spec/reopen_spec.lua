@@ -135,6 +135,36 @@ describe('reopen', function()
         assert.are.equal(path, vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(wins[1])))
     end)
 
+    it('leaves cmdheight alone when a dropped quickfix leaves one window', function()
+        vim.o.cmdheight = 1
+        local path = fresh_file('cmdheight.txt')
+        vim.cmd('tabnew ' .. vim.fn.fnameescape(path))
+        vim.fn.setqflist({ { filename = path, lnum = 1, text = 'qf' } })
+        vim.cmd('botright copen')
+        assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
+
+        vim.cmd('tabclose')
+        flush()
+        assert.is_true(reopen.restore())
+
+        -- The quickfix window is gone, so the survivor must keep the full height
+        -- rather than handing its rows to the command line.
+        assert.are.equal(1, #vim.api.nvim_tabpage_list_wins(0))
+        assert.are.equal(1, vim.o.cmdheight)
+    end)
+
+    it('leaves cmdheight alone restoring a tab that held a single window', function()
+        vim.o.cmdheight = 1
+        vim.cmd('tabnew ' .. vim.fn.fnameescape(fresh_file('solo.txt')))
+        assert.are.equal(1, #vim.api.nvim_tabpage_list_wins(0))
+
+        vim.cmd('tabclose')
+        flush()
+        assert.is_true(reopen.restore())
+
+        assert.are.equal(1, vim.o.cmdheight)
+    end)
+
     it('records nothing for a tab holding only list windows', function()
         local path = fresh_file('only_lists.txt')
         vim.fn.setqflist({ { filename = path, lnum = 1, text = 'qf' } })
