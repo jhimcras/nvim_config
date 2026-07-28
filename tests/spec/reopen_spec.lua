@@ -67,6 +67,44 @@ describe('reopen', function()
         assert.are.equal(2, #layout_after[2])
     end)
 
+    it('puts a middle window back between its neighbours, not at the edge', function()
+        local equalalways = vim.o.equalalways
+        vim.o.equalalways = false
+
+        local left, mid, right = fresh_file('L.txt'), fresh_file('M.txt'), fresh_file('R.txt')
+        vim.cmd('edit ' .. vim.fn.fnameescape(left))
+        vim.cmd('rightbelow vsplit ' .. vim.fn.fnameescape(mid))
+        vim.cmd('rightbelow vsplit ' .. vim.fn.fnameescape(right))
+        vim.cmd('wincmd =')
+
+        local layout = vim.fn.winlayout()
+        assert.are.equal('row', layout[1])
+        assert.are.equal(3, #layout[2])
+        local middle = layout[2][2][2]
+        local width = vim.api.nvim_win_get_width(middle)
+        vim.api.nvim_set_current_win(middle)
+
+        vim.cmd('close')
+        flush()
+        assert.is_true(reopen.restore())
+
+        local names = {}
+        local widths = {}
+        for _, child in ipairs(vim.fn.winlayout()[2]) do
+            local win = child[2]
+            names[#names + 1] = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)), ':t')
+            widths[#widths + 1] = vim.api.nvim_win_get_width(win)
+        end
+        assert.are.same(
+            { vim.fn.fnamemodify(left, ':t'), vim.fn.fnamemodify(mid, ':t'), vim.fn.fnamemodify(right, ':t') },
+            names)
+        -- The far-edge split used to squeeze a neighbour down to a single column.
+        assert.is_true(math.abs(widths[2] - width) <= 2)
+        for _, w in ipairs(widths) do assert.is_true(w > 2) end
+
+        vim.o.equalalways = equalalways
+    end)
+
     it('restores the cursor position of the closed window', function()
         local path = fresh_file('cursor.txt')
         vim.cmd('vsplit ' .. vim.fn.fnameescape(path))

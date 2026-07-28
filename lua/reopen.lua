@@ -164,7 +164,12 @@ local function placement(tree, target)
         for i = #leaves, 1, -1 do reversed[#reversed + 1] = leaves[i] end
         leaves = reversed
     end
-    return { dir = kind, before = before, root = is_root, anchors = leaves }
+    -- Splitting against the tab edge is only equivalent when the sibling really
+    -- is everything else. With three or more windows in the root container it
+    -- would fling the window out to the far edge instead of back between its
+    -- neighbours, so only a two-child root qualifies.
+    local spans_tab = is_root and #siblings == 2
+    return { dir = kind, before = before, root = spans_tab, anchors = leaves }
 end
 
 local function push(entry)
