@@ -995,9 +995,20 @@ describe('partially visible plantuml block rendering', function()
     return buf
   end
 
+  -- 1200x100 PNG header: a wide diagram that has to be shrunk to the text width,
+  -- leaving it far shorter (in rows) than the 7-line source block.
+  local WIDE_PNG = bytes({
+    137, 80, 78, 71, 13, 10, 26, 10,  -- signature
+    0, 0, 0, 13,                      -- IHDR length
+    73, 72, 68, 82,                   -- "IHDR"
+    0, 0, 4, 176,                     -- width  = 1200
+    0, 0, 0, 100,                     -- height = 100
+  })
+
   -- Fresh module + backend store + fake vim.ui.img capturing set/del calls.
-  -- Stubs collect_plantuml_images with a ready 100x600 PNG record for `buf`.
-  local function setup_e2e(outro, height)
+  -- Stubs collect_plantuml_images with a ready PNG record for `buf` (100x600 by
+  -- default; `dim` overrides it with { data, w, h }).
+  local function setup_e2e(outro, height, dim)
     local old_ui = vim.ui
     local old_store = rawget(_G, '__rendermark_image_backend')
     rawset(_G, '__rendermark_image_backend', nil)
@@ -1010,13 +1021,14 @@ describe('partially visible plantuml block rendering', function()
         get = function(id) return store[id] end,
       },
     }
+    dim = dim or { data = TALL_PNG, w = 100, h = 600 }
     local buf = make_buf(outro)
-    local png = tmpfile(TALL_PNG)
+    local png = tmpfile(dim.data)
     img.collect_plantuml_images = function(target, result)
       if target ~= buf then return end
       result[#result + 1] = {
         row = FENCE, col = 0, end_col = 12, path = png, raw_path = png,
-        source_width = 100, source_height = 600,
+        source_width = dim.w, source_height = dim.h,
         source_span_height = FENCE_END - FENCE + 1, plantuml = true,
         plantuml_end_row = FENCE_END, virtual = false,
       }
@@ -1057,6 +1069,57 @@ describe('partially visible plantuml block rendering', function()
     end
     return rows
   end
+
+  -- Rows dropped from the grid entirely (conceal_lines), not just blanked.
+  local function hidden_rows(img, buf)
+    local ns = img.ensure_image_namespace()
+    local rows = {}
+    local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+    for _, m in ipairs(marks) do
+      if m[4] and m[4].conceal_lines ~= nil then rows[m[2]] = true end
+    end
+    return rows
+  end
+
+  local function virt_line_count(img, buf, row)
+    local ns = img.ensure_image_namespace()
+    local n = 0
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+      if m[2] == row and m[4] and m[4].virt_lines then n = n + #m[4].virt_lines end
+    end
+    return n
+  end
+
+  it('hides surplus source rows so the footprint matches the fitted image height', function()
+    local img, buf, win, store, teardown =
+      setup_e2e(30, 12, { data = WIDE_PNG, w = 1200, h = 100 })
+    scroll(win, 0)
+    img.send_images(); img.send_images()
+
+    local entry = buf_image(store)
+    assert.is_truthy(entry)
+    local virt_h = math.ceil(entry.opts.display_height_px / CELL_H)
+    local span = FENCE_END - FENCE + 1
+    -- Shrunk to the text width, the wide diagram is shorter than its source block.
+    assert.is_true(virt_h < span)
+
+    -- The rows past the image bottom are dropped, the ones under it stay.
+    local hidden = hidden_rows(img, buf)
+    for r = FENCE, FENCE + virt_h - 1 do
+      assert.is_nil(hidden[r], 'row ' .. r .. ' should stay on the grid')
+    end
+    for r = FENCE + virt_h, FENCE_END do
+      assert.is_truthy(hidden[r], 'row ' .. r .. ' should be hidden')
+    end
+
+    -- Footprint = visible source rows + virt_lines, with no blank padding left.
+    local visible = 0
+    for r = FENCE, FENCE_END do
+      if not hidden[r] then visible = visible + 1 end
+    end
+    assert.equals(virt_h, visible + virt_line_count(img, buf, FENCE))
+    teardown()
+  end)
 
   it('keeps rendering (clipped) when the top fence scrolls above the window', function()
     local img, buf, win, store, teardown = setup_e2e(30, 6)
