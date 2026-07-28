@@ -112,6 +112,58 @@ describe('reopen', function()
         assert.are.equal(3, #vim.api.nvim_tabpage_list_wins(0))
     end)
 
+    it('omits quickfix and location lists when restoring a closed tab', function()
+        local path = fresh_file('tab_lists.txt')
+        vim.cmd('tabnew ' .. vim.fn.fnameescape(path))
+        vim.fn.setloclist(vim.api.nvim_get_current_win(), { { filename = path, lnum = 1, text = 'loc' } })
+        vim.cmd('lopen')
+        vim.fn.setqflist({ { filename = path, lnum = 1, text = 'qf' } })
+        vim.cmd('copen')
+        assert.are.equal(3, #vim.api.nvim_tabpage_list_wins(0))
+
+        vim.cmd('tabclose')
+        flush()
+        assert.are.equal('tab', reopen.peek().kind)
+        assert.is_true(reopen.restore())
+
+        -- Only the file window comes back; the two list windows are dropped.
+        local wins = vim.api.nvim_tabpage_list_wins(0)
+        assert.are.equal(1, #wins)
+        for _, win in ipairs(wins) do
+            assert.are_not.equal('quickfix', vim.bo[vim.api.nvim_win_get_buf(win)].buftype)
+        end
+        assert.are.equal(path, vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(wins[1])))
+    end)
+
+    it('records nothing for a tab holding only list windows', function()
+        local path = fresh_file('only_lists.txt')
+        vim.fn.setqflist({ { filename = path, lnum = 1, text = 'qf' } })
+        vim.cmd('tabnew')
+        vim.cmd('copen')
+        vim.cmd('only')
+        assert.are.equal('quickfix', vim.bo.buftype)
+        flush()
+        reopen.clear()
+
+        vim.cmd('tabclose')
+        flush()
+
+        assert.are.equal(0, reopen.depth())
+    end)
+
+    it('still restores a lone quickfix window closed on its own', function()
+        local path = fresh_file('lone_qf.txt')
+        vim.cmd('edit ' .. vim.fn.fnameescape(path))
+        vim.fn.setqflist({ { filename = path, lnum = 1, text = 'qf' } })
+        vim.cmd('copen')
+
+        vim.cmd('cclose')
+        flush()
+        assert.is_true(reopen.restore())
+
+        assert.are.equal('quickfix', vim.bo[vim.api.nvim_win_get_buf(0)].buftype)
+    end)
+
     it('ignores terminal windows', function()
         vim.cmd('vsplit')
         vim.cmd('terminal')

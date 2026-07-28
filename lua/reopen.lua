@@ -63,15 +63,15 @@ local function win_state(win)
     return state
 end
 
--- Drop terminal leaves (and dead windows) from a layout tree, collapsing any
--- container left with a single child. Returns nil if nothing survives.
-local function prune(node)
+-- Keep only the leaves `keep` accepts, collapsing any container left with a
+-- single child. Returns nil if nothing survives.
+local function filter_tree(node, keep)
     if node[1] == 'leaf' then
-        return (not skippable(node[2])) and node or nil
+        return keep(node[2]) and node or nil
     end
     local kids = {}
     for _, child in ipairs(node[2]) do
-        local kept = prune(child)
+        local kept = filter_tree(child, keep)
         if kept then kids[#kids + 1] = kept end
     end
     if #kids == 0 then return nil end
@@ -90,7 +90,7 @@ end
 
 local function snapshot(tab)
     local tree = vim.fn.winlayout(api.nvim_tabpage_get_number(tab))
-    tree = prune(tree)
+    tree = filter_tree(tree, function(win) return not skippable(win) end)
     if not tree then return nil end
     local states = {}
     for _, win in ipairs(collect_leaves(tree, {})) do
@@ -101,6 +101,30 @@ local function snapshot(tab)
         states = states,
         index  = api.nvim_tabpage_get_number(tab),
         cur    = api.nvim_tabpage_get_win(tab),
+    }
+end
+
+-- Strip quickfix and location-list windows from a snapshot destined for a tab
+-- entry. A location list dies with the origin window, which the tab close took
+-- with it, and a global quickfix list drifts out from under the closed tab --
+-- either way the window comes back empty or stale, which is worse than absent.
+-- Only tab entries need this: a lone quickfix/loclist window closing leaves its
+-- origin alive, and restoring that still works.
+local function without_lists(snap)
+    local tree = filter_tree(snap.tree, function(win)
+        local state = snap.states[win]
+        return state ~= nil and state.buftype ~= 'quickfix'
+    end)
+    if not tree then return nil end
+
+    local leaves = collect_leaves(tree, {})
+    local states = {}
+    for _, win in ipairs(leaves) do states[win] = snap.states[win] end
+    return {
+        tree   = tree,
+        states = states,
+        index  = snap.index,
+        cur    = states[snap.cur] and snap.cur or leaves[1],
     }
 end
 
@@ -189,7 +213,12 @@ local function reconcile()
             for _, entry in ipairs(stack) do
                 if entry.tab ~= tab then kept[#kept + 1] = entry end
             end
-            kept[#kept + 1] = { kind = 'tab', tab = tab, snap = snap }
+            -- A tab of nothing but quickfix/loclist windows leaves nothing worth
+            -- restoring, so no entry is recorded at all.
+            local restorable = without_lists(snap)
+            if restorable then
+                kept[#kept + 1] = { kind = 'tab', tab = tab, snap = restorable }
+            end
             stack = kept
         end
     end
