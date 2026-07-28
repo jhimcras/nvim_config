@@ -1945,7 +1945,8 @@ function M._send_images_impl()
   local function remember_image_reservation(win, buf, row, virt_h, source_span_height, label)
     local reserve_row = row
     local reserve_above = false
-    local reserve_h = math.max(1, (virt_h or 1) - math.max(1, source_span_height or 1) + 1)
+    local span = math.max(1, source_span_height or 1)
+    local reserve_h = math.max(1, (virt_h or 1) - span + 1)
 
     local ok, fold = pcall(vim.api.nvim_win_call, win, function()
       return { start = vim.fn.foldclosed(row + 1), finish = vim.fn.foldclosedend(row + 1) }
@@ -1988,11 +1989,15 @@ function M._send_images_impl()
     local current = image_reservations[buf][key]
     if current then
       current.reserve_h = math.max(current.reserve_h, reserve_h)
+      current.span = math.min(current.span or math.huge, span)
       current.label = current.label or label
     else
       image_reservations[buf][key] = {
         row = reserve_row,
         reserve_h = reserve_h,
+        -- Visible source rows. Part of the reservation signature: hiding a row
+        -- shifts everything below it just like a virt_line does.
+        span = span,
         above = reserve_above,
         label = label,
       }
@@ -2165,14 +2170,23 @@ function M._send_images_impl()
         })
 
         local virt_h = image_rows
+        -- Source rows the block keeps on screen. Read by the PlantUML conceal
+        -- pass below, which hides the rest outright.
+        local visible_span = nil
         if #layouts > 0 then
           stack_bottom_grid_row = layout_grid_row + image_rows
           local source_span_height = nil
           for _, layout in ipairs(layouts) do
             source_span_height = math.min(source_span_height or math.huge, layout.image.source_span_height or 1)
           end
+          -- A concealed source row still occupies one display row, so a block with
+          -- more lines than the fitted image is tall (common once a wide diagram is
+          -- shrunk to the text width) leaves span - virt_h blank rows under the
+          -- image. Cap the span at virt_h; the surplus rows are dropped from the
+          -- grid entirely via conceal_lines, so the footprint is exactly virt_h.
+          visible_span = math.min(math.max(1, source_span_height or 1), virt_h)
           local text_left_cell = math.floor(text_left_px / math.max(1, cell_w))
-          local label = { source_span = source_span_height or 1, virt_h = virt_h }
+          local label = { source_span = visible_span, virt_h = virt_h }
           if M._stub_active then
             -- One box per image, placed at the same text-relative cell offset the
             -- GUI image uses (grid_col - text_left_cell), so boxes and gap text share
@@ -2217,7 +2231,7 @@ function M._send_images_impl()
             end
           end
           if not label.boxes and not label.text_rows then label = nil end
-          remember_image_reservation(measure_win, measure_buf, row, virt_h, source_span_height or 1, label)
+          remember_image_reservation(measure_win, measure_buf, row, virt_h, visible_span, label)
           if text_layout then
             -- Conceal the whole raw row (links + surrounding prose); the prose is
             -- re-rendered bottom-aligned in the gaps via label.text_rows.
@@ -2254,12 +2268,22 @@ function M._send_images_impl()
             image_conceals[payload_buf] = image_conceals[payload_buf] or {}
             local last = math.max(image.row, tonumber(image.plantuml_end_row) or image.row)
             local block_lines = vim.api.nvim_buf_get_lines(payload_buf, image.row, last + 1, false) or {}
+            local keep = visible_span or #block_lines
             for li, line in ipairs(block_lines) do
-              image_conceals[payload_buf][#image_conceals[payload_buf] + 1] = {
-                row = image.row + li - 1,
-                col = 0,
-                end_col = #line,
-              }
+              if li > keep then
+                -- Surplus row: drop it from the grid so it doesn't pad the block
+                -- past the image bottom.
+                image_conceals[payload_buf][#image_conceals[payload_buf] + 1] = {
+                  row = image.row + li - 1,
+                  hide_line = true,
+                }
+              else
+                image_conceals[payload_buf][#image_conceals[payload_buf] + 1] = {
+                  row = image.row + li - 1,
+                  col = 0,
+                  end_col = #line,
+                }
+              end
             end
           end
           payload[#payload + 1] = {
@@ -2323,6 +2347,7 @@ function M._send_images_impl()
         tostring(buf),
         tostring(reservation.row),
         tostring(reservation.reserve_h),
+        tostring(reservation.span),
         tostring(reservation.above),
       }, ':')
     end
@@ -2386,11 +2411,18 @@ function M._send_images_impl()
   end
   for buf, conceals in pairs(image_conceals) do
     for _, c in ipairs(conceals) do
-      pcall(vim.api.nvim_buf_set_extmark, buf, image_ns, c.row, c.col, {
-        end_col = c.end_col,
-        conceal = '',
-        priority = 250,
-      })
+      if c.hide_line then
+        pcall(vim.api.nvim_buf_set_extmark, buf, image_ns, c.row, 0, {
+          conceal_lines = '',
+          priority = 250,
+        })
+      else
+        pcall(vim.api.nvim_buf_set_extmark, buf, image_ns, c.row, c.col, {
+          end_col = c.end_col,
+          conceal = '',
+          priority = 250,
+        })
+      end
     end
   end
   for _, e in ipairs(plantuml_errors) do
