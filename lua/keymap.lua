@@ -132,12 +132,7 @@ function M.setup()
     api.nvim_create_user_command('OpenAllHiddenBuffer', ut.OpenAllHiddenBuffers, {})
     api.nvim_create_user_command('WipeHiddenBuffers', ut.wipeout_hidden_buffers, {})
     api.nvim_create_user_command('NewInstance', function(opts)
-        local cmd_name = vim.g.neovide and 'neovide' or 'nvim'
-        local args = { cmd_name }
-        if opts.args ~= '' then
-            table.insert(args, opts.args)
-        end
-        vim.fn.jobstart(args, { detach = true })
+        require'instance'.new(opts.args ~= '' and opts.args or nil)
     end, { nargs = '?', complete = 'file' })
 
     ut.nnoremap('<c-=>', function() gui_zoom('in') end)
