@@ -208,6 +208,9 @@ function M.setup()
     -- read_mode
     ut.nnoremap('<leader>r', function() require'read_mode'.toggle() end)
 
+    -- reopen
+    ut.nnoremap('<leader>u', function() require'reopen'.restore() end)
+
     -- json
     if vim.fn.executable('jq') == 1 then
         api.nvim_create_user_command('JsonPretty', function(t) require'json'.pretty(t.line1, t.line2) end, { range = '%' })

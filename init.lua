@@ -69,6 +69,7 @@ require'status'.setup()
 require'file_info'.setup()
 require'smart_cursorline'.setup()
 require'read_mode'.setup()
+require'reopen'.setup()
 require'lsp_setting'.setup()
 require'rendermark'.setup{
     max_width = 120,
