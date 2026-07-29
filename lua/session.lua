@@ -757,6 +757,24 @@ function M.setup()
     vim.cmd([[cnoreabbrev <expr> quita (getcmdtype() == ':' && getcmdline() ==# 'quita' ? 'SessionQuitAll' : 'quita')]])
     vim.cmd([[cnoreabbrev <expr> quitall (getcmdtype() == ':' && getcmdline() ==# 'quitall' ? 'SessionQuitAll' : 'quitall')]])
 
+    api.nvim_create_user_command('SessionWriteQuitAll', function()
+        local ok, err = pcall(vim.cmd, 'wall')
+        if not ok then
+            vim.cmd('redraw')
+            vim.notify('Write failed, aborting quit: ' .. tostring(err), vim.log.levels.ERROR)
+            return
+        end
+        if handle_quit_guard('return', true) == false then
+            return
+        end
+        vim.cmd('qa')
+    end, {})
+
+    vim.cmd([[cnoreabbrev <expr> wqa (getcmdtype() == ':' && getcmdline() ==# 'wqa' ? 'SessionWriteQuitAll' : 'wqa')]])
+    vim.cmd([[cnoreabbrev <expr> wqall (getcmdtype() == ':' && getcmdline() ==# 'wqall' ? 'SessionWriteQuitAll' : 'wqall')]])
+    vim.cmd([[cnoreabbrev <expr> xa (getcmdtype() == ':' && getcmdline() ==# 'xa' ? 'SessionWriteQuitAll' : 'xa')]])
+    vim.cmd([[cnoreabbrev <expr> xall (getcmdtype() == ':' && getcmdline() ==# 'xall' ? 'SessionWriteQuitAll' : 'xall')]])
+
     -- Handle buffer closure and global exit
     vim.api.nvim_create_autocmd("QuitPre", {
         group = exit_guard_group,
