@@ -135,6 +135,48 @@ describe('session.SaveSession', function()
     end)
 end)
 
+describe('session cmdheight round trip', function()
+    local sessions_dir
+    local session_name = '__test__cmdheight'
+
+    local function save_and_load(saved_cmdheight, before_load)
+        vim.o.cmdheight = saved_cmdheight
+        session.SaveSession(session_name)
+        vim.o.cmdheight = before_load
+        session.OpenSession(session_name)
+    end
+
+    before_each(function()
+        sessions_dir = make_sessions_dir()
+        pcall(vim.cmd, 'silent! tabonly!')
+        pcall(vim.cmd, 'silent! only!')
+        -- OpenSession bails out behind a confirm() prompt when a buffer is
+        -- modified, and confirm() answers 0 in a headless run.
+        for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+            pcall(function() vim.bo[bufnr].modified = false end)
+        end
+    end)
+
+    after_each(function()
+        vim.o.cmdheight = 1
+        for _, f in ipairs(vim.fn.glob(sessions_dir .. '/' .. session_name .. '*', false, true)) do
+            vim.fn.delete(f)
+        end
+    end)
+
+    it('normalises cmdheight after loading a session', function()
+        -- Nothing in the session script restores cmdheight, so a value inflated
+        -- before the load used to survive it.
+        save_and_load(1, 7)
+        assert.are.equal(1, vim.o.cmdheight)
+    end)
+
+    it('normalises cmdheight left inflated when the session was saved', function()
+        save_and_load(5, 7)
+        assert.are.equal(1, vim.o.cmdheight)
+    end)
+end)
+
 describe('session QuitPre exit guard', function()
     local original_confirm
     local original_get_running_processes
