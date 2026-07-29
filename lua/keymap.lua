@@ -132,8 +132,12 @@ function M.setup()
     api.nvim_create_user_command('OpenAllHiddenBuffer', ut.OpenAllHiddenBuffers, {})
     api.nvim_create_user_command('WipeHiddenBuffers', ut.wipeout_hidden_buffers, {})
     api.nvim_create_user_command('NewInstance', function(opts)
-        require'instance'.new(opts.args ~= '' and opts.args or nil)
-    end, { nargs = '?', complete = 'file' })
+        if opts.bang then
+            api.nvim_echo({ { require'instance'.diagnose() } }, true, {})
+        else
+            require'instance'.new(opts.args ~= '' and opts.args or nil)
+        end
+    end, { nargs = '?', bang = true, complete = 'file' })
 
     ut.nnoremap('<c-=>', function() gui_zoom('in') end)
     ut.nnoremap('<c-+>', function() gui_zoom('in') end)   -- numpad + / Ctrl+Shift+=

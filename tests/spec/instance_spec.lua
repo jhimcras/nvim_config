@@ -74,21 +74,13 @@ describe('instance.build_argv', function()
 end)
 
 describe('instance.detect', function()
-    local original_exe_of_pid, original_getppid
+    local original_parent_exe
 
-    before_each(function()
-        original_exe_of_pid = instance.exe_of_pid
-        original_getppid = vim.uv.os_getppid
-        vim.uv.os_getppid = function() return 4242 end
-    end)
-
-    after_each(function()
-        instance.exe_of_pid = original_exe_of_pid
-        vim.uv.os_getppid = original_getppid
-    end)
+    before_each(function() original_parent_exe = instance.parent_exe end)
+    after_each(function() instance.parent_exe = original_parent_exe end)
 
     local function detect_with(exe)
-        instance.exe_of_pid = function() return exe end
+        instance.parent_exe = function() return exe, { how = 'stub' } end
         return instance.detect()
     end
 
@@ -121,5 +113,77 @@ describe('instance.detect', function()
         local d = detect_with(nil)
         assert.are.equal('tui', d.kind)
         assert.is_nil(d.exe)
+    end)
+
+    it('keeps the resolution detail for diagnostics', function()
+        assert.are.same({ how = 'stub' }, detect_with('/usr/bin/neovide').detail)
+    end)
+end)
+
+describe('instance.new', function()
+    local original_parent_exe, original_jobstart, original_echo
+    local echoed
+
+    before_each(function()
+        original_parent_exe = instance.parent_exe
+        original_jobstart = vim.fn.jobstart
+        original_echo = vim.api.nvim_echo
+        echoed = {}
+        instance.parent_exe = function() return '/usr/bin/neovide' end
+        vim.api.nvim_echo = function(chunks) table.insert(echoed, chunks[1][1]) end
+    end)
+
+    after_each(function()
+        instance.parent_exe = original_parent_exe
+        vim.fn.jobstart = original_jobstart
+        vim.api.nvim_echo = original_echo
+    end)
+
+    it('stays quiet when the job starts', function()
+        vim.fn.jobstart = function() return 7 end
+        instance.new('a.txt')
+        assert.are.same({}, echoed)
+    end)
+
+    it('reports a jobstart failure instead of failing silently', function()
+        vim.fn.jobstart = function() return -1 end
+        instance.new('a.txt')
+        assert.are.equal(1, #echoed)
+        assert.is_truthy(echoed[1]:find('jobstart=-1', 1, true))
+        assert.is_truthy(echoed[1]:find('/usr/bin/neovide', 1, true))
+    end)
+
+    it('reports a jobstart exception instead of failing silently', function()
+        vim.fn.jobstart = function() error('E475: not executable') end
+        instance.new('a.txt')
+        assert.are.equal(1, #echoed)
+        assert.is_truthy(echoed[1]:find('E475', 1, true))
+        assert.is_truthy(echoed[1]:find('/usr/bin/neovide', 1, true))
+    end)
+
+    it('reports when no argv could be built', function()
+        local original_build_argv = instance.build_argv
+        instance.build_argv = function() return nil, '터미널 없음' end
+        vim.fn.jobstart = function() error('jobstart must not run') end
+
+        instance.new()
+        instance.build_argv = original_build_argv
+
+        assert.are.equal(1, #echoed)
+        assert.is_truthy(echoed[1]:find('터미널 없음', 1, true))
+    end)
+end)
+
+describe('instance.diagnose', function()
+    it('renders every field the detection relied on', function()
+        local original = instance.parent_exe
+        instance.parent_exe = function() return '/usr/bin/neovide', { how = 'stub' } end
+        local out = instance.diagnose()
+        instance.parent_exe = original
+
+        for _, field in ipairs{ 'nvim pid', 'progpath', 'detect', 'context', 'argv' } do
+            assert.is_truthy(out:find(field, 1, true), 'missing field: ' .. field)
+        end
+        assert.is_truthy(out:find('/usr/bin/neovide', 1, true))
     end)
 end)
