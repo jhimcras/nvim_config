@@ -508,6 +508,11 @@ function M.OpenSession(session)
         end
     end
     close_empty_qf_loc_windows()
+    -- 'mksession' records no cmdheight (sessionoptions carries no 'options') and
+    -- the window sizes it restores are fractions of whatever room is left, so a
+    -- cmdheight inflated before the load would otherwise survive it untouched.
+    -- Assigning it hands the rows back to the windows.
+    vim.o.cmdheight = 1
 end
 
 
