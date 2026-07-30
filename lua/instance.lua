@@ -115,7 +115,11 @@ end
 function M.build_argv(detected, file, ctx)
     local function argv(...)
         local out = { ... }
-        if file then table.insert(out, file) end
+        if type(file) == 'table' then
+            vim.list_extend(out, file)
+        elseif file then
+            table.insert(out, file)
+        end
         return out
     end
 

@@ -10,10 +10,23 @@ local actions = require 'telescope.actions'
 local action_state = require 'telescope.actions.state'
 local make_entry = require 'telescope.make_entry'
 
+local function open_in_new_instance()
+    local entry = action_state.get_selected_entry()
+    local path = entry and (entry.path or entry.filename)
+    if path then
+        require'instance'.new(path)
+    end
+end
 
 function M.Files()
     local cwd = pr.GetCurrentProjectRoot() or ut.GetCurrentBufferDir()
-    require 'telescope.builtin'.find_files { cwd = cwd }
+    require 'telescope.builtin'.find_files {
+        cwd = cwd,
+        attach_mappings = function(_, map)
+            map('i', '<C-i>', open_in_new_instance)
+            return true
+        end,
+    }
 end
 
 -- TODO: cannot swipe current diplayed buffer
@@ -86,6 +99,7 @@ function M.Buffers()
         sorter = conf.generic_sorter(opts),
         default_selection_index = default_selection_idx,
         attach_mappings = function(prompt_bufnr, map)
+            map('i', '<C-i>', open_in_new_instance)
             map('i', '<C-s>', function()    -- s as swipe
                 local current_picker = action_state.get_current_picker(prompt_bufnr)
                 local multi_selection = current_picker:get_multi_selection()
@@ -114,12 +128,20 @@ function M.Sessions()
         finder = finders.new_table { results = session.SessionList(), },
         sorter = conf.generic_sorter({}),
         previewer = false,
-        attach_mappings = function(prompt_bufnr)
+        attach_mappings = function(prompt_bufnr, map)
             actions.select_default:replace(function()
                 actions.close(prompt_bufnr)
                 local selection = action_state.get_selected_entry()
                 if selection and #selection > 0 then
                     session.OpenSession(selection[1])
+                end
+            end)
+            map('i', '<C-i>', function()
+                local selection = action_state.get_selected_entry()
+                if selection and #selection > 0 then
+                    actions.close(prompt_bufnr)
+                    local path = string.format('%s/sessions/%s', vim.fn.stdpath('data'), selection[1])
+                    require'instance'.new({ '-S', path })
                 end
             end)
             return true
@@ -145,7 +167,13 @@ function M.RunLauncher()
 end
 
 function M.Notes()
-    require 'telescope.builtin'.find_files { cwd = '~/notes/' }
+    require 'telescope.builtin'.find_files {
+        cwd = '~/notes/',
+        attach_mappings = function(_, map)
+            map('i', '<C-i>', open_in_new_instance)
+            return true
+        end,
+    }
 end
 
 function M.Tabs()
@@ -215,6 +243,10 @@ function M.ConfigFiles(query)
     require'telescope.builtin'.find_files {
         cwd = vim.fn.stdpath('config'),
         default_text = query or '',
+        attach_mappings = function(_, map)
+            map('i', '<C-i>', open_in_new_instance)
+            return true
+        end,
     }
 end
 
