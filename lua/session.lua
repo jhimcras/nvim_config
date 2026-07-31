@@ -630,6 +630,17 @@ function M.setup()
         callback = auto_save,
     })
 
+    -- 'nvim -S <session>' sources the session file (which sets v:this_session)
+    -- during startup, bypassing M.OpenSession() and its cmdheight fix above.
+    vim.api.nvim_create_autocmd("VimEnter", {
+        group = vim.api.nvim_create_augroup("SessionCmdheightFix", { clear = true }),
+        callback = function()
+            if vim.v.this_session ~= "" then
+                vim.o.cmdheight = 1
+            end
+        end,
+    })
+
     local exit_warned = false
     local exit_guard_group = vim.api.nvim_create_augroup("ExitGuard", { clear = true })
 

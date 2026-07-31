@@ -177,6 +177,29 @@ describe('session cmdheight round trip', function()
     end)
 end)
 
+describe('session cmdheight fix on VimEnter', function()
+    after_each(function()
+        vim.o.cmdheight = 1
+        vim.v.this_session = ''
+    end)
+
+    it('normalises cmdheight on VimEnter when started with a session', function()
+        session.setup()
+        vim.o.cmdheight = 7
+        vim.v.this_session = '/tmp/__test__fake_session'
+        vim.api.nvim_exec_autocmds('VimEnter', {})
+        assert.are.equal(1, vim.o.cmdheight)
+    end)
+
+    it('leaves cmdheight untouched on VimEnter without a session', function()
+        session.setup()
+        vim.o.cmdheight = 7
+        vim.v.this_session = ''
+        vim.api.nvim_exec_autocmds('VimEnter', {})
+        assert.are.equal(7, vim.o.cmdheight)
+    end)
+end)
+
 describe('session QuitPre exit guard', function()
     local original_confirm
     local original_get_running_processes
