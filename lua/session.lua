@@ -632,12 +632,23 @@ function M.setup()
 
     -- 'nvim -S <session>' sources the session file (which sets v:this_session)
     -- during startup, bypassing M.OpenSession() and its cmdheight fix above.
+    local cmdheight_fix_group = vim.api.nvim_create_augroup("SessionCmdheightFix", { clear = true })
     vim.api.nvim_create_autocmd("VimEnter", {
-        group = vim.api.nvim_create_augroup("SessionCmdheightFix", { clear = true }),
+        group = cmdheight_fix_group,
         callback = function()
             if vim.v.this_session ~= "" then
                 vim.o.cmdheight = 1
             end
+        end,
+    })
+
+    -- Resizing (e.g. fullscreening the window) makes Neovim reflow windows
+    -- against the new &lines/&columns; leftover rows that don't tile evenly
+    -- get absorbed into cmdheight the same way mksession's restore does.
+    vim.api.nvim_create_autocmd("VimResized", {
+        group = cmdheight_fix_group,
+        callback = function()
+            vim.o.cmdheight = 1
         end,
     })
 
