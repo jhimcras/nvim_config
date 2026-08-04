@@ -538,6 +538,13 @@ function M.setup()
                 return 'g@'
             end, { buffer = true, expr = true, silent = true })
 
+            -- 'gh'/'gH' normally enter Select mode, which unconditionally treats the next
+            -- typed key as "replace selection" before dispatching any mapping — fatal on
+            -- this nomodifiable buffer (E21). Redirect to ordinary Visual mode instead,
+            -- where movement and the 'x'-mode d/x mappings below already work correctly.
+            vim.keymap.set('n', 'gh', 'v', { buffer = true, silent = true })
+            vim.keymap.set('n', 'gH', 'V', { buffer = true, silent = true })
+
             vim.keymap.set('n', 'sn', function()
                 require'grep'.sort_list()
             end, { buffer = true, silent = true })
@@ -574,20 +581,12 @@ function M.setup()
             vim.keymap.set('n', 'diw', filter_cword, { buffer = true, silent = true })
             vim.keymap.set('n', 'daw', filter_cword, { buffer = true, silent = true })
 
-            local del_visual = function()
-                delete_lines(vim.fn.line("'<"), vim.fn.line("'>"))
+            local visual_delete = function()
+                vim.o.operatorfunc = "v:lua.require'grep'.delete_operator"
+                return 'g@'
             end
-            vim.keymap.set('v', 'd', del_visual, { buffer = true, silent = true })
-            vim.keymap.set('v', 'x', del_visual, { buffer = true, silent = true })
-
-            -- Select mode treats unmapped keys as "replace selection" (:help Select-mode);
-            -- on this nomodifiable buffer that throws E21 and drops back to Normal mode,
-            -- destroying the selection before `d` is reached. Bounce out to Visual mode
-            -- via <C-g>, move, and bounce back so movement extends the selection instead.
-            local select_motions = { 'j', 'k', 'gg', 'G' }
-            for _, lhs in ipairs(select_motions) do
-                vim.keymap.set('s', lhs, '<C-g>' .. lhs .. '<C-g>', { buffer = true, silent = true })
-            end
+            vim.keymap.set('x', 'd', visual_delete, { buffer = true, expr = true, silent = true })
+            vim.keymap.set('x', 'x', visual_delete, { buffer = true, expr = true, silent = true })
         end,
     })
 
