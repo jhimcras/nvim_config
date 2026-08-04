@@ -456,6 +456,7 @@ function M.setup()
     api.nvim_create_user_command('Cfilter', handle_cfilter, { nargs = '+', bang = true, force = true })
 
     local function delete_lines(start_line, end_line)
+        if start_line < 1 or end_line < start_line then return end
         local info = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1]
         local new_items = {}
         if info.loclist == 1 then
@@ -578,6 +579,15 @@ function M.setup()
             end
             vim.keymap.set('v', 'd', del_visual, { buffer = true, silent = true })
             vim.keymap.set('v', 'x', del_visual, { buffer = true, silent = true })
+
+            -- Select mode treats unmapped keys as "replace selection" (:help Select-mode);
+            -- on this nomodifiable buffer that throws E21 and drops back to Normal mode,
+            -- destroying the selection before `d` is reached. Bounce out to Visual mode
+            -- via <C-g>, move, and bounce back so movement extends the selection instead.
+            local select_motions = { 'j', 'k', 'gg', 'G' }
+            for _, lhs in ipairs(select_motions) do
+                vim.keymap.set('s', lhs, '<C-g>' .. lhs .. '<C-g>', { buffer = true, silent = true })
+            end
         end,
     })
 
