@@ -315,6 +315,36 @@ describe('wrap behavior', function()
         assert.is_true(#on_other > 0)
     end)
 
+    it('skips lines hidden inside a closed fold', function()
+        -- A closed fold keeps the drawn row count at a screenful while the window's
+        -- topline..botline range covers the whole fold, so refresh must decorate the
+        -- visible segments only -- otherwise its cost tracks the file, not the screen.
+        wrap.setup()
+        local width = vim.api.nvim_win_get_width(0)
+        local long = string.rep('word ', math.ceil(width / 5) + 20)
+        local lines = {}
+        for i = 1, 200 do
+            lines[i] = long
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.wo.foldmethod = 'manual'
+        vim.cmd('5,150fold')
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        vim.cmd('redraw')
+        wrap.refresh(0)
+
+        local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
+        local folded = vim.api.nvim_buf_get_extmarks(0, ns, { 5, 0 }, { 148, -1 }, {})
+        local visible = vim.api.nvim_buf_get_extmarks(0, ns, { 1, 0 }, { 3, -1 }, {})
+        assert.are.equal(0, #folded)
+        assert.is_true(#visible > 0)
+
+        vim.cmd('normal! zR')
+        vim.wo.foldmethod = 'manual'
+    end)
+
     it('caps the wrap width at max_width when the window is wider', function()
         wrap.setup({ max_width = 30, left_pad = 0, right_pad = 0 })
         -- A 60-col line: fits the (wider) test window, but exceeds max_width = 30.

@@ -37,6 +37,10 @@ local config = vim.deepcopy(defaults)
 local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
 local group
 local saved_state = {} -- per-window saved options, keyed by window id
+-- Fold-change detection state, keyed by window id (see the decoration provider in
+-- M.setup): the last topline/botline seen while drawing, and a flag telling the
+-- provider to swallow the first draw after a refresh.
+local win_seen, win_settled = {}, {}
 
 local function dw(s)
     return wrap_text.dw(s)
@@ -663,57 +667,38 @@ local function buffer_enabled(buf)
     return vim.g.markdown_visual_wrap_enabled ~= false and vim.b[buf].markdown_visual_wrap == true
 end
 
-function M.refresh(win)
-    if not win or win == 0 then
-        win = vim.api.nvim_get_current_win()
+-- The drawn line ranges of topline..botline, i.e. with closed folds cut out.
+-- Returns 0-indexed half-open { first, last } pairs. A closed fold's first line
+-- is left out too: that row draws 'foldtext', not the buffer text, so decorating
+-- it is pointless.
+-- 'foldclosed' works on the current window, hence the nvim_win_call (refresh also
+-- runs for non-current windows -- same reason as the leftcol lookup below).
+local function visible_segments(win, topline, botline)
+    if botline - topline < vim.api.nvim_win_get_height(win) then
+        return { { math.max(topline - 1, 0), botline } }
     end
-    if not vim.api.nvim_win_is_valid(win) then
-        return
-    end
-    local buf = vim.api.nvim_win_get_buf(win)
-    if not buffer_enabled(buf) then
-        return
-    end
-
-    vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-
-    -- Horizontal scroll (leftcol) is window-global, so it slides every line's real
-    -- text, which we can't counter-compensate per line. Treat any horizontal scroll
-    -- as "show raw text": with the namespace just cleared, bail out so all lines
-    -- scroll uniformly. Decorations are restored on the next refresh once leftcol
-    -- returns to 0.
-    local leftcol = vim.api.nvim_win_call(win, function()
-        return vim.fn.winsaveview().leftcol
+    return vim.api.nvim_win_call(win, function()
+        local segs, lnum = {}, topline
+        while lnum <= botline do
+            if vim.fn.foldclosed(lnum) == -1 then
+                local s = lnum
+                repeat
+                    lnum = lnum + 1
+                until lnum > botline or vim.fn.foldclosed(lnum) ~= -1
+                segs[#segs + 1] = { s - 1, lnum - 1 }
+            else
+                lnum = vim.fn.foldclosedend(lnum) + 1
+            end
+        end
+        return segs
     end)
-    if leftcol > 0 then
-        return
-    end
+end
 
-    local info = vim.fn.getwininfo(win)[1]
-    local width = vim.api.nvim_win_get_width(win) - info.textoff - config.right_pad
-    -- A user-set max_width takes priority, but only as a cap: a narrower window
-    -- still wraps at the window width.
-    if config.max_width and config.max_width > 0 then
-        width = math.min(width, config.max_width)
-    end
-    if width < config.min_text_width then
-        return
-    end
-
-    -- vim.w[win].read_mode_active (set/cleared by read_mode.lua, if loaded --
-    -- this module has no hard dependency on it) wraps every visible line,
-    -- including the one under the (hidden) cursor: a sentinel of -1 never
-    -- matches a real line number, so the cursor-line exception below and in
-    -- render_table is effectively disabled.
-    -- Limitation: this namespace is buffer-scoped, so if the same buffer is
-    -- split across a READ window and a Normal window, whichever window's
-    -- refresh runs last wins the buffer's rendered wrapping -- accepted, not
-    -- fixed (would need cross-window refresh ordering).
-    local cursor_row = vim.w[win].read_mode_active and -1
-        or vim.api.nvim_win_get_cursor(win)[1]
-    local first = math.max(info.topline - 1, 0)
-    local last = info.botline
-
+-- Decorate one visible range [first, last). Everything here is keyed by row, so
+-- ranges are independent of each other and need no merging.
+-- Limitation: a pipe table straddling a closed fold is rendered only for the part
+-- inside this range, so its grid is cut off -- the folded part is not drawn anyway.
+local function render_range(buf, first, last, width, cursor_row, images_active)
     -- Detect code blocks (read verbatim, exempt from wrapping) and pipe tables
     -- (rendered as a boxed grid) with treesitter. A full parse keeps table node
     -- ranges complete even when a table is only partly on screen; the captures are
@@ -777,13 +762,12 @@ function M.refresh(win)
     -- Lines with image links are laid out by rendermark.image (images as a band +
     -- bottom-aligned gap text); don't double-wrap them here or the continuation rows
     -- stack below the image. Only skip when the image pipeline is actually active.
-    local image = require('rendermark.image')
-    local images_active = image.is_active()
+    local image = images_active and require('rendermark.image') or nil
 
     for lnum = first, last - 1 do
         if lnum + 1 ~= cursor_row and not in_code[lnum] and not in_table[lnum] then
             local text = vim.api.nvim_buf_get_lines(buf, lnum, lnum + 1, false)[1]
-            if images_active and text and image.line_has_image_link(text) then
+            if image and text and image.line_has_image_link(text) then
                 -- handled by rendermark.image
             elseif text and #text > 0 then
                 local indent = M.compute_indent(text)
@@ -813,6 +797,61 @@ function M.refresh(win)
             end
         end
     end
+end
+
+function M.refresh(win)
+    if not win or win == 0 then
+        win = vim.api.nvim_get_current_win()
+    end
+    if not vim.api.nvim_win_is_valid(win) then
+        return
+    end
+    local buf = vim.api.nvim_win_get_buf(win)
+    if not buffer_enabled(buf) then
+        return
+    end
+
+    vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+
+    -- Horizontal scroll (leftcol) is window-global, so it slides every line's real
+    -- text, which we can't counter-compensate per line. Treat any horizontal scroll
+    -- as "show raw text": with the namespace just cleared, bail out so all lines
+    -- scroll uniformly. Decorations are restored on the next refresh once leftcol
+    -- returns to 0.
+    local leftcol = vim.api.nvim_win_call(win, function()
+        return vim.fn.winsaveview().leftcol
+    end)
+    if leftcol > 0 then
+        return
+    end
+
+    local info = vim.fn.getwininfo(win)[1]
+    local width = vim.api.nvim_win_get_width(win) - info.textoff - config.right_pad
+    -- A user-set max_width takes priority, but only as a cap: a narrower window
+    -- still wraps at the window width.
+    if config.max_width and config.max_width > 0 then
+        width = math.min(width, config.max_width)
+    end
+    if width < config.min_text_width then
+        return
+    end
+
+    -- vim.w[win].read_mode_active (set/cleared by read_mode.lua, if loaded --
+    -- this module has no hard dependency on it) wraps every visible line,
+    -- including the one under the (hidden) cursor: a sentinel of -1 never
+    -- matches a real line number, so the cursor-line exception below and in
+    -- render_table is effectively disabled.
+    -- Limitation: this namespace is buffer-scoped, so if the same buffer is
+    -- split across a READ window and a Normal window, whichever window's
+    -- refresh runs last wins the buffer's rendered wrapping -- accepted, not
+    -- fixed (would need cross-window refresh ordering).
+    local cursor_row = vim.w[win].read_mode_active and -1
+        or vim.api.nvim_win_get_cursor(win)[1]
+    local images_active = require('rendermark.image').is_active()
+    for _, seg in ipairs(visible_segments(win, info.topline, info.botline)) do
+        render_range(buf, seg[1], seg[2], width, cursor_row, images_active)
+    end
+    win_settled[win] = true
 end
 
 local pending = {}
@@ -962,6 +1001,44 @@ function M.setup(opts)
     vim.api.nvim_create_autocmd({ 'BufWinEnter', 'WinEnter' }, {
         group = group,
         callback = apply_current_window,
+    })
+
+    -- Opening or closing a fold (zo/zc/za/zR/zM, a click in the fold column,
+    -- 'foldlevel' changes) fires no autocmd at all, so the events below never see
+    -- it -- yet it changes which lines are drawn, and refresh only decorates those.
+    -- A decoration provider is the one hook that runs on every redraw: use it purely
+    -- as a change detector (no extmarks here) on the drawn line range.
+    -- Only a *fold* change is acted on here: the drawn range grew or shrank while
+    -- the top line stayed put. Scrolling and resizing move the top line too, and
+    -- those are already covered by the events below -- reacting to them here as
+    -- well would just double the refreshes.
+    vim.api.nvim_set_decoration_provider(
+        vim.api.nvim_create_namespace('markdown_visual_wrap_watch'), {
+            on_win = function(_, win, buf, top, bot)
+                if not buffer_enabled(buf) then
+                    return
+                end
+                local seen = win_seen[win]
+                win_seen[win] = { top, bot }
+                -- The virt_lines a refresh adds move the bottom line themselves, so
+                -- the first draw after one is only recorded; without this, refresh
+                -- and detection would keep re-triggering each other.
+                if win_settled[win] then
+                    win_settled[win] = nil
+                    return
+                end
+                if seen and seen[1] == top and seen[2] ~= bot then
+                    schedule_refresh(win)
+                end
+            end,
+        })
+
+    vim.api.nvim_create_autocmd('WinClosed', {
+        group = group,
+        callback = function(a)
+            local win = tonumber(a.match)
+            win_seen[win], win_settled[win] = nil, nil
+        end,
     })
 
     vim.api.nvim_create_autocmd({
