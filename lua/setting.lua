@@ -79,6 +79,51 @@ local function FoldSetting()
     vim.o.foldtext = "v:lua.FoldText()"
 end
 
+-- Neovim's treesitter highlighter prepares its highlight states over the
+-- window's topline..botline *buffer* range. With closed folds that range covers
+-- most of the file while only a screenful of rows is actually drawn, so every
+-- redraw walks the whole span's captures (measured: 123ms per scroll step on a
+-- 37k-line cpp diff vs 3ms with the folds open). diff mode is the only place
+-- this config gets closed folds by default, so fall back to legacy syntax
+-- highlighting there for big buffers and restore treesitter when diff ends.
+local function DiffSetting()
+    local big_buffer_lines = 2000
+
+    local function in_diff_window(buf)
+        for _, win in ipairs(api.nvim_tabpage_list_wins(0)) do
+            if api.nvim_win_get_buf(win) == buf and vim.wo[win].diff then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function sync()
+        for _, win in ipairs(api.nvim_tabpage_list_wins(0)) do
+            local buf = api.nvim_win_get_buf(win)
+            if vim.b[buf].ts_off_for_diff then
+                if not in_diff_window(buf) then
+                    vim.b[buf].ts_off_for_diff = nil
+                    pcall(vim.treesitter.start, buf)
+                end
+            elseif vim.treesitter.highlighter.active[buf]
+                and vim.wo[win].diff
+                and api.nvim_buf_line_count(buf) > big_buffer_lines then
+                vim.treesitter.stop(buf)
+                -- nvim-treesitter clears 'syntax' when it enables the treesitter
+                -- highlighter, so re-arm it to keep the buffer coloured.
+                if vim.bo[buf].syntax == '' or vim.bo[buf].syntax == 'off' then
+                    vim.bo[buf].syntax = vim.bo[buf].filetype
+                end
+                vim.b[buf].ts_off_for_diff = true
+            end
+        end
+    end
+
+    api.nvim_create_autocmd('DiffUpdated', { callback = sync })
+    api.nvim_create_autocmd('OptionSet', { pattern = 'diff', callback = sync })
+end
+
 local function SetTabAndIndent()
     vim.o.expandtab = true
     vim.o.shiftround = true
@@ -96,6 +141,7 @@ end
 function M.setup()
     BasicSettings()
     FoldSetting()
+    DiffSetting()
     SetTabAndIndent()
 end
 
