@@ -84,16 +84,6 @@ function M.make_on_attach(extras)
     end
 end
 
-function M.on_init(client, initialize_result)
-    local bufnr = vim.api.nvim_get_current_buf()
-    local name = vim.api.nvim_buf_get_name(bufnr) or ""
-    if name:match("^fugitive:") then
-        client.stop()
-        return false
-    end
-    return true
-end
-
 M.SymError = ' '
 M.SymWarn = ' '
 M.SymInfo = ' '

@@ -46,9 +46,6 @@ function M.setup()
         filetypes = { 'lua' },
         on_attach = on_attach_lua,
         on_init = function(client)
-            if lsp_setting.on_init(client) == false then
-                return
-            end
             if client.workspace_folders then
                 local path = client.workspace_folders[1].name
                 if path ~= vim.fn.stdpath('config') and (vim.uv.fs_stat(path .. '/.luarc.json') or vim.uv.fs_stat(path .. '/.luarc.jsonc')) then

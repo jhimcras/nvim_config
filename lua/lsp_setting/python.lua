@@ -13,7 +13,6 @@ function M.setup()
     -- }
     -- vim.lsp.enable('jedi_lanuage_server')
     vim.lsp.config.ty = {
-        on_init = lsp_setting.on_init,
         on_attach = on_attach,
         cmd = {'ty', 'server'},
         filetypes = { 'python' },

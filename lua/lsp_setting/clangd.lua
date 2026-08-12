@@ -54,7 +54,6 @@ end
 function M.setup()
     if vim.fn.executable('clangd') then
         vim.lsp.config.clangd = {
-            on_init = lsp_setting.on_init,
             on_attach = on_attach_clangd,
             cmd = M.cmd(),
             root_markers = {
