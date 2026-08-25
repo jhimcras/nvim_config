@@ -1,10 +1,24 @@
 local M = {}
 
+-- Absolute-path test by prefix, not by string equality with ':p'. On Windows
+-- expand('~/x.jpg') yields 'C:\Users\me/x.jpg' (backslash home + forward-slash
+-- tail) while fnamemodify(..., ':p') normalizes to all backslashes, so the two
+-- never compare equal and every absolute path was misjudged as relative and
+-- joined onto the buffer's directory.
+function M.is_absolute_path(path, is_windows)
+  if is_windows then
+    return path:match('^%a:[/\\]') ~= nil or path:match('^[/\\]') ~= nil
+  end
+  return path:sub(1, 1) == '/'
+end
+
 function M.resolve_image_path(buf, raw_path)
   if raw_path == '' or raw_path:match('^%a[%w+.-]*://') then return nil end
   raw_path = raw_path:gsub('%%20', ' ')
   local expanded = vim.fn.expand(raw_path)
-  if vim.fn.fnamemodify(expanded, ':p') == expanded then return vim.fn.fnamemodify(expanded, ':p') end
+  if M.is_absolute_path(expanded, vim.fn.has('win32') == 1) then
+    return vim.fn.fnamemodify(expanded, ':p')
+  end
 
   local name = vim.api.nvim_buf_get_name(buf)
   local base = name ~= '' and vim.fn.fnamemodify(name, ':p:h') or vim.fn.getcwd()

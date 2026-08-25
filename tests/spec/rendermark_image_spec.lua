@@ -739,6 +739,26 @@ describe('resolve_image_path', function()
     assert.equals('/', p:sub(1, 1))
     assert.is_truthy(p:find('foo.png', 1, true))
   end)
+
+  -- Windows regression: expand('~/x') returns a backslash home with a
+  -- forward-slash tail, so the old ':p'-equality check judged every absolute
+  -- Windows path relative and joined it onto the buffer's directory.
+  it('classifies Windows absolute paths as absolute', function()
+    local scan = require('rendermark.image.scan')
+    assert.is_true(scan.is_absolute_path('C:\\Users\\me/work_data/1787.jpg', true))
+    assert.is_true(scan.is_absolute_path('C:/work_data/1787.jpg', true))
+    assert.is_true(scan.is_absolute_path('\\\\server\\share\\a.jpg', true))
+    assert.is_true(scan.is_absolute_path('\\work_data\\a.jpg', true))
+    assert.is_false(scan.is_absolute_path('work_data/a.jpg', true))
+    assert.is_false(scan.is_absolute_path('./a.jpg', true))
+  end)
+
+  it('classifies POSIX paths as absolute only when rooted', function()
+    local scan = require('rendermark.image.scan')
+    assert.is_true(scan.is_absolute_path('/home/me/a.jpg', false))
+    assert.is_false(scan.is_absolute_path('C:\\Users\\me\\a.jpg', false))
+    assert.is_false(scan.is_absolute_path('a.jpg', false))
+  end)
 end)
 
 describe('scan_markdown_image_text', function()
