@@ -10,10 +10,11 @@ describe('wrap.compute_indent', function()
         assert.are.equal(3, wrap.compute_indent('1. item'))
         assert.are.equal(4, wrap.compute_indent('12) item'))
         assert.are.equal(4, wrap.compute_indent('  - nested'))
-        -- rendermark.deco collapses '- [ ] ' to a two-column glyph, and
-        -- wrap.compute_indent hangs continuation rows under the RENDERED prefix.
-        assert.are.equal(2, wrap.compute_indent('- [ ] task'))
-        assert.are.equal(2, wrap.compute_indent('- [x] task'))
+        -- rendermark.deco collapses '- [ ] ' to a glyph plus its inline pad plus
+        -- the surviving source space, and wrap.compute_indent hangs continuation
+        -- rows under that RENDERED prefix.
+        assert.are.equal(3, wrap.compute_indent('- [ ] task'))
+        assert.are.equal(3, wrap.compute_indent('- [x] task'))
         assert.are.equal(2, wrap.compute_indent('> quote'))
         assert.are.equal(2, wrap.compute_indent('  paragraph'))
     end)
@@ -497,9 +498,10 @@ describe('wrap behavior', function()
         local rows = continuation_rows(0)
         assert.is_true(#rows > 0)
         for _, row in ipairs(rows) do
-            -- deco collapses '- [x] ' to a two-column glyph, so the hang is 2, and
-            -- the continuation rows are plain spaces -- never a repeated marker.
-            assert.is_truthy(row:find('^  %S'))
+            -- deco collapses '- [x] ' to a glyph, its inline pad and the surviving
+            -- source space, so the hang is 3, and the continuation rows are plain
+            -- spaces -- never a repeated marker.
+            assert.is_truthy(row:find('^   %S'))
             assert.is_falsy(row:find('●', 1, true))
             assert.is_falsy(row:find('○', 1, true))
             assert.is_falsy(row:find('◆', 1, true))

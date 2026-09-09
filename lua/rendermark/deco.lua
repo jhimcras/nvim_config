@@ -26,8 +26,12 @@ local M = {}
 local ut = require 'util'
 
 local defaults = {
-    -- Both conceal replacements below must stay single codepoints.
-    checkbox = { unchecked = '', checked = '' },
+    -- A conceal replacement is one character, so only the FIRST character of a
+    -- checkbox glyph is concealed in; anything after it (a space, typically) is
+    -- drawn as inline padding next to it -- see render_list_item. That is how a
+    -- nerd glyph the terminal draws two columns wide gets a real gap in front of
+    -- the item text.
+    checkbox = { unchecked = ' ', checked = ' ' },
     bullet = { '●', '○', '◆' }, -- by nesting depth, cycled
     quote = '▎',
     heading = {
@@ -98,7 +102,8 @@ end
 -- every CursorMoved, and the heading column count can change between calls.
 local metrics = { checkbox = 0, heading = 0 }
 function M.metrics()
-    metrics.checkbox = dw(config.checkbox.unchecked) + 1 -- glyph + surviving space
+    -- glyph (+ its inline padding, if the string carries any) + surviving space
+    metrics.checkbox = dw(config.checkbox.unchecked) + 1
     metrics.heading = heading_cols()
     return metrics
 end
@@ -274,24 +279,43 @@ local function render_list_item(buf, node)
         return
     end
     local row, m_s, _, m_e = marker:range()
+    -- The marker node does not always start AT the marker character: when a nested
+    -- list is indented further than its parent's continuation column, the grammar
+    -- folds the extra indent into the marker ('  - '). Concealing from m_s would
+    -- then replace a space and leave the '-' itself on screen.
+    local line = line_at(buf, row) or ''
+    local off = line:sub(m_s + 1, m_e):find('%S')
+    if not off then
+        return
+    end
+    local c_s = m_s + off - 1
 
     if box then
         -- '- [ ] ' -> '<glyph> ': the list marker goes entirely, the glyph replaces
         -- '[ ]', and the source space after the bracket supplies the second column.
         local _, b_s, _, b_e = box:range()
-        mark(buf, row, m_s, { end_col = m_e, conceal = '' })
-        mark(buf, row, b_s, {
-            end_col = b_e,
-            conceal = checked and config.checkbox.checked or config.checkbox.unchecked,
-            hl_group = checked and 'RendermarkChecked' or 'RendermarkUnchecked',
-        })
+        local glyph = checked and config.checkbox.checked or config.checkbox.unchecked
+        local hl = checked and 'RendermarkChecked' or 'RendermarkUnchecked'
+        local head = vim.fn.strcharpart(glyph, 0, 1)
+        mark(buf, row, c_s, { end_col = m_e, conceal = '' })
+        mark(buf, row, b_s, { end_col = b_e, conceal = head, hl_group = hl })
+        -- Whatever the glyph string carries past its first character cannot go into
+        -- the conceal (it holds one character); it is drawn after the box instead,
+        -- which is also what gives a double-width glyph room to breathe.
+        local pad = glyph:sub(#head + 1)
+        if pad ~= '' then
+            mark(buf, row, b_e, {
+                virt_text = { { pad, hl } },
+                virt_text_pos = 'inline',
+            })
+        end
     elseif marker:type():match('^list_marker_[mps]') then
         -- '- ' -> '<bullet> ': only the marker character is replaced (ordered list
         -- markers are left alone), so the item text keeps its column.
         local glyph = bullet_for(list_depth(node))
         if glyph then
-            mark(buf, row, m_s, {
-                end_col = m_s + 1,
+            mark(buf, row, c_s, {
+                end_col = c_s + 1,
                 conceal = glyph,
                 hl_group = 'RendermarkBullet',
             })

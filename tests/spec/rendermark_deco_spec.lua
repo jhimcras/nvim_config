@@ -63,10 +63,20 @@ describe('deco.metrics', function()
     end)
     after_each(function()
         vim.g.rendermark_heading_indent = saved
+        deco.setup({}) -- drop any checkbox override, back to the module defaults
     end)
 
     it('reports the rendered checkbox prefix as glyph plus space', function()
+        deco.setup({ checkbox = { unchecked = 'x', checked = 'v' } })
         assert.equals(2, deco.metrics().checkbox)
+    end)
+
+    it('counts the inline pad of a wider glyph into the checkbox prefix', function()
+        -- A glyph string wider than one character is drawn as conceal + inline pad,
+        -- so the rendered prefix grows with it (a double-width nerd glyph needs the
+        -- extra column to keep the item text off it).
+        deco.setup({ checkbox = { unchecked = 'x ', checked = 'v ' } })
+        assert.equals(3, deco.metrics().checkbox)
     end)
 
     it('reports no heading indent while the global is off', function()
@@ -193,6 +203,35 @@ describe('deco rendering', function()
         assert.equals(1, vim.fn.strchars(box.conceal)) -- conceal takes ONE character
         local checked = find(1, function(d, col) return col == 2 end)
         assert.are_not.equals(box.conceal, checked.conceal)
+    end)
+
+    it('draws the rest of the checkbox glyph inline, not into the conceal', function()
+        -- The conceal holds one character, so a glyph configured with a trailing
+        -- space keeps that space as an inline pad after the box.
+        render({ '- [ ] todo', 'tail' })
+        local pad = find(0, function(d, col) return col == 5 and d.virt_text end)
+        assert.is_truthy(pad)
+        assert.equals('inline', pad.virt_text_pos)
+        assert.equals(' ', pad.virt_text[1][1])
+    end)
+
+    it('replaces the marker character of a deeply indented nested item', function()
+        -- The grammar folds the extra indent into the marker node ('  - ') when a
+        -- nested list is indented past its parent's continuation column; the
+        -- conceal has to land on the '-', not on the space in front of it.
+        render({ '- [ ] task', '    - sub of task', 'tail' })
+        local d, col = find(1, function(x) return x.conceal ~= nil end)
+        assert.is_truthy(d)
+        assert.equals(4, col)
+        assert.equals(5, d.end_col)
+        assert.equals('○', d.conceal)
+    end)
+
+    it('keeps the indent of a deeply indented nested task item', function()
+        render({ '- [ ] task', '    - [x] sub', 'tail' })
+        local marker = find(1, function(d, col) return d.conceal == '' and col == 4 end)
+        assert.is_truthy(marker)
+        assert.equals(6, marker.end_col) -- '- ', with the four-space indent intact
     end)
 
     it('replaces only the bullet character, keeping the item column', function()
