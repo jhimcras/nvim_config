@@ -810,6 +810,14 @@ local function render_range(buf, first, last, width, cursor_row, images_active)
     end
 end
 
+-- deco owns its own namespace, so repainting it is independent of the wrap pass.
+local function paint_deco(buf, segs, rule_width, cursor_row)
+    deco.clear(buf)
+    for _, seg in ipairs(segs) do
+        deco.render_range(buf, seg[1], seg[2], rule_width, cursor_row)
+    end
+end
+
 function M.refresh(win)
     if not win or win == 0 then
         win = vim.api.nvim_get_current_win()
@@ -867,9 +875,7 @@ function M.refresh(win)
     -- The rule spans the full window width, not the (right_pad/max_width-capped)
     -- text column.
     local rule_width = vim.api.nvim_win_get_width(win) - info.textoff
-    for _, seg in ipairs(segs) do
-        deco.render_range(buf, seg[1], seg[2], rule_width)
-    end
+    paint_deco(buf, segs, rule_width, cursor_row)
     for _, seg in ipairs(segs) do
         render_range(buf, seg[1], seg[2], width, cursor_row, images_active)
     end
@@ -901,6 +907,40 @@ local function schedule_refresh(win)
             M.refresh(win)
         end)
     end)
+end
+
+-- A code fence is the one decoration whose shape depends on where the cursor is:
+-- 'concealcursor' is empty, so conceal_lines yields on the cursor line, the fence row
+-- comes back and deco has to move its bar onto that row (see place_bar in
+-- render_code). The deferred refresh above is one frame too late for that -- the
+-- redraw that follows CursorMoved still shows the previous placement, and correcting
+-- it a frame later is exactly the flicker -- so crossing a fence row repaints the
+-- decorations synchronously, inside the event. The deferred refresh then repaints the
+-- same thing (plus the wrapping) and nothing moves.
+local last_cursor_row = {}
+
+local function looks_like_fence(buf, lnum)
+    local line = vim.api.nvim_buf_get_lines(buf, lnum - 1, lnum, false)[1]
+    return line ~= nil and line:match('^%s*[`~][`~][`~]') ~= nil
+end
+
+local function repaint_deco_now(win, buf)
+    local info = vim.fn.getwininfo(win)[1]
+    if not info then
+        return
+    end
+    -- Same bail as M.refresh: with the view scrolled horizontally the decorations
+    -- stay off, so painting them here would only be undone a frame later.
+    local leftcol = vim.api.nvim_win_call(win, function()
+        return vim.fn.winsaveview().leftcol
+    end)
+    if leftcol > 0 then
+        return
+    end
+    local cursor_row = vim.w[win].read_mode_active and -1
+        or vim.api.nvim_win_get_cursor(win)[1]
+    paint_deco(buf, visible_segments(win, info.topline, info.botline),
+        vim.api.nvim_win_get_width(win) - info.textoff, cursor_row)
 end
 
 -- A non-empty 'statuscolumn' replaces the default number column entirely, so we
@@ -1060,6 +1100,7 @@ function M.setup(opts)
         callback = function(a)
             local win = tonumber(a.match)
             win_seen[win], win_settled[win] = nil, nil
+            last_cursor_row[win] = nil
         end,
     })
 
@@ -1070,10 +1111,22 @@ function M.setup(opts)
         'InsertEnter', 'InsertLeave',
     }, {
         group = group,
-        callback = function()
-            if buffer_enabled(vim.api.nvim_get_current_buf()) then
-                schedule_refresh(0)
+        callback = function(a)
+            local buf = vim.api.nvim_get_current_buf()
+            if not buffer_enabled(buf) then
+                return
             end
+            if a.event == 'CursorMoved' or a.event == 'CursorMovedI' then
+                local win = vim.api.nvim_get_current_win()
+                local row = vim.api.nvim_win_get_cursor(win)[1]
+                local prev = last_cursor_row[win]
+                last_cursor_row[win] = row
+                if prev ~= row
+                    and (looks_like_fence(buf, row) or (prev and looks_like_fence(buf, prev))) then
+                    repaint_deco_now(win, buf)
+                end
+            end
+            schedule_refresh(0)
         end,
     })
 end

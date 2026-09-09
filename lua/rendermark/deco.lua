@@ -20,6 +20,9 @@
 --     virt_lines anchored to them are dropped. The block's top bar (with the
 --     right-aligned language) and bottom bar are therefore virt_lines on the first
 --     and last CONTENT rows, which is what the fences would have looked like anyway.
+--     conceal_lines yields on the cursor line, though (unless 'concealcursor' covers
+--     the mode), so a fence row under the cursor comes back and the bar has to move
+--     onto it as an overlay -- see place_bar in render_code.
 
 local M = {}
 
@@ -125,18 +128,24 @@ function M.code_width(widths, lang_w)
 end
 
 -- One virt_line spanning the block: blank, or with `label` right-aligned `pad`
--- columns in from the right edge.
-function M.code_bar(width, label)
+-- columns in from the right edge. A virt_line always starts at screen column 0, so
+-- an indented block (a fence inside a list item) prepends `indent` unhighlighted
+-- columns to put the bar's left edge on the same column as the content rows.
+function M.code_bar(width, label, indent)
+    local chunks = {}
+    if indent and indent > 0 then
+        chunks[1] = { string.rep(' ', indent) }
+    end
     if not label or label == '' then
-        return { { string.rep(' ', width), 'RendermarkCode' } }
+        chunks[#chunks + 1] = { string.rep(' ', width), 'RendermarkCode' }
+        return chunks
     end
     local pad = config.code.pad
     local lead = math.max(0, width - pad - dw(label))
-    return {
-        { string.rep(' ', lead), 'RendermarkCode' },
-        { label, 'RendermarkCodeInfo' },
-        { string.rep(' ', pad), 'RendermarkCode' },
-    }
+    chunks[#chunks + 1] = { string.rep(' ', lead), 'RendermarkCode' }
+    chunks[#chunks + 1] = { label, 'RendermarkCodeInfo' }
+    chunks[#chunks + 1] = { string.rep(' ', pad), 'RendermarkCode' }
+    return chunks
 end
 
 function M.rule_chunks(width)
@@ -336,8 +345,8 @@ local function render_list_item(buf, node)
 end
 
 -- Returns the block's row span so the caller can keep raw-text passes (quote bars)
--- out of verbatim content.
-local function render_code(buf, node, first, last)
+-- out of verbatim content. `cur` is the 0-based cursor row (nil when there is none).
+local function render_code(buf, node, first, last, cur)
     local r1, c1, r2, c2 = node:range()
     if c2 == 0 then
         r2 = r2 - 1
@@ -354,12 +363,24 @@ local function render_code(buf, node, first, last)
     end
 
     local pad = config.code.pad
+    -- The background alone draws the block's border, so every row -- both bars and
+    -- every content row, blank ones included -- has to cover exactly the screen
+    -- columns [indent_w, indent_w + width). indent_w is the fence's own indent.
+    local indent_w = dw((line_at(buf, r1) or ''):sub(1, c1))
+    -- Geometry of one content row: where its background starts in bytes, how many
+    -- columns of the block indent that row is missing (a blank or under-indented row
+    -- has some), and how wide the code itself draws.
+    local function row_geom(line)
+        local start = math.min(c1, #line)
+        return start, indent_w - dw(line:sub(1, start)), dw(line:sub(start + 1))
+    end
     -- One read for the whole block: the width depends on every content row, even
     -- the ones off screen, and this runs on each refresh.
     local body = vim.api.nvim_buf_get_lines(buf, r1 + 1, r2, false)
     local widths = {}
     for _, line in ipairs(body) do
-        widths[#widths + 1] = dw(line:sub(c1 + 1))
+        local _, lead, text_w = row_geom(line)
+        widths[#widths + 1] = lead + text_w
     end
     if #widths == 0 then
         -- No content rows: both fences are conceal_lines-hidden, so there is nothing
@@ -368,40 +389,67 @@ local function render_code(buf, node, first, last)
     end
     local width = M.code_width(widths, lang and dw(lang) or 0)
 
-    -- Bars replace the (undrawn) fence rows, hung off the first and last content row.
-    if r1 + 1 >= first and r1 + 1 < last then
-        mark(buf, r1 + 1, 0, {
-            virt_lines = { M.code_bar(width, lang) },
-            virt_lines_above = true,
-        })
+    -- One row of the block's background rectangle, drawn around whatever text the row
+    -- really has. Used for the content rows and, when the cursor is on it, for a
+    -- fence row -- which is then a normal row showing '```lua' on the block colour.
+    local function paint_row(row, line)
+        local start, lead, text_w = row_geom(line)
+        -- Left edge: the row's missing indent plus the block padding, in one
+        -- inline chunk. Placed unconditionally, so a blank row inside the block
+        -- still gets a full-width background instead of a hole in the rectangle.
+        if lead + pad > 0 then
+            mark(buf, row, start, {
+                virt_text = { { string.rep(' ', lead + pad), 'RendermarkCode' } },
+                virt_text_pos = 'inline',
+            })
+        end
+        if #line > start then
+            mark(buf, row, start, { end_col = #line, hl_group = 'RendermarkCode' })
+        end
+        -- Right edge: 'inline' at the end of the line, NOT 'eol'. An eol virt_text
+        -- is drawn "right after eol character", which leaves one unhighlighted
+        -- column between the code and the fill -- the rectangle would be broken at
+        -- every line end and shifted one column right. Inline is safe here because
+        -- wrap.render_range skips code rows entirely (in_code), so this width never
+        -- enters any wrap arithmetic.
+        local fill = width - pad - lead - text_w
+        if fill > 0 then
+            mark(buf, row, #line, {
+                virt_text = { { string.rep(' ', fill), 'RendermarkCode' } },
+                virt_text_pos = 'inline',
+            })
+        end
     end
-    if r2 - 1 >= first and r2 - 1 < last then
-        mark(buf, r2 - 1, 0, { virt_lines = { M.code_bar(width, nil) } })
+
+    -- Bars replace the (undrawn) fence rows, hung off the first and last content row
+    -- -- except on the fence row the CURSOR is on. 'concealcursor' is empty outside
+    -- READ mode, so conceal_lines yields on the cursor line: the fence row is drawn
+    -- again there, with its raw '```lua' back, which is what makes the fence editable.
+    -- Its bar has to go then -- a virt_line on top of the re-appeared row would make
+    -- the block one row taller for as long as the cursor sits there -- and the row is
+    -- painted as an ordinary block row instead, so the rectangle stays closed and only
+    -- the label is traded for the source text.
+    -- (READ mode conceals the cursor line too and signals that with a cursor row of
+    -- -1, so the bars stay virt_lines there.)
+    local function place_bar(fence, anchor, above, label)
+        if cur == fence then
+            if fence >= first and fence < last then
+                paint_row(fence, line_at(buf, fence) or '')
+            end
+        elseif anchor >= first and anchor < last then
+            mark(buf, anchor, 0, {
+                virt_lines = { M.code_bar(width, label, indent_w) },
+                virt_lines_above = above,
+            })
+        end
     end
+    place_bar(r1, r1 + 1, true, lang)
+    place_bar(r2, r2 - 1, false, nil)
 
     for row = math.max(r1 + 1, first), math.min(r2 - 1, last - 1) do
         local line = body[row - r1]
         if line then
-            local text_w = dw(line:sub(c1 + 1))
-            if #line > c1 then
-                mark(buf, row, c1, { end_col = #line, hl_group = 'RendermarkCode' })
-            end
-            if pad > 0 then
-                mark(buf, row, c1, {
-                    virt_text = { { string.rep(' ', pad), 'RendermarkCode' } },
-                    virt_text_pos = 'inline',
-                })
-            end
-            -- 'eol' rather than virt_text_win_col: it is anchored to the text, so it
-            -- needs no column arithmetic and survives horizontal scroll, and unlike
-            -- 'inline' it is not counted into wrap's width math.
-            local fill = width - pad - text_w
-            if fill > 0 then
-                mark(buf, row, c1, {
-                    virt_text = { { string.rep(' ', fill), 'RendermarkCode' } },
-                    virt_text_pos = 'eol',
-                })
-            end
+            paint_row(row, line)
         end
     end
     return r1, r2
@@ -428,8 +476,8 @@ local function render_quote(buf, row, line)
 end
 
 -- Decorate rows [first, last). Called once per visible segment by wrap.refresh,
--- before wrap decorates the same rows.
-function M.render_range(buf, first, last, rule_width)
+-- before wrap decorates the same rows. `cursor_row` is 1-based, as wrap carries it.
+function M.render_range(buf, first, last, rule_width, cursor_row)
     local q = get_query()
     if not q then
         return
@@ -444,6 +492,7 @@ function M.render_range(buf, first, last, rule_width)
         return
     end
 
+    local cur = cursor_row and cursor_row - 1
     local verbatim = {}
     for id, node in q:iter_captures(tree:root(), buf, first, last) do
         local name = q.captures[id]
@@ -454,7 +503,7 @@ function M.render_range(buf, first, last, rule_width)
         elseif name == 'item' then
             render_list_item(buf, node)
         elseif name == 'code' then
-            local r1, r2 = render_code(buf, node, first, last)
+            local r1, r2 = render_code(buf, node, first, last, cur)
             for row = r1, r2 do
                 verbatim[row] = true
             end

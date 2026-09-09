@@ -142,6 +142,22 @@ describe('deco rendering', function()
             { details = true })
     end
 
+    -- Total background width drawn on a code row: the inline pads plus the
+    -- highlighted stretch of real text. Must equal the block width on every row.
+    local function code_row_width(lnum)
+        local line = vim.api.nvim_buf_get_lines(0, lnum, lnum + 1, false)[1] or ''
+        local w = 0
+        for _, m in ipairs(marks_on(lnum)) do
+            local d, col = m[4], m[3]
+            if d.virt_text and d.virt_text_pos == 'inline' then
+                w = w + width_of(d.virt_text)
+            elseif d.hl_group == 'RendermarkCode' and d.end_col then
+                w = w + vim.fn.strdisplaywidth(line:sub(col + 1, d.end_col))
+            end
+        end
+        return w
+    end
+
     local function find(lnum, pred)
         for _, m in ipairs(marks_on(lnum)) do
             if pred(m[4], m[3]) then
@@ -271,8 +287,80 @@ describe('deco rendering', function()
         assert.equals(1, #bottom.virt_lines[1]) -- blank bar, no label
 
         assert.is_truthy(find(1, function(d) return d.hl_group == 'RendermarkCode' end))
-        assert.is_truthy(find(1, function(d) return d.virt_text_pos == 'inline' end))
-        assert.is_truthy(find(1, function(d) return d.virt_text_pos == 'eol' end))
+        -- Left pad and right fill are both inline: an 'eol' fill would sit one
+        -- unhighlighted column past the text and break the rectangle.
+        local inlines = vim.tbl_filter(function(m)
+            return m[4].virt_text_pos == 'inline'
+        end, marks_on(1))
+        assert.equals(2, #inlines)
+        assert.equals(50, code_row_width(1))
+    end)
+
+    it('trades the bar for the raw fence row the cursor is on', function()
+        -- The fence row is drawn again under the cursor, raw text and all, so it can
+        -- be edited. A virt_line on top of it would add a row: the bar goes and the
+        -- row is painted as an ordinary block row instead, keeping both the height
+        -- and the rectangle.
+        render({ '```lua', 'local x = 1', '```', 'tail' }, 1)
+        assert.is_nil(find(1, function(d) return d.virt_lines and d.virt_lines_above end))
+        assert.equals(50, code_row_width(0))
+        -- The other bar is untouched.
+        assert.is_truthy(find(1, function(d) return d.virt_lines and not d.virt_lines_above end))
+
+        render({ '```lua', 'local x = 1', '```', 'tail' }, 3)
+        assert.is_truthy(find(1, function(d) return d.virt_lines and d.virt_lines_above end))
+        assert.is_nil(find(1, function(d) return d.virt_lines and not d.virt_lines_above end))
+        assert.equals(50, code_row_width(2))
+    end)
+
+    it('repaints the fence row inside CursorMoved, not on the deferred refresh', function()
+        -- The deferred refresh runs a frame after the redraw, which is the flicker:
+        -- crossing a fence has to land in the same event as the cursor move.
+        render({ '```lua', 'local x = 1', '```', 'tail' })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        vim.api.nvim_exec_autocmds('CursorMoved', {})
+        assert.is_nil(find(1, function(d) return d.virt_lines and d.virt_lines_above end))
+        assert.equals(50, code_row_width(0))
+
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+        vim.api.nvim_exec_autocmds('CursorMoved', {})
+        assert.is_truthy(find(1, function(d) return d.virt_lines and d.virt_lines_above end))
+        assert.equals(0, code_row_width(0))
+    end)
+
+    it('shows the raw fence row in insert mode too', function()
+        render({ '```lua', 'local x = 1', '```', 'tail' }, 1)
+        vim.api.nvim_exec_autocmds('CursorMovedI', {})
+        -- Nothing covers the source: only the block background and its padding.
+        assert.is_nil(find(0, function(d) return d.virt_text_pos == 'overlay' end))
+        assert.is_nil(find(0, function(d) return d.conceal_lines end))
+        assert.equals(50, code_row_width(0))
+    end)
+
+    it('starts the bars of an indented block on the content column', function()
+        render({ '- item', '  ```lua', '  local x = 1', '  ```', 'tail' })
+        local top = find(2, function(d) return d.virt_lines and d.virt_lines_above end)
+        assert.is_truthy(top)
+        assert.equals('  ', top.virt_lines[1][1][1])
+        assert.is_nil(top.virt_lines[1][1][2]) -- unhighlighted: outside the block
+        assert.equals(2 + 50, width_of(top.virt_lines[1]))
+        local bottom = find(2, function(d) return d.virt_lines and not d.virt_lines_above end)
+        assert.is_truthy(bottom)
+        assert.equals(2 + 50, width_of(bottom.virt_lines[1]))
+        assert.equals(50, code_row_width(2)) -- content lines up with the bars
+    end)
+
+    it('fills a blank row inside a block so the rectangle has no hole', function()
+        render({ '```lua', 'local x = 1', '', 'local y = 2', '```', 'tail' })
+        assert.equals(50, code_row_width(2))
+    end)
+
+    it('draws every content row at exactly the block width', function()
+        local wide = string.rep('b', 70)
+        render({ '```lua', 'a', wide, '', 'cc', '```', 'tail' })
+        for lnum = 1, 4 do
+            assert.equals(72, code_row_width(lnum))
+        end
     end)
 
     it('widens a code block past the window rather than clamping', function()
