@@ -21,12 +21,10 @@ local fence_conceal_ns = api.nvim_create_namespace('lsp_hover_fence_conceal')
 function vim.lsp.util.open_floating_preview(contents, syntax, opts, ...)
     opts = opts or {}
     local fbuf, fwin = orig_util_open_floating_preview(contents, syntax, opts, ...)
-    -- Hide the markdown code-fence delimiter lines (```lang / ```) in hover/signature
-    -- floats. Neovim stylizes the float as markdown + treesitter, so the fenced code
-    -- itself is syntax-highlighted, but the fence markers stay visible: render-markdown
-    -- doesn't attach to floats and core treesitter's query-conceal doesn't fire for them.
-    -- Conceal the whole delimiter line via extmark, then shrink the float to reclaim the
-    -- now-blank rows.
+    -- Hide the ```lang / ``` fence lines in hover/signature floats: Neovim
+    -- highlights the fenced code but leaves the markers visible, and neither
+    -- render-markdown nor treesitter's query-conceal covers floats. Conceal each
+    -- delimiter line, then shrink the float to reclaim the blank rows.
     if fbuf and fwin and vim.bo[fbuf].filetype == 'markdown' then
         local lines = api.nvim_buf_get_lines(fbuf, 0, -1, false)
         local hidden = 0
@@ -49,7 +47,7 @@ end
 local function general_mappings()
     ut.nnoremap('gW', vim.lsp.buf.workspace_symbol, {'buffer'})
 
-    -- Diagnostic keymaps
+    -- Diagnostics
     ut.nnoremap('[d', function() vim.diagnostic.jump{count=-1, float=true} end, {'buffer'})
     ut.nnoremap(']d', function() vim.diagnostic.jump{count=1, float=true} end, {'buffer'})
     ut.nnoremap('<leader>do', vim.diagnostic.setloclist, {'buffer'})
@@ -63,10 +61,9 @@ local function reference_highlighting(client, bufnr)
     api.nvim_create_autocmd('CursorMoved', { group = group, buffer = bufnr, callback = function() vim.lsp.buf.clear_references() end })
 end
 
--- Fugitive names its blob buffers with the OS path separator, so on Windows
--- they look like `fugitive:\\\D:\...` rather than `fugitive://...`. Normalize
--- backslashes before probing for a URI scheme (see commit 7bbc710), otherwise
--- these buffers slip past the guard and clangd errors on their non-file URIs.
+-- Fugitive names blob buffers with the OS separator, so on Windows they read
+-- `fugitive:\\\D:\...`, not `fugitive://...`. Normalize backslashes before probing
+-- for a scheme, or they slip past the guard and clangd errors on the URI.
 local function has_uri_scheme(bufnr)
     local name = vim.api.nvim_buf_get_name(bufnr):gsub('\\', '/')
     return name:match('^%a[%w+.-]*://') ~= nil
@@ -93,8 +90,8 @@ M.SymHint = ' '
 -- M.SymInfo = '■'
 -- M.SymHint = '▁'
 
--- [client_id] = 'running' | 'done', tracks whether each client's progress
--- sequences (e.g. indexing) are still in flight or have all completed.
+-- [client_id] = 'running' | 'done': whether a client's progress sequences (e.g.
+-- indexing) are still in flight.
 M.progress_state = {}
 
 local function update_progress_state(ev)

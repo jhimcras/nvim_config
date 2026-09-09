@@ -79,13 +79,11 @@ local function FoldSetting()
     vim.o.foldtext = "v:lua.FoldText()"
 end
 
--- Neovim's treesitter highlighter prepares its highlight states over the
--- window's topline..botline *buffer* range. With closed folds that range covers
--- most of the file while only a screenful of rows is actually drawn, so every
--- redraw walks the whole span's captures (measured: 123ms per scroll step on a
--- 37k-line cpp diff vs 3ms with the folds open). diff mode is the only place
--- this config gets closed folds by default, so fall back to legacy syntax
--- highlighting there for big buffers and restore treesitter when diff ends.
+-- The treesitter highlighter prepares states over the window's topline..botline
+-- BUFFER range, which closed folds stretch across most of the file for one
+-- screenful of rows (measured: 123ms per scroll step on a 37k-line cpp diff, vs
+-- 3ms unfolded). diff mode is the only place this config folds by default, so big
+-- diff buffers fall back to legacy syntax and get treesitter back on diff end.
 local function DiffSetting()
     local big_buffer_lines = 2000
 
@@ -110,8 +108,7 @@ local function DiffSetting()
                 and vim.wo[win].diff
                 and api.nvim_buf_line_count(buf) > big_buffer_lines then
                 vim.treesitter.stop(buf)
-                -- nvim-treesitter clears 'syntax' when it enables the treesitter
-                -- highlighter, so re-arm it to keep the buffer coloured.
+                -- nvim-treesitter clears 'syntax' when it enables the highlighter.
                 if vim.bo[buf].syntax == '' or vim.bo[buf].syntax == 'off' then
                     vim.bo[buf].syntax = vim.bo[buf].filetype
                 end

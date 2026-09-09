@@ -1,13 +1,11 @@
--- Detect the process hosting the current nvim and spawn a new instance of the
--- same kind. GUI clients (neopp, neovide, nvim-qt, ...) all launch `nvim
--- --embed` as a child, so our parent process *is* the GUI; for a TUI the parent
--- is the nvim TUI wrapper itself.
+-- Spawn a new instance of whatever is hosting this one. GUI clients (neopp,
+-- neovide, nvim-qt) launch `nvim --embed` as a child, so our parent IS the GUI;
+-- for a TUI the parent is the nvim TUI wrapper.
 local env = require 'env'
 
 local M = {}
 
--- Parents that are not a UI host: seeing one of these means we're a plain TUI
--- (or a bare `nvim --listen` started from a shell).
+-- Parents that are not a UI host: one of these means a plain TUI.
 local NOT_UI = {
     nvim = true, bash = true, zsh = true, fish = true, sh = true, dash = true,
     cmd = true, powershell = true, pwsh = true, tmux = true, systemd = true,
@@ -25,13 +23,12 @@ local function basename(path)
     return (base:lower():gsub('%.exe$', ''))
 end
 
--- Resolves our parent's executable, plus a detail table describing the attempt
--- so :NewInstance! can show why it failed.
+-- Our parent's executable, plus a detail table :NewInstance! can show on failure.
 function M.parent_exe()
     if env.os.win then
-        -- Ask for the parent's path in one shot: uv.os_getppid() is not reliable
-        -- everywhere on Windows, and Win32_Process knows our parent from our own
-        -- pid. PowerShell can take seconds to start cold, hence the long wait.
+        -- One shot: uv.os_getppid() is unreliable on Windows, and Win32_Process
+        -- finds our parent from our own pid. PowerShell can start cold, hence the
+        -- long wait.
         local script = string.format(
             '$p = Get-CimInstance Win32_Process -Filter "ProcessId=%d"; '
             .. 'if ($p) { (Get-Process -Id $p.ParentProcessId).Path }',
@@ -74,7 +71,7 @@ function M.detect()
     return { kind = 'gui', exe = exe, name = base, detail = detail }
 end
 
--- Walk up the process tree looking for a known terminal emulator. Unix only.
+-- Walk up the process tree for a known terminal emulator. Unix only.
 local function terminal_from_ancestry()
     local pid = vim.uv.os_getppid()
     for _ = 1, 8 do
@@ -83,7 +80,7 @@ local function terminal_from_ancestry()
         local line = stat:read('*l')
         stat:close()
         if not line then return nil end
-        -- comm is parenthesised and may contain spaces; ppid follows the state field.
+        -- comm is parenthesised and may contain spaces; ppid follows the state.
         local comm, ppid = line:match('%((.*)%)%s+%S+%s+(%d+)')
         if not comm then return nil end
         if TERMINALS[comm:lower()] then
@@ -111,7 +108,7 @@ function M.find_terminal()
     return nil
 end
 
--- Pure: builds the argv for a new instance. ctx is injected by M.new().
+-- Pure: argv for a new instance. ctx is injected by M.new().
 function M.build_argv(detected, file, ctx)
     local function argv(...)
         local out = { ... }
@@ -167,8 +164,7 @@ function M.context(detected)
     return ctx
 end
 
--- nvim_echo with history, so the message survives a GUI that swallows
--- vim.notify and can always be recovered with :messages.
+-- Echo with history, so the message survives a GUI that swallows vim.notify.
 local function report(msg)
     vim.api.nvim_echo({ { 'NewInstance: ' .. msg, 'ErrorMsg' } }, true, {})
 end
@@ -183,8 +179,8 @@ function M.new(file)
         return
     end
 
-    -- jobstart throws on a non-executable command and returns <= 0 on bad
-    -- arguments; both must be reported or the command fails silently.
+    -- jobstart throws on a non-executable command and returns <= 0 on bad args;
+    -- both must be reported or the command fails silently.
     local ok, job = pcall(vim.fn.jobstart, args, { detach = true })
     if not ok then
         report(string.format('실행 실패: %s  --  %s  (자세한 내용은 :NewInstance!)',
@@ -195,7 +191,7 @@ function M.new(file)
     end
 end
 
--- :NewInstance! — dumps everything the detection relied on to :messages.
+-- :NewInstance! — dump what the detection relied on to :messages.
 function M.diagnose()
     local detected = M.detect()
     local ctx = M.context(detected)

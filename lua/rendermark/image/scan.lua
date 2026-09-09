@@ -1,10 +1,8 @@
 local M = {}
 
--- Absolute-path test by prefix, not by string equality with ':p'. On Windows
--- expand('~/x.jpg') yields 'C:\Users\me/x.jpg' (backslash home + forward-slash
--- tail) while fnamemodify(..., ':p') normalizes to all backslashes, so the two
--- never compare equal and every absolute path was misjudged as relative and
--- joined onto the buffer's directory.
+-- Test by prefix, not equality with ':p': on Windows expand('~/x.jpg') keeps the
+-- forward-slash tail while ':p' normalizes to backslashes, so the two never match
+-- and every absolute path was treated as relative.
 function M.is_absolute_path(path, is_windows)
   if is_windows then
     return path:match('^%a:[/\\]') ~= nil or path:match('^[/\\]') ~= nil

@@ -125,11 +125,9 @@ function M.debounce(fn, ms)
     end
 end
 
--- Rate-limit fn to at most once per `ms`, firing on the leading edge (so the
--- first call in a burst renders immediately) and, if more calls arrived
--- during the cooldown, once more on the trailing edge (so the final state
--- is never dropped). Bounds call frequency during sustained bursts without
--- debounce's "goes silent until the burst pauses" behavior.
+-- Rate-limit fn to once per `ms`, firing on the leading edge and, if calls kept
+-- arriving during the cooldown, once more on the trailing edge. Unlike debounce,
+-- it keeps firing through a sustained burst instead of going silent.
 function M.throttle(fn, ms)
     assert(type(fn) == "function", "throttle: fn must be a function")
     ms = tonumber(ms) or 0

@@ -18,12 +18,10 @@ function M.setup(opts)
     -- Before wrap, so the highlight groups exist by the time it first draws.
     deco.setup(opts)
     wrap.setup(opts) -- soft-wrap + tables (registers its own autocmds/command)
-    -- Markdown image + PlantUML rendering: parses buffers, computes placement,
-    -- and drives the neopp GUI image backend via vim.ui.img (set/del). neopp only
-    -- loads/renders/deletes.
+    -- Computes placement and drives the neopp image backend via vim.ui.img.
     image.setup(opts)
-    -- Tag-jump navigation for [text](link) / [[wikilink]]: disabled in favor of
-    -- markdown-oxide's own go-to-definition, so <C-]>/<C-}> just use plain LSP.
+    -- Tag-jump for [text](link) / [[wikilink]], disabled in favor of
+    -- markdown-oxide's go-to-definition.
     -- link.setup(opts)
     -- Obsidian-compatible checkbox toggle ([ ]/[x]) on <C-Space>.
     checkbox.setup(opts)

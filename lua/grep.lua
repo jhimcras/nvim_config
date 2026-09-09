@@ -10,17 +10,10 @@ local active_loclist = {}  -- origin_winid -> current loclist winid
 local search_info = {}     -- loclist title -> {term=str, word=bool}
 
 function M.update_loclist_sl(winid)
-    -- Do NOT set a window-local statusline option here.
-    -- On this Neovim build any attempt to set a window-local statusline for
-    -- qf/loclist buffers (nvim_set_option_value, nvim_win_call+vim.wo, etc.)
-    -- silently overwrites the GLOBAL vim.o.statusline, breaking every other
-    -- window in the session.
-    --
-    -- The global statusline (%!statusline_entry()) already handles loclist
-    -- windows correctly: Neovim evaluates it per-window with statusline_winid
-    -- set to the loclist window's ID, and quickfix_search_query(bufnr, winid)
-    -- reads getloclist(filewinid,{title=0}).title which is per-window.
-    -- All we need to do is trigger a redraw so the global re-evaluates.
+    -- Do NOT set a window-local statusline here: on this Neovim build, setting one
+    -- for a qf/loclist buffer silently overwrites the GLOBAL vim.o.statusline.
+    -- The global %!statusline_entry() already handles loclist windows (evaluated
+    -- per-window with statusline_winid set), so only a redraw is needed.
     if not winid or not vim.api.nvim_win_is_valid(winid) then return end
     vim.cmd 'redrawstatus!'
 end
@@ -78,7 +71,7 @@ function M.asyncGrep(term, word, wndidforll)
         return
     end
 
-    -- Check for existing grep process for this window
+    -- Existing grep process for this window?
     local launcher = require'launcher'
     local processes = launcher.GetRunningProcesses()
     for _, p in ipairs(processes) do
@@ -88,9 +81,7 @@ function M.asyncGrep(term, word, wndidforll)
                 if p.terminate then p.terminate() end
                 launcher.UnregisterProcess(p.key)
             else
-                -- If they say No, we could either cancel or run in parallel.
-                -- Parallel runs are safer now with loclist_nr, but might be confusing.
-                -- User said "ask if there might be other search request", so we ask.
+                -- Parallel runs would be safe with loclist_nr but confusing, so ask.
             end
         end
     end
@@ -130,7 +121,7 @@ function M.asyncGrep(term, word, wndidforll)
             if #results > 0 then
                 vim.schedule(function()
                     if not killed then
-                        -- Use loclist_nr to ensure results go to the right list
+                        -- loclist_nr keeps the results on the right list
                         vim.fn.setloclist(wndidforll, {}, 'a', {nr = loclist_nr, lines = results})
                     end
                 end)
@@ -162,9 +153,8 @@ function M.asyncGrep(term, word, wndidforll)
     local prjroot = require'prjroot'.GetCurrentProjectRoot() or
                     vim.b.qf_prjroot or
                     ut.GetCurrentBufferDir()
-    -- If wndidforll inherited a loclist window from a vsplit (filewinid points to a
-    -- different origin), flush it so lopen creates a fresh window instead of stealing
-    -- the other window's loclist window.
+    -- A loclist window inherited from a vsplit points at a different origin; flush
+    -- it so lopen creates a fresh one instead of stealing it.
     vim.api.nvim_set_current_win(wndidforll)
     local inherited = vim.fn.getloclist(wndidforll, { winid = 0 }).winid
     if inherited ~= 0 and vim.api.nvim_win_is_valid(inherited) then
@@ -184,8 +174,7 @@ function M.asyncGrep(term, word, wndidforll)
     end
     vim.api.nvim_set_current_win(qfwinid)
     qf_buf = vim.api.nvim_win_get_buf(qfwinid)
-    -- Clear any window-local statusline Neovim set for the new loclist window
-    -- so the global %!statusline_entry() is used instead.
+    -- Clear the window-local statusline so the global one is used.
     vim.api.nvim_set_option_value('statusline', '', { win = qfwinid })
     vim.cmd.nohlsearch()
     vim.b.qf_prjroot = prjroot
@@ -199,7 +188,7 @@ function M.asyncGrep(term, word, wndidforll)
     vim.w[qfwinid].grep_status = 'searching'
     filter_chains[qfwinid] = nil
     
-    -- Start redraw timer for animation
+    -- Redraw timer for the animation
     redraw_timer = vim.uv.new_timer()
     redraw_timer:start(0, 120, vim.schedule_wrap(function()
         if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
@@ -214,10 +203,9 @@ function M.asyncGrep(term, word, wndidforll)
     end))
     
     M.update_loclist_sl(qfwinid)
-    -- QuitPre fires BEFORE Neovim creates the auto-buffer window that normally
-    -- appears when the last normal window is quit while a loclist is open.
-    -- Closing the loclist here lets the origin become the true last window,
-    -- so Neovim exits cleanly on its own.
+    -- QuitPre fires before Neovim creates the auto-buffer window it would add when
+    -- the last normal window quits with a loclist open. Closing the loclist here
+    -- leaves the origin as the true last window, so Neovim exits cleanly.
     local quit_handled = false
     local quitpre_au_id
     quitpre_au_id = api.nvim_create_autocmd('QuitPre', {
@@ -239,8 +227,8 @@ function M.asyncGrep(term, word, wndidforll)
         end,
     })
 
-    -- WinClosed for the loclist window: hide the color tag on the origin window.
-    -- When lopen reopens the loclist, BufWinEnter restores it from origin_tags.
+    -- Loclist closed: hide the origin's color tag. BufWinEnter restores it from
+    -- origin_tags when lopen reopens the list.
     api.nvim_create_autocmd('WinClosed', {
         pattern = tostring(qfwinid),
         once = true,
@@ -255,8 +243,7 @@ function M.asyncGrep(term, word, wndidforll)
         end,
     })
 
-    -- WinClosed: fallback for non-:q closes (wincmd c, API calls, etc.)
-    -- QuitPre won't fire for those, so we still need to clean up the loclist.
+    -- Fallback for non-:q closes (wincmd c, API calls), where QuitPre never fires.
     api.nvim_create_autocmd('WinClosed', {
         pattern = tostring(wndidforll),
         once = true,
@@ -266,7 +253,7 @@ function M.asyncGrep(term, word, wndidforll)
             active_loclist[wndidforll] = nil
             if quit_handled then return end  -- QuitPre already cleaned up
             vim.schedule(function()
-                -- Close loclist windows for this origin
+                -- Close this origin's loclist windows
                 for _, win in ipairs(vim.api.nvim_list_wins()) do
                     if vim.api.nvim_win_is_valid(win) then
                         local buftype = vim.bo[vim.api.nvim_win_get_buf(win)].buftype
@@ -278,8 +265,7 @@ function M.asyncGrep(term, word, wndidforll)
                         end
                     end
                 end
-                -- After closing loclist, if only empty/unnamed buffers remain in
-                -- normal windows (auto-created by Neovim), quit cleanly.
+                -- Only Neovim's auto-created empty buffers left: quit cleanly.
                 local has_real_win = false
                 for _, win in ipairs(vim.api.nvim_list_wins()) do
                     if vim.api.nvim_win_is_valid(win) then
@@ -359,16 +345,14 @@ function M.setup()
             if vim.bo[ev.buf].buftype ~= 'quickfix' then return end
             local winfo = vim.fn.getwininfo(winid)[1]
             if not winfo then return end
-            -- Propagate loclist_tag from origin window if not already set.
-            -- Also restore origin's tag from origin_tags when loclist is reopened
-            -- after being closed (e.g. via lopen after lclose).
+            -- Take the tag from the origin window, restoring it from origin_tags
+            -- when the loclist is reopened after an lclose.
             local info = vim.fn.getloclist(winid, { filewinid = 0 })
             if info.filewinid and info.filewinid ~= 0 then
                 local filewinid = info.filewinid
                 local tag = vim.w[filewinid] and vim.w[filewinid].loclist_tag
                 if not tag then
-                    -- Origin tag was cleared when the previous loclist window closed.
-                    -- Restore it from our persistent store so the color tag reappears.
+                    -- Cleared when the previous loclist window closed.
                     tag = origin_tags[filewinid]
                     if tag and vim.api.nvim_win_is_valid(filewinid) then
                         vim.w[filewinid].loclist_tag = tag
@@ -377,9 +361,8 @@ function M.setup()
                 if tag and not (vim.w[winid] and vim.w[winid].loclist_tag) then
                     vim.w[winid].loclist_tag = tag
                 end
-                -- Track this as the new active loclist window for the origin, and
-                -- register a WinClosed so the tag is hidden if this window is closed
-                -- (e.g. via lclose after lopen — asyncGrep only covers the first open).
+                -- New active loclist window for the origin; the WinClosed hides the
+                -- tag on an lclose (asyncGrep only covers the first open).
                 if active_loclist[filewinid] ~= winid then
                     active_loclist[filewinid] = winid
                     api.nvim_create_autocmd('WinClosed', {
@@ -397,13 +380,10 @@ function M.setup()
                     })
                 end
             end
-            -- Clear any window-local statusline Neovim may have set for this
-            -- qf/loclist window (e.g. showing just quickfix_title).  Setting to ''
-            -- means "use global" for this global-local option, so the global
-            -- %!statusline_entry() expression is evaluated and quickfix_statusline()
-            -- renders filter chains, color tags, and grep status.
-            -- NOTE: only {win=winid} is used here, NOT scope='local' — the two
-            -- cannot be combined and doing so silently corrupts vim.o.statusline.
+            -- '' means "use global" for this global-local option, so
+            -- %!statusline_entry() renders filter chains, tags and grep status.
+            -- Only {win=winid}, NOT scope='local': combining them silently corrupts
+            -- vim.o.statusline.
             vim.api.nvim_set_option_value('statusline', '', { win = winid })
             M.update_loclist_sl(winid)
             M.restore_highlight(winid)
@@ -429,8 +409,8 @@ function M.setup()
     local function handle_lfilter(opts)
         local winid = vim.api.nvim_get_current_win()
         local term = strip_pat(opts.args)
-        -- When run from within a loclist window, getloclist(0) uses the loclist
-        -- window itself as owner — but items belong to the file window (filewinid).
+        -- From inside a loclist window getloclist(0) owns it, but the items belong
+        -- to the file window (filewinid).
         local info = vim.fn.getloclist(winid, { filewinid = 0 })
         local owner = (info.filewinid and info.filewinid ~= 0) and info.filewinid or winid
         filter_list(
@@ -538,10 +518,9 @@ function M.setup()
                 return 'g@'
             end, { buffer = true, expr = true, silent = true })
 
-            -- 'gh'/'gH' normally enter Select mode, which unconditionally treats the next
-            -- typed key as "replace selection" before dispatching any mapping — fatal on
-            -- this nomodifiable buffer (E21). Redirect to ordinary Visual mode instead,
-            -- where movement and the 'x'-mode d/x mappings below already work correctly.
+            -- 'gh'/'gH' enter Select mode, where the next key replaces the selection
+            -- before any mapping runs -- E21 on this nomodifiable buffer. Redirect to
+            -- Visual mode, where the d/x mappings below already work.
             vim.keymap.set('n', 'gh', 'v', { buffer = true, silent = true })
             vim.keymap.set('n', 'gH', 'V', { buffer = true, silent = true })
 
@@ -556,7 +535,7 @@ function M.setup()
                 local is_loclist = winfo.loclist == 1
                 local cur = vim.fn.line('.')
                 local pat = '\\v' .. word
-                -- Find new index of the first non-matching item at or after cursor
+                -- New index of the first non-matching item at or after the cursor
                 local new_idx, target_new_idx = 0, nil
                 local items = is_loclist and vim.fn.getloclist(0) or vim.fn.getqflist()
                 for i, item in ipairs(items) do

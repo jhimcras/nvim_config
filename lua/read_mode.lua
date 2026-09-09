@@ -1,18 +1,13 @@
--- READ mode: a distraction-free reading view, per window, for any buffer.
+-- READ mode: a distraction-free reading view, per window, for any buffer. The
+-- cursor and cursorline are hidden, editing is blocked, navigation is scrolling
+-- only. <leader>r enters, <Esc> leaves; never entered implicitly.
 --
--- The cursor and cursorline are hidden, editing is blocked, navigation is pure
--- scrolling. Works on any filetype; when the current buffer is rendered by the
--- rendermark plugin, its raw-fallback reveals (wrap unfolding the cursor line,
--- image-link reveal, PlantUML preview) are also neutralised via
--- rendermark.wrap/rendermark.image calling back into M.is_active(win) -- this
--- module has no hard dependency on rendermark and must keep working with none of
--- it loaded. The cursor line's own conceal is handled here, by raising
--- 'concealcursor' for the duration.
+-- State is per WINDOW, so one split can read a buffer while another edits it.
 --
--- State is per WINDOW, not per buffer: the same buffer split across two windows
--- can have one in READ mode and the other in Normal mode. <leader>r toggles from
--- Normal mode; <Esc> returns to Normal. Default is always Normal -- READ mode is
--- only ever entered by explicit user action.
+-- rendermark's raw-fallback reveals (cursor-line unwrap, image reveal, PlantUML
+-- preview) call back into M.is_active(win) to suppress themselves; the dependency
+-- is one-way, so this module works with none of rendermark loaded. The cursor
+-- line's own conceal is handled here by raising 'concealcursor'.
 
 local ut = require 'util'
 local M = {}
@@ -24,10 +19,8 @@ local global_applied = false -- whether the guicursor suppression is currently O
 
 local search_state = {} -- win -> { anchor = {line, col}, hl_id }
 local search_ns = vim.api.nvim_create_namespace('read_mode_search')
--- True while the /, n, N pipeline below is deliberately parking the real
--- cursor at the true (possibly far-right) match column for one tick so it can
--- capture it before clamping back to column 0 itself -- pin_current_view must
--- not clobber that column out from under it first.
+-- True while the /, n, N pipeline parks the real cursor at the true match column
+-- for one tick; pin_current_view must not clamp it away before it is read.
 local resolving_search = false
 
 local function wrap_refresh(win)
@@ -35,9 +28,7 @@ local function wrap_refresh(win)
     if ok then pcall(wrap.refresh, win) end
 end
 
--- Like most window-id parameters in the Neovim API, 0/nil both mean "current
--- window" here -- callers (e.g. wrap.lua passing its own win parameter through)
--- may legitimately pass either.
+-- 0/nil both mean "current window", as elsewhere in the Neovim API.
 local function resolve_win(win)
     if not win or win == 0 then
         return vim.api.nvim_get_current_win()
@@ -49,8 +40,8 @@ function M.is_active(win)
     return win_state[resolve_win(win)] ~= nil
 end
 
--- Point the cursor highlight at the editor background so the cursor is invisible.
--- GUI/Neovide-targeted; this is the spot most likely to need per-terminal tuning.
+-- Hide the cursor by painting it in the editor background. GUI-targeted; the most
+-- likely spot to need per-terminal tuning.
 local function hide_cursor()
     if saved_guicursor == nil then
         saved_guicursor = vim.o.guicursor
@@ -72,9 +63,8 @@ local function restore_cursor()
     end
 end
 
--- guicursor is editor-global: Neovim only ever shows one cursor, in the focused
--- window, so gate it on whether the FOCUSED window is active, not any window.
--- ('concealcursor' is window-local and is handled in M.enter/M.exit instead.)
+-- guicursor is editor-global and only the focused window has a cursor, so gate on
+-- the FOCUSED window. ('concealcursor' is window-local; see M.enter/M.exit.)
 local function sync_global(win)
     win = resolve_win(win)
     local should = M.is_active(win)
@@ -93,18 +83,10 @@ local function feed(keys)
     vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), 'n', false)
 end
 
--- Keep the window pinned to no horizontal scroll: leftcol > 0 makes the wrap
--- engine bail out and show raw text (rendermark/wrap.lua refresh). Resetting
--- leftcol alone doesn't hold: with 'wrap' off, Neovim's redraw invariant
--- re-derives leftcol from the real cursor's column on the very next redraw,
--- so a leftcol-only reset just gets overwritten again when the column itself
--- is still off past the window's right edge. Reset col back to 0 too so
--- there's nothing left for that invariant to react to. Skipped while
--- resolving_search is true: the /, n, N pipeline deliberately parks the real
--- cursor at the true match column for one tick and needs to read it before
--- this clamps it away.
--- Global, not per-buffer: only the CURRENT window's cursor is real, so this only
--- needs to check whether the focused window is active.
+-- Pin the window to leftcol 0, since any horizontal scroll makes the wrap engine
+-- bail out to raw text. Resetting leftcol alone doesn't hold: with 'wrap' off
+-- Neovim re-derives it from the cursor column on the next redraw, so the column is
+-- reset to 0 as well. Skipped while resolving_search parks the cursor at a match.
 local function pin_current_view()
     if resolving_search then
         return
@@ -128,16 +110,11 @@ local function clear_search_highlight(win)
     end
 end
 
--- Shared endpoint for /, n, N once we know the true outcome of a native
--- search jump. `pos` is the real {line (1-based), col (0-based)} Vim's own
--- search landed on. On a long real line (rendermark/wrap.lua keeps it one
--- long 'nowrap' line and renders wrapping via virt_lines) this column can be
--- arbitrarily large -- showing it would force leftcol > 0 (never allowed
--- here) or land the invisible real cursor in the wrapped-overflow region.
--- Instead: remember the true match as this window's own search anchor
--- (independent of the real, column-clamped cursor) for n/N to consult, clamp
--- the real column back to 0, and vertically center + highlight the match's
--- line instead of showing its real column.
+-- Shared endpoint for /, n, N. `pos` is where Vim's own search landed
+-- {line 1-based, col 0-based}. On a long unwrapped line that column can be huge,
+-- which would force leftcol > 0. So: remember the true match as this window's
+-- search anchor for n/N, clamp the real column to 0, and center + highlight the
+-- match's line instead.
 local function resolve_match(win, pos)
     if not vim.api.nvim_win_is_valid(win) then
         return
@@ -153,9 +130,8 @@ local function resolve_match(win, pos)
     if pattern ~= '' then
         local line = vim.api.nvim_buf_get_lines(buf, pos[1] - 1, pos[1], false)[1]
         if line then
-            -- Cursor-independent: matches by byte offset directly, no transient
-            -- cursor movement. matchstrpos returns 0-based, end-exclusive byte
-            -- indices, directly usable as extmark col/end_col.
+            -- Match by byte offset, no cursor movement. matchstrpos returns
+            -- 0-based end-exclusive indices, usable as extmark col/end_col.
             local ok, m = pcall(vim.fn.matchstrpos, line, pattern, pos[2])
             if ok and m[2] ~= -1 then
                 local hl_id = vim.api.nvim_buf_set_extmark(buf, search_ns, pos[1] - 1, m[2], {
@@ -169,11 +145,9 @@ local function resolve_match(win, pos)
     wrap_refresh(win)
 end
 
--- j/k/<Esc> are buffer-local (Neovim has no window-local keymaps) but READ mode
--- is window-scoped, so each branches on the CURRENT window's state at call time
--- and falls through to the real motion otherwise. This correctly handles the
--- same buffer split across a READ window and a Normal window. Installed once
--- per buffer and never uninstalled -- harmless no-op outside an active window.
+-- Keymaps are buffer-local (Neovim has none window-local) but READ mode is
+-- window-scoped, so each branches on the current window and otherwise falls
+-- through to the real motion. Installed once per buffer, never uninstalled.
 local function ensure_keymaps(buf)
     if mapped_bufs[buf] then
         return
@@ -187,12 +161,9 @@ local function ensure_keymaps(buf)
         local win = vim.api.nvim_get_current_win()
         feed(vim.v.count1 .. (M.is_active(win) and '<C-y>' or 'k'))
     end, { buffer = buf })
-    -- Capture whatever <Esc> already did (e.g. init.lua's global float-close
-    -- + :nohlsearch binding) before shadowing it with this buffer-local map.
-    -- A plain feed('<esc>') below would be fed non-recursively (noremap) and
-    -- so would never re-trigger that other mapping -- it has to be invoked
-    -- directly instead, or <Esc>'s other bindings silently stop working on
-    -- any buffer that ever entered READ mode, even after exiting it.
+    -- Capture what <Esc> already did before shadowing it: feed('<esc>') is
+    -- noremap and would never re-trigger the other mapping, so it must be invoked
+    -- directly or <Esc>'s other bindings die on any buffer that entered READ mode.
     local prev_esc = vim.fn.maparg('<esc>', 'n', false, true)
     ut.nnoremap('<esc>', function()
         local win = vim.api.nvim_get_current_win()
@@ -217,21 +188,18 @@ local function ensure_keymaps(buf)
             local st = search_state[win]
             resolving_search = true
             if st and st.anchor then
-                -- Restore the TRUE last-match position (not the column-clamped
-                -- real cursor) so native n/N continuation searches from where
-                -- the match actually was, not from column 0. This restore is
-                -- itself a CursorMoved-firing move, hence the guard around it.
+                -- Restore the TRUE last-match position so native n/N continues from
+                -- the match, not column 0. The restore itself fires CursorMoved,
+                -- hence the guard.
                 pcall(vim.api.nvim_win_set_cursor, win, st.anchor)
             end
             local ok = pcall(vim.cmd, 'normal! ' .. vim.v.count1 .. cmd)
             local pos = vim.api.nvim_win_get_cursor(win)
             resolving_search = false
             if ok then
-                -- Deferred, not called inline: foreign plugins reacting to the
-                -- same CursorMoved (e.g. render-markdown's checkbox highlight,
-                -- which recomputes via its own vim.schedule) need a chance to
-                -- run first, or wrap_refresh's collect_deco can snapshot the
-                -- buffer's extmarks before that highlight exists yet.
+                -- Deferred so foreign plugins scheduling off the same CursorMoved
+                -- run first; otherwise collect_deco snapshots before their
+                -- highlights exist.
                 vim.schedule(function()
                     resolve_match(win, pos)
                 end)
@@ -242,11 +210,8 @@ local function ensure_keymaps(buf)
     ut.nnoremap('N', search_repeat('N'), { buffer = buf })
 end
 
--- Snapshot + apply the current buffer's modifiable state for an active window.
--- 'modifiable' is buffer-local in Vim, so if the same buffer is split across a
--- READ window and a Normal window, blocking edits here blocks them in both --
--- an accepted limitation, not worked around (a keymap-based fake-readonly would
--- have the identical buffer-scoping problem).
+-- Snapshot + apply the buffer's modifiable state. 'modifiable' is buffer-local, so
+-- a buffer split across a READ and a Normal window is blocked in both -- accepted.
 local function apply_buffer(win, buf)
     local st = win_state[win]
     st.buf = buf
@@ -267,17 +232,14 @@ function M.enter(win)
         saved_scrolloff = vim.wo[win].scrolloff,
         saved_concealcursor = vim.wo[win].concealcursor,
     }
-    -- Window-local flag other modules (rendermark/wrap.lua, rendermark/image.lua)
-    -- can read without requiring this module, so read_mode stays decoupled from them.
+    -- Window-local flag other modules can read without requiring this one.
     vim.w[win].read_mode_active = true
     apply_buffer(win, buf)
     vim.wo[win].cursorline = false
     vim.wo[win].relativenumber = false
     vim.wo[win].scrolloff = 0
-    -- Conceal the cursor's own line too. Outside READ mode 'concealcursor' is left
-    -- empty on purpose, so the line under the cursor reveals its raw markdown; here
-    -- the cursor is hidden and every line should render, matching the cursor_row
-    -- sentinel rendermark.wrap uses for READ windows.
+    -- Conceal the cursor's line too: the cursor is hidden, so every line should
+    -- render, matching the cursor_row sentinel wrap uses for READ windows.
     vim.wo[win].concealcursor = 'nvic'
 
     vim.api.nvim_win_call(win, function()
@@ -339,10 +301,8 @@ function M.setup()
         callback = pin_current_view,
     })
 
-    -- '/' and '?' jump as ordinary normal-mode processing right after the
-    -- cmdline closes, not synchronously within this callback, so defer the
-    -- handoff a tick to be sure the native jump has already landed before we
-    -- read the resulting cursor position.
+    -- The jump happens after the cmdline closes, not inside this callback, so
+    -- defer a tick before reading the resulting cursor position.
     vim.api.nvim_create_autocmd('CmdlineLeave', {
         group = group,
         pattern = { '/', '?' },
@@ -380,16 +340,14 @@ function M.setup()
         end,
     })
 
-    -- READ mode persists across in-window buffer switches (:bnext, :e, ...):
-    -- re-apply the buffer-side state (modifiable, keymaps) to whatever buffer
-    -- now occupies an already-active window.
+    -- READ mode survives buffer switches, so re-apply the buffer-side state
+    -- (modifiable, keymaps) to whatever buffer the active window now holds.
     vim.api.nvim_create_autocmd('BufWinEnter', {
         group = group,
         callback = function(args)
             local win = vim.api.nvim_get_current_win()
             if M.is_active(win) then
-                -- Any stored anchor/highlight belonged to the previous buffer
-                -- in this window, not the one that just took its place.
+                -- The stored anchor/highlight belonged to the previous buffer.
                 clear_search_highlight(win)
                 search_state[win] = nil
                 apply_buffer(win, args.buf)

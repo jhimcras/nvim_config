@@ -1,15 +1,7 @@
--- rendermark.image: markdown image + PlantUML producer for the neopp GUI.
---
--- Relocated out of neopp's bundled bridge.lua: neopp is now a pure image backend
--- exposing the Neovim 0.13 vim.ui.img surface (set/get/del). This module parses
--- markdown `![alt](path)` links and ```plantuml fenced blocks, reads image sizes
--- cheaply (header bytes only), reserves vertical space with virt_lines, conceals
--- the source text, computes placement/cursor rules/preview-float geometry, and
--- drives vim.ui.img.set / vim.ui.img.del. neopp loads (decodes), renders, deletes.
---
--- Cell metrics come from vim.g.neopp_cell_width_px / neopp_cell_height_px, which
--- neopp publishes (bridge_trigger 'metrics'); a 'User NeoppMetrics' autocmd fires
--- when they change.
+-- rendermark.image: markdown image links and ```plantuml blocks for the neopp GUI.
+-- Reserves rows with virt_lines, conceals the source text and drives vim.ui.img
+-- set/del; neopp decodes and paints. Cell metrics come from
+-- vim.g.neopp_cell_width_px / neopp_cell_height_px ('User NeoppMetrics' on change).
 
 local M = {}
 
@@ -36,10 +28,8 @@ local function trim(s)
 end
 
 -- ---------------------------------------------------------------------------
--- PlantUML preview configuration (set via require'rendermark'.setup{ plantuml =
--- { preview = {...} } }). The "preview" is the diagram shown for the block the
--- cursor is editing -- either a float beside the block (default) or a dedicated
--- non-modifiable split window with the image centered.
+-- PlantUML preview config (rendermark.setup{ plantuml = { preview = {...} } }):
+-- the diagram for the block under the cursor, in a float or a dedicated split.
 -- ---------------------------------------------------------------------------
 local preview_defaults = {
   mode = 'float',            -- 'float' | 'split'
@@ -55,8 +45,7 @@ local preview_cfg = vim.deepcopy(preview_defaults)
 -- nil  => follow preview_cfg.auto; true/false => explicit Show/Hide override.
 M._preview_user = nil
 
--- Normalize a user-supplied preview opts table, falling back to defaults for any
--- invalid field. `position` alone implies the split direction.
+-- Fill invalid fields from the defaults; `position` alone implies the direction.
 local function normalize_preview(opts)
   local cfg = vim.tbl_deep_extend('force', vim.deepcopy(preview_defaults), opts or {})
   if cfg.mode ~= 'split' then cfg.mode = 'float' end
@@ -76,15 +65,13 @@ end
 
 function M.preview_config() return preview_cfg end
 
--- Whether the active-block preview should currently be shown: an explicit
--- Show/Hide override wins, otherwise follow the configured auto flag.
+-- Explicit Show/Hide override wins over the configured auto flag.
 function M.preview_active()
   if M._preview_user ~= nil then return M._preview_user end
   return preview_cfg.auto ~= false
 end
 
--- Resolve a split `size` (fraction <1 or absolute cells >=1) against the host
--- editor extent (columns for a vertical split, rows for a horizontal one).
+-- Resolve a split `size` (fraction <1, or absolute cells >=1) against `total`.
 function M.resolve_split_size(size, total)
   total = math.max(1, tonumber(total) or 1)
   local n = tonumber(size)
@@ -93,9 +80,8 @@ function M.resolve_split_size(size, total)
   return math.max(1, math.min(total, cells))
 end
 
--- Fit an image (aspect-preserving) inside a screen-cell rect and center it.
--- rect = { row, col, width, height } in 0-based screen grid cells. Returns the
--- same placement shape compute_preview_placement produces.
+-- Fit an image inside a screen-cell rect (aspect preserving) and center it.
+-- rect = { row, col, width, height }, 0-based grid cells.
 function M.center_in_rect(rect, image, cell_w, cell_h)
   cell_w = math.max(1, tonumber(cell_w) or 10)
   cell_h = math.max(1, tonumber(cell_h) or 18)
@@ -115,10 +101,8 @@ function M.center_in_rect(rect, image, cell_w, cell_h)
   }
 end
 
--- Choose the preview split orientation from the SOURCE window's pixel aspect.
--- A portrait (taller-than-wide) window opens a vertical split (preview on the
--- right); a landscape window opens a horizontal split (preview on top). Cells
--- are not square, so compare pixel extents, not raw cell counts.
+-- Split orientation from the SOURCE window's pixel aspect: landscape -> vertical,
+-- portrait -> horizontal. Cells aren't square, so compare pixels, not cell counts.
 function M.smart_split_direction(w_cells, h_cells, cell_w, cell_h)
   cell_w = math.max(1, tonumber(cell_w) or 10)
   cell_h = math.max(1, tonumber(cell_h) or 18)
@@ -131,9 +115,8 @@ end
 -- GUI image backend (vim.ui.img) plumbing
 -- ---------------------------------------------------------------------------
 
--- True when the image pipeline will actually decorate image-link lines (real neopp
--- backend or terminal stub, and not globally disabled). wrap.lua uses this to decide
--- whether to skip image-link lines (image.lua owns their layout) or wrap them itself.
+-- True when image-link lines will actually be decorated. wrap.lua skips those
+-- lines when true (image.lua owns their layout).
 function M.is_active()
   return backend.is_active()
 end
@@ -142,8 +125,7 @@ local function install_terminal_stub()
   backend.install_terminal_stub()
 end
 
--- Diff a freshly computed payload against the live set: set every entry (its
--- position/size may have changed) and del ids that are no longer present.
+-- Set every entry (position/size may have changed) and del ids no longer present.
 local function apply_payload(payload)
   backend.apply_payload(payload)
 end
@@ -175,16 +157,11 @@ function M.screenpos_display_col(sp)
   return tonumber(sp.col) or 0
 end
 
--- Grid row (0-based screen row, possibly negative) where a buffer line scrolled
--- above the window top would sit. screenpos() returns 0 for off-screen lines, so
--- for a PlantUML block whose top fence is above the viewport the anchor row is
--- synthesized from the display height of the hidden lines. nvim_win_text_height
--- counts folds, wraps and virt_lines, but NOT virt_lines below end_row -- so end
--- the range at the topline line with end_vcol = 0: that contributes zero rows of
--- the topline itself while still counting the fill above it. Subtracting the
--- window's topfill (the part of that fill still visible at the top) leaves the
--- rows truly hidden. The result may be negative / point into a window above;
--- clip_* confines drawing.
+-- Grid row (may be negative) where a line scrolled above the window top would sit.
+-- screenpos() returns 0 off-screen, so synthesize it from the display height of the
+-- hidden lines. nvim_win_text_height ignores virt_lines below end_row, hence
+-- end_vcol = 0 at topline: counts the fill above it but not the line itself.
+-- Subtracting topfill leaves the truly hidden rows. clip_* confines drawing.
 function M.offscreen_anchor_grid_row(win, w, anchor_row)
   local topline = tonumber(w and w.topline) or 1
   if anchor_row + 1 >= topline then return nil end
@@ -421,12 +398,9 @@ function M.make_virt_lines(virt_height, label)
   return lines
 end
 
--- Terminal stub: draw a bordered box inside the reserved rows so the secured
--- render area (boundary + computed pixel size) is visible without real pixels.
--- Like the blank variant, the box lives entirely in the h-1 virt_lines below the
--- anchor buffer line; the anchor line keeps the (concealed) source link. Only
--- used for the fold-above reservation path; it labels just the first image on
--- the line (the footprint box handles multiple images side-by-side).
+-- Terminal stub: a bordered box in the h-1 virt_lines below the anchor line, so
+-- the reserved area is visible without pixels. Fold-above reservation path only;
+-- labels just the first image on the line.
 function M.make_stub_box(h, label)
   local hl = 'Comment'
   local n = h - 1  -- number of virt_lines to emit
@@ -452,10 +426,9 @@ function M.make_stub_box(h, label)
   return lines
 end
 
--- Greedy display-width wrap of `text` into rows of at most `width` cells. Breaks
--- at whitespace when possible, hard-breaks over-long words / CJK. Mirrors wrap.lua's
--- wrap_indices but returns plain strings (kept local to avoid a circular require).
--- Always returns at least one row (possibly '').
+-- Greedy display-width wrap into rows of at most `width` cells: breaks at
+-- whitespace, hard-breaks over-long words / CJK. Always returns >= 1 row.
+-- Mirrors wrap.lua's wrap_indices; kept local to avoid a circular require.
 local function wrap_text_to_width(text, width)
   width = math.max(1, width)
   local chars = vim.fn.split(text or '', '\\zs')
@@ -501,22 +474,10 @@ local function wrap_text_to_width(text, width)
   return rows
 end
 
--- Terminal stub, footprint-faithful box (PlantUML blocks AND image links). Unlike
--- make_stub_box (which lives wholly in the virt_lines slice), this draws the box
--- across the FULL image footprint: virt_h visual rows starting at the source's
--- first row, exactly where the GUI image would paint. Space allocation is left
--- untouched -- the box is split between (a) the already-reserved virt_lines and
--- (b) zero-height virt_text overlays on the (concealed) source rows. Visual-row
--- routing matches nvim's render order: src0, then the reserve_h-1 virt_lines
--- anchored below src0, then src1..src(source_span-1). For a single-line image link
--- source_span==1, so only src0 is overlaid (top border) and the rest are virt_lines.
--- Pure: lay every image box on a line into virt_h visual rows of virt_text
--- chunks. `boxes` is a list of { name, w_px, h_px, start_cell } (one per image,
--- left-to-right as the GUI paints them). Each box keeps its text-relative
--- start_cell (so leading prose can push the leftmost box right), later boxes bumped
--- right when they would overlap. Returns rows[0..virt_h-1], each a list of
--- { text, 'Comment' } chunks. Split out from draw_stub_footprint_box for
--- unit-testing, like parse_image_size.
+-- Pure: lay every image box on a line into virt_h visual rows of virt_text chunks.
+-- `boxes` = { name, w_px, h_px, start_cell } left-to-right; each keeps its
+-- text-relative start_cell, later boxes bumped right when they would overlap.
+-- Returns rows[0..virt_h-1] of { text, 'Comment' } chunks.
 function M.build_stub_box_rows(boxes, virt_h, cell_w)
   virt_h = math.max(1, virt_h or 1)
   cell_w = math.max(1, cell_w or 10)
@@ -528,9 +489,8 @@ function M.build_stub_box_rows(boxes, virt_h, cell_w)
   for _, b in ipairs(boxes) do
     local name = b.name or '?'
     local size = string.format('%dx%dpx  (%d rows)', b.w_px or 0, b.h_px or 0, virt_h)
-    -- Box width = the image's real display width in cells (NOT the label length),
-    -- so a box never spills past the actual image footprint. Capped/floored so
-    -- borders always render; label text is clipped to fit.
+    -- Box width follows the image's display width, not the label length, so it
+    -- never spills past the footprint; floored so borders always render.
     local box_w = math.min(200, math.max(4, math.floor((b.w_px or 0) / cell_w + 0.5)))
     local inner = box_w - 2
     local function clip(s)
@@ -585,13 +545,9 @@ function M.build_stub_box_rows(boxes, virt_h, cell_w)
   return rows
 end
 
--- Pure: lay non-image text segments into virt_h visual rows of column-positioned
--- virt_text chunks, each segment WRAPPED to its slot width and BOTTOM-aligned within
--- the band (last wrapped row on visual row virt_h-1, stacking upward; clipped to the
--- bottom virt_h rows so text never spills below the image). `segments` is a list of
---   { text = string, start_cell = N, width_cells = N }   (text-relative columns)
--- Returns rows[0..virt_h-1] (each a list of { text, hl } chunks; nil for empty
--- rows), like build_stub_box_rows. Split out for unit-testing.
+-- Pure: lay non-image text segments { text, start_cell, width_cells } into virt_h
+-- visual rows, each wrapped to its slot width and bottom-aligned in the band, so
+-- text never spills below the image. Returns rows[0..virt_h-1] (nil for empty).
 function M.build_image_text_rows(segments, virt_h, opts)
   opts = opts or {}
   local hl = opts.hl or 'Normal'
@@ -636,10 +592,8 @@ function M.build_image_text_rows(segments, virt_h, opts)
   return rows
 end
 
--- Merge two column-positioned chunk-rows: paint `base` (e.g. stub boxes), then
--- overlay `over` (e.g. gap text) treating over's spaces as transparent, so the text
--- only fills the columns the boxes leave blank. Both are chunk lists positioned from
--- column 0; returns one positioned chunk list. Width-aware (CJK/wide chars).
+-- Paint `base`, then `over` with its spaces transparent, so the overlay only fills
+-- columns the base leaves blank. Both positioned from column 0. Width-aware.
 local function merge_chunk_rows(base, over)
   if not over or #over == 0 then return base or {} end
   if not base or #base == 0 then return over end
@@ -691,11 +645,9 @@ local function merge_chunk_rows(base, over)
   return out
 end
 
--- Emit per-visual-row chunk lists across the image footprint, routing each visual
--- row to a virt_line or a source-row overlay exactly like draw_stub_footprint_box:
--- v=0 -> overlay on the anchor row; v in [1,reserve_h-1] -> reserved virt_lines;
--- v>=reserve_h -> overlay on lower source rows (multi-line sources). Overlays on a
--- cursor row are skipped so native conceal reveals the raw text there.
+-- Route each visual row of the footprint to a virt_line or a source-row overlay:
+-- v=0 -> anchor row overlay; v in [1,reserve_h-1] -> virt_lines; v>=reserve_h ->
+-- lower source rows. Overlays on a cursor row are skipped so conceal reveals it.
 local function emit_band_rows(buf, ns, row, reserve_h, source_span, virt_h, rows, cursor_rows)
   reserve_h = math.max(1, reserve_h or 1)
   source_span = math.max(1, source_span or 1)
@@ -725,16 +677,10 @@ local function emit_band_rows(buf, ns, row, reserve_h, source_span, virt_h, rows
   end
 end
 
--- Terminal stub, footprint-faithful box(es) (PlantUML blocks AND image links).
--- Unlike make_stub_box (which lives wholly in the virt_lines slice), this draws
--- across the FULL image footprint: virt_h visual rows starting at the source's
--- first row, exactly where the GUI image(s) would paint. Space allocation is
--- left untouched -- the box is split between (a) the already-reserved virt_lines
--- and (b) zero-height virt_text overlays on the (concealed) source rows. Visual-
--- row routing matches nvim's render order: src0, then reserve_h-1 virt_lines
--- anchored below src0, then src1..src(source_span-1). When the cursor sits on a
--- source row (`cursor_rows[brow]`), its overlay is skipped so native conceal can
--- reveal the raw link text there.
+-- Terminal stub box(es) drawn across the FULL image footprint, where the GUI
+-- image would paint. Space allocation is untouched: the box is split between the
+-- already-reserved virt_lines and zero-height virt_text overlays on the concealed
+-- source rows. See emit_footprint_rows for the visual-row routing.
 function M.draw_stub_footprint_box(buf, ns, reservation, cell_w, cursor_rows)
   local label = reservation.label
   local row = reservation.row
@@ -745,7 +691,7 @@ function M.draw_stub_footprint_box(buf, ns, reservation, cell_w, cursor_rows)
   if #boxes == 0 then return end
 
   local box_rows = M.build_stub_box_rows(boxes, virt_h, cell_w)
-  -- Weave the bottom-aligned gap text into the (disjoint) gap columns between boxes.
+  -- Weave the bottom-aligned gap text into the gap columns between boxes.
   local rows = box_rows
   if label.text_rows then
     rows = {}
@@ -756,9 +702,8 @@ function M.draw_stub_footprint_box(buf, ns, reservation, cell_w, cursor_rows)
   emit_band_rows(buf, ns, row, reserve_h, source_span, virt_h, rows, cursor_rows)
 end
 
--- Terminal stub box drawn into the PlantUML preview float buffer (the GUI would
--- paint the image over the float). Fills exactly the place.width x place.height
--- geometry the placement logic already sized the window to -- no placement change.
+-- Terminal stub box for the PlantUML preview float, filling exactly the
+-- place.width x place.height the placement logic already sized the window to.
 function M.draw_stub_preview_box(buf, place, path, rect)
   local w = math.max(2, place.width or 2)
   local h = math.max(1, place.height or 1)
@@ -779,8 +724,7 @@ function M.draw_stub_preview_box(buf, place, path, rect)
     end
     lines[h] = '+' .. string.rep('-', w - 2) .. '+'
   end
-  -- Split carrier: the window is larger than the box, so pad the box to the
-  -- centered position (place already includes the window-origin offset).
+  -- Split carrier: window is larger than the box, so pad it to the centered spot.
   if rect then
     local pad_left = math.max(0, (place.col or 0) - (rect.col or 0))
     if pad_left > 0 then
@@ -790,10 +734,8 @@ function M.draw_stub_preview_box(buf, place, path, rect)
     local pad_top = math.max(0, (place.row or 0) - (rect.row or 0))
     for _ = 1, pad_top do table.insert(lines, 1, '') end
   end
-  -- Drop markdown ft so render-markdown/treesitter doesn't reflow the ASCII box
-  -- (the `|...|` rows would otherwise be mistaken for a pipe table). Only assign
-  -- when it actually differs: a FileType autocmd re-enters send_images
-  -- synchronously, so churning the filetype every draw recurses to E218.
+  -- Drop markdown ft so the `|...|` rows aren't reflowed as a pipe table. Assign
+  -- only on a real change: FileType re-enters send_images and would recurse (E218).
   if vim.bo[buf].filetype ~= '' then
     pcall(function() vim.bo[buf].filetype = '' end)
   end
@@ -838,16 +780,13 @@ function M.layout_image_line(images, opts)
   local text_right_px = tonumber(opts.text_right_px) or (clip_x + clip_w)
   local dest_y_px = tonumber(opts.dest_y_px) or (base_grid_row * cell_h)
   if text_right_px <= text_left_px then text_right_px = text_left_px + cell_w end
-  -- Image-line text layout (opt-in): start packing at row_start_x_override (= text
-  -- left + leading-prose width) and use per-gap widths from gaps_px[i] (the reserved
-  -- room for the prose between image i and i+1) instead of the constant gap_px.
+  -- Image-line text layout (opt-in): start at row_start_x_override and use the
+  -- per-gap widths in gaps_px[i] instead of the constant gap_px.
   local row_start_override = tonumber(opts.row_start_x_override)
   local gaps_px = opts.gaps_px or {}
-  -- Room reserved to the right of the last image for the trailing prose slot, so
-  -- the images don't pack all the way to text_right_px and squeeze it out.
+  -- Room kept right of the last image so the trailing prose isn't squeezed out.
   local trailing_reserve = math.max(0, tonumber(opts.trailing_px) or 0)
-  -- gap_scale shrinks the reserved text gaps only in the narrow-window edge case
-  -- where images alone can't shrink enough to fit (see the fit logic below).
+  -- gap_scale shrinks the text gaps only when images alone can't shrink enough.
   local gap_scale = 1
   local function gap_after(i) return math.max(0, math.floor((tonumber(gaps_px[i]) or gap_px) * gap_scale)) end
 
@@ -893,10 +832,9 @@ function M.layout_image_line(images, opts)
     return total
   end
 
-  -- Fit images + the fixed gap slots within available_w. Gaps are reserved text
-  -- columns that do NOT scale with image height, so shrink images against the
-  -- budget left after the gaps. If the gaps alone leave less than 1px per image,
-  -- scale the gaps down too so the band never spills past text_right_px.
+  -- Fit images + gap slots within available_w. Gaps don't scale with image height,
+  -- so shrink images against the budget left after them; if that leaves under 1px
+  -- per image, shrink the gaps too so the band never spills past text_right_px.
   local min_imgs_w = images_width_for(1)  -- images collapsed to the 1px floor
   local budget = available_w - gaps_total()
   if budget < min_imgs_w then
@@ -933,15 +871,13 @@ function M.layout_image_line(images, opts)
   return layouts, math.max(1, math.ceil(common_h / cell_h))
 end
 
--- Pure: decode width/height/format from leading image bytes (no I/O). Split out
--- from read_image_size so the format detection is unit-testable on byte fixtures.
+-- Pure: decode width/height/format from leading image bytes (no I/O).
 function M.parse_image_size(data)
   return image_size.parse_image_size(data)
 end
 
--- Read image dimensions from `path`, caching by (mtime, size) so repeated renders
--- don't re-read the same files. fs_stat is a cheap syscall vs the 512KB read it
--- guards, and mtime/size keying guarantees fresh dims if the file changes on disk.
+-- Read image dimensions from `path`, cached by (mtime, size): fs_stat is cheap
+-- next to the 512KB read it guards, and re-reads when the file changes on disk.
 function M.read_image_size(path)
   return read_image_size_impl(path)
 end
@@ -988,8 +924,7 @@ function M.scan_markdown_image_text(buf, row0, text, result, opts)
   return image_scan.scan_markdown_image_text(image_scan_deps(), buf, row0, text, result, opts)
 end
 
--- True if `text` contains at least one markdown image link. Shared with wrap.lua so
--- it can skip these lines (image.lua owns their layout). Same pattern as the scanner.
+-- True if `text` holds a markdown image link. wrap.lua uses it to skip such lines.
 function M.line_has_image_link(text)
   return image_scan.line_has_image_link(text)
 end
@@ -1064,14 +999,12 @@ function M.clear_images_for_buf(buf)
   if nsid and vim.api.nvim_buf_is_valid(buf) then
     pcall(vim.api.nvim_buf_clear_namespace, buf, nsid, 0, -1)
   end
-  -- The buffer's images are dropped on the next sync diff (their ids vanish from
-  -- the payload). Schedule one so the GUI backend frees them promptly.
+  -- The next sync diff drops this buffer's images; schedule one so they free early.
   vim.schedule(function() M.send_images() end)
 end
 
--- Compute where a PlantUML preview float should sit relative to its source code
--- block. The block itself stays fully visible; the preview is attached adjacent on
--- the first of top/bottom/left/right that fits entirely within the editor screen.
+-- Place the preview float adjacent to its source block, on the first of
+-- top/bottom/left/right that fits on screen; the block stays fully visible.
 function M.compute_preview_placement(ps, image, cell_w, cell_h)
   local src_win = ps.win
   local src_buf = ps.buf
@@ -1109,8 +1042,7 @@ function M.compute_preview_placement(ps, image, cell_w, cell_h)
   local cols = math.max(1, tonumber(vim.o.columns) or 1)
   local rows = math.max(1, (tonumber(vim.o.lines) or 1) - (tonumber(vim.o.cmdheight) or 0))
 
-  -- Image size: shrink (aspect preserving) to fit the editor, then round the
-  -- carrier window up to whole grid cells.
+  -- Shrink to fit the editor (aspect preserving), then round up to whole cells.
   local iw = math.max(1, tonumber(image.source_width) or 1)
   local ih = math.max(1, tonumber(image.source_height) or 1)
   local scale = math.min(1, (cols * cell_w) / iw, (rows * cell_h) / ih)
@@ -1181,9 +1113,8 @@ function M.compute_preview_placement(ps, image, cell_w, cell_h)
   return { row = fr, col = fc, width = pw, height = ph, disp_w = disp_w, disp_h = disp_h }
 end
 
--- Move/resize the carrier float to the computed geometry. We remember what we last
--- applied per window so we only call nvim_win_set_config on an actual change,
--- avoiding a win_float_pos -> sync -> set_config feedback loop.
+-- Move/resize the carrier float. The last applied geometry is remembered per
+-- window to avoid a win_float_pos -> sync -> set_config feedback loop.
 M._preview_float_geom = M._preview_float_geom or {}
 function M.reposition_preview_float(win, place)
   if not (win and vim.api.nvim_win_is_valid(win)) then return end
@@ -1201,9 +1132,8 @@ function M.reposition_preview_float(win, place)
     height = place.height,
   })
   if ok then
-    -- The carrier buffer holds the (long) image link on a single line. Once the
-    -- float is narrowed and grown taller than one row, 'wrap' would spill that
-    -- link into the rows below the image; disable it so only the image shows.
+    -- The carrier's single long link line would wrap into the rows below the
+    -- image once the float is narrow and multi-row; disable 'wrap'.
     pcall(vim.api.nvim_set_option_value, 'wrap', false, { win = win })
     M._preview_float_geom[key] = { row = place.row, col = place.col, width = place.width, height = place.height }
   end
@@ -1213,20 +1143,14 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
   local ps = info.preview_source
   if not ps then return end
 
-  -- The `wins` snapshot predates collect_plantuml_images, which may have just
-  -- closed this float (the cursor left the block), wiping its window and buffer
-  -- (bufhidden='wipe'). Operating on the dead buffer/window then errors
-  -- (Invalid buffer id). Bail when the snapshot is stale.
+  -- collect_plantuml_images may have closed this float since the `wins` snapshot
+  -- (bufhidden='wipe'); touching the dead handles errors, so bail if stale.
   if not (vim.api.nvim_win_is_valid(info.win) and vim.api.nvim_buf_is_valid(info.buf)) then
     return
   end
 
-  -- Resolve the preview image from the source metadata path directly. We must
-  -- NOT depend on scanning the carrier float's buffer: only markdown buffers are
-  -- scanned for image links (collect_markdown_images gates on filetype), so if
-  -- anything leaves the float buffer non-markdown the scan returns nothing and
-  -- the preview silently vanishes AND the float never gets repositioned (it stays
-  -- at its seed spot). ps.path is authoritative, so size it from the file.
+  -- Size from ps.path, never from scanning the carrier buffer: the scan is gated
+  -- on filetype markdown, so a non-markdown float would silently lose its preview.
   local image
   if ps.path then
     local size = M.read_image_size(ps.path)
@@ -1236,7 +1160,7 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
     end
   end
   if not image then
-    -- Fallback: a scanned image link from the carrier buffer (when it is markdown).
+    -- Fallback: a scanned image link from the carrier buffer.
     for _, im in ipairs(buf_images[info.buf] or {}) do
       if not im.error and (not ps.path or im.path == ps.path)
           and im.source_width and im.source_height then
@@ -1249,8 +1173,7 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
 
   local place, stub_rect
   if ps.kind == 'split' then
-    -- The split carrier IS info.win, sized by the user. Center the image within
-    -- its screen rect rather than moving/resizing the window.
+    -- The split carrier is user-sized: center the image in it, don't resize.
     local wi = info.w
     local textoff = tonumber(wi.textoff) or 0
     stub_rect = {
@@ -1279,8 +1202,7 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
   end
 
   if M._stub_active then
-    -- No pixels in a terminal: draw the box into the carrier buffer instead. For a
-    -- split, stub_rect lets the box be centered within the (larger) window.
+    -- No pixels in a terminal: draw the stub box into the carrier buffer instead.
     M.draw_stub_preview_box(info.buf, place, image.path, stub_rect)
     return
   end
@@ -1320,13 +1242,9 @@ function M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
 end
 
 -- ===========================================================================
--- PlantUML rendering
---
--- ```plantuml fenced code blocks are converted to PNGs and rendered as ordinary
--- (non-virtual) inline images: the source block is concealed exactly like a real
--- image link, and the generated PNG is injected into the normal image pipeline.
--- When the cursor is inside a block the source is left raw (editable) and a
--- preview float is shown beside it instead.
+-- PlantUML rendering: ```plantuml blocks are rendered to PNGs and fed through the
+-- normal image pipeline, the source concealed like an image link. A block under
+-- the cursor keeps its raw source and gets a preview float instead.
 -- ===========================================================================
 
 local plantuml_states = {}
@@ -1470,9 +1388,8 @@ local function plantuml_ensure_render(buf, block)
   return entry
 end
 
--- The block under the cursor changes text on every keystroke; debounce its
--- render so we don't spawn a PlantUML process per character. Returns the cached
--- entry if it already exists, otherwise nil (and schedules a render).
+-- Debounce the cursor block's render so a keystroke doesn't spawn a PlantUML
+-- process. Returns the cached entry, or nil after scheduling a render.
 local function plantuml_debounce_active(buf, block)
   local st = plantuml_state_for(buf)
   local hash = plantuml_block_hash(block)
@@ -1490,10 +1407,8 @@ local function plantuml_debounce_active(buf, block)
   return nil
 end
 
--- Keep global 'equalalways' disabled for as long as a preview split is open, so
--- that carving it (open) and removing it (close -- including a user <C-w>z) resizes
--- only the source window; sibling windows keep their size. The original value is
--- stashed on the buffer's state and restored once the preview is gone.
+-- Keep 'equalalways' off while a preview split is open so opening and closing it
+-- (including a user <C-w>z) resizes only the source window. Restored afterwards.
 local function preview_suppress_equalize(st)
   if st.saved_equalalways == nil then
     st.saved_equalalways = vim.o.equalalways
@@ -1510,8 +1425,7 @@ end
 local function plantuml_close_float(st)
   if not st then return end
   if not st.float then preview_restore_equalize(st); return end
-  -- Mark this as a programmatic teardown so the WinClosed handler does not treat
-  -- it as a user <C-w>z dismissal.
+  -- Mark as programmatic so WinClosed doesn't read it as a user <C-w>z dismissal.
   st.programmatic_close = true
   if st.float.win and vim.api.nvim_win_is_valid(st.float.win) then
     pcall(function()
@@ -1528,9 +1442,8 @@ local function plantuml_close_float(st)
   preview_restore_equalize(st)
 end
 
--- Open (or refresh) the preview carrier float for the active block. The
--- emit_preview_float path repositions/sizes it; we only need a 1-cell seed
--- window carrying the block path metadata in a window variable.
+-- Open (or refresh) the preview carrier float: a 1-cell seed window holding the
+-- block path metadata; emit_preview_float positions and sizes it.
 local function plantuml_open_float(buf, win, block, png)
   local st = plantuml_state_for(buf)
   local line = (vim.api.nvim_buf_get_lines(buf, block.start_row, block.start_row + 1, false) or {})[1] or ''
@@ -1576,10 +1489,8 @@ end
 
 local split_dir_map = { left = 'left', right = 'right', top = 'above', bottom = 'below' }
 
--- Open (or reuse) a dedicated, non-modifiable split window for the active block's
--- preview. emit_preview_float centers the image inside it. The carrier slot is
--- shared with the float (st.float), tagged kind='split', so the existing close /
--- cleanup paths tear it down unchanged.
+-- Open (or reuse) a non-modifiable split for the active block's preview. Shares
+-- the st.float carrier slot (kind='split') so the existing cleanup paths apply.
 local function plantuml_open_split(buf, win, block, png)
   local st = plantuml_state_for(buf)
   local line = (vim.api.nvim_buf_get_lines(buf, block.start_row, block.start_row + 1, false) or {})[1] or ''
@@ -1594,9 +1505,8 @@ local function plantuml_open_split(buf, win, block, png)
   }
   local link = '![plantuml](' .. png:gsub('\\', '/') .. ')'
 
-  -- Record the source block on st.float so active-block resolution can keep the
-  -- preview alive while focus is inside the preview window, and so the WinClosed
-  -- dismissal handler knows which block was dismissed.
+  -- Record the source block so the preview survives focus moving into it, and so
+  -- WinClosed knows which block was dismissed.
   local function stamp_source(f)
     f.source_win = win
     f.source_buf = buf
@@ -1605,9 +1515,8 @@ local function plantuml_open_split(buf, win, block, png)
     f.block_id = block_id
   end
 
-  -- Reuse the existing split pane (re-renders); just refresh its image link and
-  -- the source metadata. Orientation of an existing pane is kept as-is; a new
-  -- orientation is only chosen when the pane is (re)opened from closed.
+  -- Reuse the open pane: refresh its image link and metadata, keep orientation
+  -- (a new one is only chosen when the pane reopens from closed).
   if st.float and st.float.kind == 'split'
       and st.float.win and vim.api.nvim_win_is_valid(st.float.win)
       and st.float.buf and vim.api.nvim_buf_is_valid(st.float.buf) then
@@ -1623,8 +1532,7 @@ local function plantuml_open_split(buf, win, block, png)
   end
   plantuml_close_float(st)
 
-  -- Smart position from the SOURCE window's pixel aspect: landscape -> vertical
-  -- split (preview right), portrait -> horizontal split (preview bottom).
+  -- From the SOURCE window's pixel aspect: landscape -> right, portrait -> bottom.
   local ok_w, w_cells = pcall(vim.api.nvim_win_get_width, win)
   local ok_h, h_cells = pcall(vim.api.nvim_win_get_height, win)
   local direction = M.smart_split_direction(
@@ -1644,8 +1552,7 @@ local function plantuml_open_split(buf, win, block, png)
 
   local wcfg = { split = split_dir_map[position], win = win }
   if vertical then wcfg.width = size else wcfg.height = size end
-  -- Carve the split without re-equalizing sibling windows (only `win` shrinks);
-  -- equalize stays suppressed until the preview closes (see plantuml_close_float).
+  -- Carve the split without re-equalizing siblings; suppressed until it closes.
   preview_suppress_equalize(st)
   local ok, fwin = pcall(vim.api.nvim_open_win, fbuf, false, wcfg)
   if not ok or not fwin then
@@ -1657,8 +1564,8 @@ local function plantuml_open_split(buf, win, block, png)
     number = false, relativenumber = false, wrap = false, list = false,
     cursorline = false, signcolumn = 'no',
     winfixwidth = vertical, winfixheight = not vertical,
-    -- A real preview window: closable with <C-w>z / :pclose, no custom keymap.
-    -- May raise E590 if a preview window already exists; pcall degrades quietly.
+    -- A real preview window, closable with <C-w>z / :pclose. E590 if one already
+    -- exists, so pcall.
     previewwindow = true,
   }) do
     pcall(vim.api.nvim_set_option_value, opt, val, { win = fwin })
@@ -1678,16 +1585,14 @@ function M.plantuml_cleanup_buf(buf)
   plantuml_states[buf] = nil
 end
 
--- Which block (if any) the cursor sits inside for the focused source window.
--- The preview float is an editing aid for the current buffer only: when focus
--- moves to Telescope, another buffer, or any other window, the source window's
--- stale cursor must not keep the preview floating over the new UI.
+-- Which block the cursor sits inside, for the FOCUSED source window only: a stale
+-- cursor in an unfocused window must not keep the preview floating over other UI.
 local function plantuml_active_block(buf, blocks)
   local cur = vim.api.nvim_get_current_win()
   if not vim.api.nvim_win_is_valid(cur) then return nil, nil end
   if vim.w[cur].read_mode_active then return nil, nil end
 
-  -- Focus in the source window with the cursor inside a block: that block is active.
+  -- Focused source window with the cursor inside a block.
   if vim.api.nvim_win_get_buf(cur) == buf then
     local row = vim.api.nvim_win_get_cursor(cur)[1] - 1
     for _, block in ipairs(blocks) do
@@ -1698,9 +1603,8 @@ local function plantuml_active_block(buf, blocks)
     return nil, nil
   end
 
-  -- Focus inside our own preview window: keep the block it was built for alive so
-  -- the preview stays open, attributed to the still-valid source window. Moving
-  -- focus to any other (third) window falls through to nil and closes it.
+  -- Focus inside our own preview: keep its block alive. Any other window falls
+  -- through to nil and closes the preview.
   local st = plantuml_states[buf]
   if st and st.float and st.float.win == cur
       and st.float.source_win and vim.api.nvim_win_is_valid(st.float.source_win) then
@@ -1710,10 +1614,8 @@ local function plantuml_active_block(buf, blocks)
   return nil, nil
 end
 
--- Render/refresh all PlantUML blocks for a markdown buffer. Appends ready,
--- inactive blocks to `result` as non-virtual image items (concealed + drawn by
--- the normal image pipeline). Opens a preview float for the active block.
--- Collects per-block render errors into `errors`.
+-- Render/refresh all PlantUML blocks: ready inactive ones are appended to `result`
+-- as image items, the active one gets a preview float. Errors go to `errors`.
 function M.collect_plantuml_images(buf, result, errors)
   local st_existing = plantuml_states[buf]
   local name = vim.api.nvim_buf_get_name(buf)
@@ -1729,9 +1631,8 @@ function M.collect_plantuml_images(buf, result, errors)
     return
   end
 
-  -- Concealing the source block requires conceallevel >= 2. Ensure it on every
-  -- window showing this buffer so the source hides on its own (without depending
-  -- on render-markdown.nvim or other plugins to raise it).
+  -- Concealing the source needs conceallevel >= 2; set it ourselves rather than
+  -- relying on render-markdown.nvim or another plugin to raise it.
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) and (vim.wo[win].conceallevel or 0) < 2 then
       pcall(function() vim.wo[win].conceallevel = 2 end)
@@ -1740,8 +1641,7 @@ function M.collect_plantuml_images(buf, result, errors)
 
   local st = plantuml_state_for(buf)
 
-  -- Install the buffer-local reopen keymap once. After the user dismisses the
-  -- preview with <C-w>z, `gpp` clears the dismissal and re-opens it.
+  -- `gpp` clears a <C-w>z dismissal and reopens the preview.
   if not st.mapped then
     st.mapped = true
     pcall(vim.keymap.set, 'n', 'gpp', function()
@@ -1754,8 +1654,7 @@ function M.collect_plantuml_images(buf, result, errors)
   local active_block, active_win = plantuml_active_block(buf, blocks)
   local active_id = active_block
     and (tostring(active_block.start_row) .. ':' .. tostring(active_block.end_row)) or nil
-  -- Drop a stale dismissal once the cursor leaves the dismissed block, so
-  -- re-entering it re-opens the preview.
+  -- Drop the dismissal once the cursor leaves the block, so re-entry reopens it.
   if st.dismissed_id and st.dismissed_id ~= active_id then
     st.dismissed_id = nil
   end
@@ -1765,9 +1664,8 @@ function M.collect_plantuml_images(buf, result, errors)
     local is_active = active_block ~= nil and block.start_row == active_block.start_row
 
     if is_active then
-      -- Leave the source raw for editing; show a preview (float or split) instead.
-      -- The block text changes while typing, so debounce its render. Honor the
-      -- show/hide state (M.preview_active()) and any user dismissal of this block.
+      -- Leave the source raw for editing and preview it instead; debounced,
+      -- since the block text changes while typing.
       if M.preview_active() and not st.dismissed_id then
         local entry = plantuml_debounce_active(buf, block)
         if entry and entry.status == 'ready' then
@@ -1805,9 +1703,8 @@ function M.collect_plantuml_images(buf, result, errors)
     end
   end
 
-  -- Tear down the preview when no block is active. A persistent split pane is the
-  -- exception: it stays open and keeps showing the last diagram. A hidden/disabled
-  -- preview always closes.
+  -- No active block: tear the preview down. A persistent split pane instead stays
+  -- open with its last diagram, unless the preview is hidden/disabled.
   if not active_floated then
     local st = plantuml_states[buf]
     if st then
@@ -1826,8 +1723,7 @@ end
 -- Master sync: build the image payload and drive vim.ui.img
 -- ===========================================================================
 
--- Resolve a window's PlantUML preview-source metadata (set on the carrier float by
--- plantuml_open_float) into the normalized table emit_preview_float expects, or nil.
+-- Normalize a carrier float's preview-source metadata for emit_preview_float.
 local function resolve_preview_source(win)
   local ok_source, source_meta = pcall(function()
     return vim.w[win].rendermark_plantuml_preview_source
@@ -1850,13 +1746,9 @@ local function resolve_preview_source(win)
   }
 end
 
--- Re-entrancy guard. send_images mutates buffers/windows (opens the preview
--- float, toggles its filetype, sets extmarks); those fire FileType/WinNew/etc
--- autocmds that synchronously call send_images again. Without this guard the
--- float-creation path recurses (open_float -> FileType=markdown -> send_images
--- -> open_float -> ...) until E218 "autocommand nesting too deep". A nested call
--- is always redundant -- the outer pass already reflects the latest state -- so
--- drop it.
+-- Re-entrancy guard: send_images mutates buffers/windows, whose autocmds call it
+-- back synchronously (open_float -> FileType -> send_images -> ...) until E218.
+-- A nested call is always redundant, so drop it.
 function M.send_images()
   if M._send_images_active then return end
   M._send_images_active = true
@@ -1915,12 +1807,9 @@ function M._send_images_impl()
     end
   end
 
-  -- collect_plantuml_images may have just created the preview carrier float for an
-  -- active block. The `wins` snapshot above predates that, so without this the float
-  -- only gets sized/drawn one cycle late -- with the cursor idle nothing re-triggers,
-  -- leaving the 1x1 seed float (a single concealed char) on screen. Append any
-  -- preview-source float that isn't already in the snapshot so emit_preview_float
-  -- runs for it this cycle.
+  -- collect_plantuml_images may have just created a carrier float, after the `wins`
+  -- snapshot. Append it, or the 1x1 seed float sits unsized until something else
+  -- re-triggers a render.
   do
     local seen = {}
     for _, info in ipairs(wins) do seen[info.win] = true end
@@ -1953,9 +1842,8 @@ function M._send_images_impl()
     end)
     if ok and fold and fold.start and fold.start > 0 and fold.finish and fold.finish >= fold.start then
       local line_count = vim.api.nvim_buf_line_count(buf)
-      -- A folded block collapses to a single display row that the image is
-      -- drawn over. Reserving virt_h virtual lines above the following line
-      -- seats trailing text directly under the image bottom with no extra gap.
+      -- A folded block is one display row under the image; reserving virt_h lines
+      -- above the next line seats trailing text right under the image bottom.
       reserve_h = math.max(1, virt_h or 1)
       if fold.finish < line_count then
         reserve_row = fold.finish
@@ -1963,21 +1851,17 @@ function M._send_images_impl()
       end
     end
 
-    -- If the reservation anchor lands inside a *closed fold* (the next block is
-    -- itself a folded image block stacked directly below this one), nvim will not
-    -- render virt_lines there -- they are swallowed by that fold, so no space gets
-    -- reserved between the two fold lines. Carry this block's height forward and
-    -- fold it into the next anchor that does render, so trailing buffer text still
-    -- clears the whole stack of images instead of being drawn over.
+    -- nvim swallows virt_lines placed inside a closed fold, so an anchor landing in
+    -- one reserves nothing. Carry the height forward into the next anchor that does
+    -- render, so trailing text clears the whole stack of images.
     local hidden = false
     local okc, fc = pcall(vim.api.nvim_win_call, win, function()
       return vim.fn.foldclosed(reserve_row + 1)
     end)
     if okc and type(fc) == 'number' and fc > 0 then hidden = true end
     if hidden then
-      -- The hidden block's own fold line still occupies one display row (covered
-      -- by the image stacked above it), so it shifts the next renderable anchor
-      -- down by one. Carry one less row to avoid an extra blank gap per block.
+      -- The swallowed block's fold line still takes one display row, so carry one
+      -- less to avoid an extra blank gap per block.
       reservation_carry_h = reservation_carry_h + math.max(0, reserve_h - 1)
       return
     end
@@ -1995,8 +1879,8 @@ function M._send_images_impl()
       image_reservations[buf][key] = {
         row = reserve_row,
         reserve_h = reserve_h,
-        -- Visible source rows. Part of the reservation signature: hiding a row
-        -- shifts everything below it just like a virt_line does.
+        -- Visible source rows: hiding one shifts everything below, like a virt_line,
+        -- so they belong in the reservation signature.
         span = span,
         above = reserve_above,
         label = label,
@@ -2006,8 +1890,7 @@ function M._send_images_impl()
 
   for _, info in ipairs(wins) do
     reservation_carry_h = 0
-    -- PlantUML preview floats are placed adjacent to their source block by a
-    -- dedicated path; skip the normal inline-image flow for them.
+    -- Preview floats have their own placement path; skip the inline-image flow.
     if info.preview_source then
       M.emit_preview_float(info, buf_images, payload, cell_w, cell_h)
       goto continue_win
@@ -2031,13 +1914,9 @@ function M._send_images_impl()
       measured_image.above_floats = info.above_floats == true
 
       local lnum = measured_image.row + 1
-      -- An image's display footprint extends max(source span, image rows) below
-      -- its anchor (reserve_h = virt_h - span + 1 virt_lines plus the concealed
-      -- source rows; virt_h <= max_rows, +1 margin for the fold/above
-      -- reservation). Keep it while any of that can intersect the viewport so
-      -- both PlantUML blocks and inline image lines stay concealed and
-      -- clipped-rendered -- and, critically, keep their virt_lines reservation
-      -- so scrolling through the block never collapses the layout.
+      -- The footprint reaches max(source span, image rows) below the anchor. Keep
+      -- the image while any of that can touch the viewport, so the source stays
+      -- concealed and the virt_lines reservation survives mid-block scrolling.
       local span = math.max(1, tonumber(measured_image.source_span_height) or 1)
       local keep = lnum <= measure_w.botline
         and lnum + math.max(span, max_rows + 1) - 1 >= measure_w.topline
@@ -2061,11 +1940,9 @@ function M._send_images_impl()
       local above_floats = first_image.above_floats == true
       local lnum = row + 1
       local sp_line = M.safe_screenpos(measure_win, lnum, 1)
-      -- screenpos() is 0 for lines above topline. A block whose anchor line
-      -- scrolled off the top can still be partially visible; synthesize its
-      -- grid row so the image keeps rendering (clipped), the source lines stay
-      -- concealed, and -- most importantly -- the virt_lines reservation below
-      -- survives, keeping the window's topfill valid while scrolling through it.
+      -- screenpos() is 0 above topline, so synthesize the grid row of an anchor
+      -- scrolled off the top: the image keeps rendering clipped and its virt_lines
+      -- reservation survives, keeping topfill valid.
       local offscreen_grid_row = nil
       if sp_line.row <= 0 and lnum < measure_w.topline then
         offscreen_grid_row = M.offscreen_anchor_grid_row(measure_win, measure_w, row)
@@ -2101,18 +1978,15 @@ function M._send_images_impl()
           end
         end
         local source_grid_row = offscreen_grid_row or (sp_line.row - 1)
-        -- Stack vertically below the previous block's image when this block's
-        -- anchor is bunched against it (two adjacent closed folds, whose
-        -- separating virt_lines nvim refuses to render) so images never overlap.
+        -- Adjacent closed folds get no separating virt_lines, so stack this image
+        -- below the previous one instead of overlapping it.
         local layout_grid_row = source_grid_row
         if stack_bottom_grid_row and source_grid_row < stack_bottom_grid_row then
           layout_grid_row = stack_bottom_grid_row
         end
-        -- Image-line text layout: pull the prose around/between the (real) image
-        -- links off the raw row so it can be re-rendered bottom-aligned in the gaps
-        -- between images. Reserve horizontal room for the leading + between prose so
-        -- the images are spaced to leave the text a slot (capped so a long caption
-        -- wraps instead of shoving images off-screen). Only for real buffer links.
+        -- Image-line text layout: pull the prose around the links off the raw row to
+        -- re-render it bottom-aligned in the gaps, and reserve horizontal room for it
+        -- (capped, so a long caption wraps instead of shoving images off-screen).
         local TEXT_SLOT_MAX_CELLS = 30
         local text_layout = nil
         do
@@ -2170,8 +2044,7 @@ function M._send_images_impl()
         })
 
         local virt_h = image_rows
-        -- Source rows the block keeps on screen. Read by the PlantUML conceal
-        -- pass below, which hides the rest outright.
+        -- Source rows kept on screen; the conceal pass below hides the rest.
         local visible_span = nil
         if #layouts > 0 then
           stack_bottom_grid_row = layout_grid_row + image_rows
@@ -2179,18 +2052,15 @@ function M._send_images_impl()
           for _, layout in ipairs(layouts) do
             source_span_height = math.min(source_span_height or math.huge, layout.image.source_span_height or 1)
           end
-          -- A concealed source row still occupies one display row, so a block with
-          -- more lines than the fitted image is tall (common once a wide diagram is
-          -- shrunk to the text width) leaves span - virt_h blank rows under the
-          -- image. Cap the span at virt_h; the surplus rows are dropped from the
-          -- grid entirely via conceal_lines, so the footprint is exactly virt_h.
+          -- A concealed row still takes a display row, so a block taller than its
+          -- fitted image leaves span - virt_h blanks under it. Cap the span at virt_h
+          -- and drop the surplus rows via conceal_lines.
           visible_span = math.min(math.max(1, source_span_height or 1), virt_h)
           local text_left_cell = math.floor(text_left_px / math.max(1, cell_w))
           local label = { source_span = visible_span, virt_h = virt_h }
           if M._stub_active then
-            -- One box per image, placed at the same text-relative cell offset the
-            -- GUI image uses (grid_col - text_left_cell), so boxes and gap text share
-            -- one coordinate space.
+            -- One box per image at the GUI image's text-relative offset, so boxes
+            -- and gap text share one coordinate space.
             local stub_boxes = {}
             for _, layout in ipairs(layouts) do
               local path = layout.image.path or layout.image.raw_path or '?'
@@ -2204,8 +2074,7 @@ function M._send_images_impl()
             label.boxes = stub_boxes
           end
           if text_layout then
-            -- Slots from the laid-out images: leading (left of image 1), the gap after
-            -- each image (= prose before the next image), and the trailing slot.
+            -- Slots: leading, the gap after each image, and the trailing slot.
             local text_right_cell = math.floor(layout_text_right_px / math.max(1, cell_w))
             local segments = {}
             for i, layout in ipairs(layouts) do
@@ -2233,8 +2102,7 @@ function M._send_images_impl()
           if not label.boxes and not label.text_rows then label = nil end
           remember_image_reservation(measure_win, measure_buf, row, virt_h, visible_span, label)
           if text_layout then
-            -- Conceal the whole raw row (links + surrounding prose); the prose is
-            -- re-rendered bottom-aligned in the gaps via label.text_rows.
+            -- Conceal the whole raw row; label.text_rows redraws the prose.
             local cbuf = (line_images[1] and line_images[1].payload_buf) or info.buf
             image_conceals[cbuf] = image_conceals[cbuf] or {}
             image_conceals[cbuf][#image_conceals[cbuf] + 1] = {
@@ -2248,13 +2116,10 @@ function M._send_images_impl()
         for idx, layout in ipairs(layouts) do
           local image = layout.image
           local payload_buf = image.payload_buf or info.buf
-          -- Conceal the raw link text (and its highlight) for real buffer links so
-          -- it never reaches the grid under the image overlay. When this line is a
-          -- text-layout line the WHOLE raw row is concealed once (below) instead --
-          -- its prose is re-rendered bottom-aligned in the gaps -- so skip the
-          -- per-link conceal here.
+          -- Conceal the raw link text so it never reaches the grid under the image.
+          -- Text-layout lines conceal the whole row once below instead, so skip.
           if text_layout then
-            -- handled by the whole-line conceal added once per row below
+            -- handled by the whole-line conceal below
           elseif not image.virtual and image.byte_col then
             image_conceals[payload_buf] = image_conceals[payload_buf] or {}
             image_conceals[payload_buf][#image_conceals[payload_buf] + 1] = {
@@ -2263,16 +2128,14 @@ function M._send_images_impl()
               end_col = image.byte_end_col,
             }
           elseif image.plantuml then
-            -- Conceal every source line of the PlantUML block (fence + body) so the
-            -- raw code never shows under/around the generated image.
+            -- Conceal fence + body so the raw code never shows under the image.
             image_conceals[payload_buf] = image_conceals[payload_buf] or {}
             local last = math.max(image.row, tonumber(image.plantuml_end_row) or image.row)
             local block_lines = vim.api.nvim_buf_get_lines(payload_buf, image.row, last + 1, false) or {}
             local keep = visible_span or #block_lines
             for li, line in ipairs(block_lines) do
               if li > keep then
-                -- Surplus row: drop it from the grid so it doesn't pad the block
-                -- past the image bottom.
+                -- Surplus row: drop it so the block doesn't pad past the image.
                 image_conceals[payload_buf][#image_conceals[payload_buf] + 1] = {
                   row = image.row + li - 1,
                   hide_line = true,
@@ -2287,35 +2150,28 @@ function M._send_images_impl()
             end
           end
           payload[#payload + 1] = {
-            -- Identity is the logical image per window (buf:row:col:path scoped by
-            -- the owning window). The window handle scopes it so the SAME buffer shown
-            -- in several split windows yields a distinct placement (id) each -- otherwise
-            -- the per-window entries collide on one id and only the last window's image
-            -- draws. The display size is NOT part of the id: neopp keys its decode cache
-            -- on path+size and remaps the id to the new size on every set, so a size
-            -- change (e.g. cell-metric settling or a mid-scroll re-fit) is an in-place
-            -- update instead of a del+re-alloc of the same image -- which otherwise
-            -- churns the overlay and blinks the image for a frame while it slides.
+            -- id = the logical image per window (buf:row:col:path + window handle),
+            -- window-scoped so one buffer in several splits gets one placement each
+            -- instead of colliding on a single id. Size is deliberately NOT in the id:
+            -- neopp remaps on set, so a re-fit updates in place instead of
+            -- del+re-alloc, which would blink the image for a frame.
             id = 'buf:' .. payload_buf .. ':win:' .. info.win .. ':' .. image.row .. ':' .. image.col .. ':' .. stable_hash(image.path),
             buf = payload_buf,
             row = image.row,
             col = image.col,
             grid_row = layout.grid_row,
             grid_col = layout.grid_col,
-            -- Grid row where the link's TEXT renders (the source line). Differs from
-            -- grid_row when the image is reserved/stacked below its source line; the
-            -- renderer occludes the link text on THIS row, not the image's row.
+            -- Grid row of the link TEXT, which the renderer occludes. Differs from
+            -- grid_row when the image is stacked below its source line.
             text_grid_row = source_grid_row,
-            -- Global grid columns covering the rendered link text on text_grid_row.
-            -- Spans the link width so the renderer occludes the full link width incl.
-            -- fold-fill / path tail for virtual overlays.
+            -- Grid columns of the link text, spanning its full width (incl. fold-fill
+            -- / path tail) so the renderer occludes all of it.
             text_col = layout.grid_col,
             text_end_col = layout.grid_col + math.max(1, (image.end_col or image.col) - image.col),
             virtual = image.virtual == true,
             win_left = win_left_col,
             win_width = measure_w.width,
-            -- Owning window's row band: lets the GUI crop at the window top even
-            -- when grid_row is offscreen (or inside another window's band).
+            -- Owning window's row band, so the GUI can crop at the window top.
             win_top = win_top_row,
             win_height = measure_w.height or (measure_w.botline - measure_w.topline + 1),
             text_offset = measure_w.textoff,
@@ -2361,13 +2217,9 @@ function M._send_images_impl()
       vim.api.nvim_buf_clear_namespace(buf, M.ensure_image_namespace(), 0, -1)
     end
   end
-  -- Cursor buffer-rows for each window, so the stub can step its overlay aside
-  -- on the cursor's line (letting native conceal reveal the raw link there).
-  -- READ mode forces concealcursor='nvic' and pins the cursor, so a READ
-  -- window's own cursor row is excluded here. Limitation: extmarks can't
-  -- render differently per window on the same buffer position, so if a
-  -- Normal-mode window on the same buffer has its cursor on the same row, that
-  -- row still reveals in both windows -- accepted Neovim limitation.
+  -- Per-window cursor rows, so the stub steps its overlay aside there and native
+  -- conceal reveals the raw link. READ windows are excluded (concealcursor='nvic').
+  -- Extmarks can't render per-window, so a shared row reveals in both windows.
   local function cursor_rows_for(buf)
     local set = nil
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -2385,8 +2237,7 @@ function M._send_images_impl()
     for _, reservation in pairs(reservations) do
       local label = reservation.label
       if M._stub_active and label and not reservation.above then
-        -- Footprint-faithful box across the concealed source rows + reserved
-        -- virt_lines, for both PlantUML blocks and inline image links. Allocation
+        -- Box across the concealed source rows + reserved virt_lines. Allocation
         -- (reserve_h/anchor/count) is unchanged.
         local span = math.max(1, label.source_span or 1)
         stub_source_rows[buf] = stub_source_rows[buf] or {}
@@ -2395,8 +2246,7 @@ function M._send_images_impl()
         end
         M.draw_stub_footprint_box(buf, image_ns, reservation, cell_w, cursor_rows_for(buf))
       elseif label and label.text_rows and not reservation.above then
-        -- GUI path with bottom-aligned gap text: route the text rows into the
-        -- reserved virt_lines / source-row overlays (no stub boxes).
+        -- GUI path: route the gap text rows into the virt_lines / row overlays.
         emit_band_rows(buf, image_ns, reservation.row, reservation.reserve_h,
           label.source_span or 1, label.virt_h or reservation.reserve_h,
           label.text_rows, cursor_rows_for(buf))
@@ -2436,9 +2286,8 @@ function M._send_images_impl()
   end
 
   if reservation_changed then
-    -- Reserving/altering virt_lines shifts every following row; drop all images
-    -- first so none are drawn at stale positions, then re-sync once the new
-    -- layout has settled.
+    -- Changing virt_lines shifts every row below, so drop all images first and
+    -- re-sync once the layout settles.
     image_reservation_sig = new_reservation_sig
     clear_all_images()
   else
@@ -2464,9 +2313,7 @@ end
 -- Change detection + autocmds
 -- ===========================================================================
 
--- Pure: stable identity of the block containing `cursor_row` (0-based), or '' if
--- the cursor is outside every block. Matches plantuml_active_block's containment
--- test (start_row <= row <= end_row).
+-- Pure: identity of the block containing `cursor_row` (0-based), or '' if none.
 function M.cursor_block_id(cursor_row, blocks)
   for _, block in ipairs(blocks or {}) do
     if cursor_row >= block.start_row and cursor_row <= block.end_row then
@@ -2476,17 +2323,13 @@ function M.cursor_block_id(cursor_row, blocks)
   return ''
 end
 
--- Signature of "which PlantUML block (if any) the focused cursor sits in". The
--- only cursor-dependent output is the preview float that opens for the block
--- under focus, so this fingerprint changes exactly when a cursor/focus move
--- could change rendering -- letting the CursorMoved handler skip a full render
--- for ordinary navigation.
+-- Signature of which block the focused cursor sits in. The preview float is the
+-- only cursor-driven output, so CursorMoved can skip a render while this is stable.
 function M.cursor_active_block_sig()
   local win = vim.api.nvim_get_current_win()
   if not vim.api.nvim_win_is_valid(win) then return '' end
-  -- Focus inside a preview window: mirror the sig of its source block, so moving
-  -- focus source<->preview within one block yields an identical sig and does not
-  -- thrash the render.
+  -- Inside a preview window, mirror its source block's sig so moving focus
+  -- source<->preview doesn't thrash the render.
   for _, st in pairs(plantuml_states) do
     if st.float and st.float.win == win and st.float.source_win and st.float.block_id then
       return tostring(st.float.source_win) .. '@' .. tostring(st.float.source_buf) .. '=' .. st.float.block_id
@@ -2521,10 +2364,9 @@ function M.get_layout_sig()
       local height = cfg.height or info.height or 0
       local ft = vim.bo[buf].filetype or ''
       local changedtick = vim.b[buf].changedtick or 0
-      -- topfill: scrolling row-by-row through reservation virt_lines changes the
-      -- on-screen anchor of a partially-visible block without touching topline/
-      -- botline, and WinScrolled's v:event does not track it either -- this sig
-      -- is the only resync path for those scrolls.
+      -- topfill: scrolling through reservation virt_lines moves the anchor without
+      -- changing topline/botline, and WinScrolled doesn't report it either -- this
+      -- sig is the only resync path for those scrolls.
       local topfill = 0
       local okf, tf = pcall(vim.api.nvim_win_call, w, function()
         return vim.fn.winsaveview().topfill
@@ -2594,11 +2436,8 @@ function M.handle_safestate()
   end
 end
 
--- Signature of "is the cursor on a stub image source row" across every window.
--- In stub mode the cursor's line is the only other cursor-driven output (its
--- overlay is suppressed so the raw link reveals), so this fingerprint changes
--- exactly when the cursor enters/leaves an image row. Empty unless the stub is
--- active. Uses the source rows recorded by the last render.
+-- Signature of whether the cursor sits on a stub image source row, in any window
+-- (that row's overlay is suppressed). Empty unless the stub is active.
 function M.stub_cursor_sig()
   if not M._stub_active then return '' end
   local parts = {}
@@ -2618,10 +2457,8 @@ function M.stub_cursor_sig()
   return table.concat(parts, '|')
 end
 
--- CursorMoved fires constantly; the cursor-driven outputs are the PlantUML
--- preview float and (in stub mode) the per-line reveal. Re-render only when the
--- cursor's block membership -- or, under the stub, its image-row membership --
--- actually changes; ordinary navigation is a no-op.
+-- CursorMoved fires constantly, so re-render only when block membership -- or,
+-- under the stub, image-row membership -- actually changes.
 function M.handle_cursor_moved()
   local sig = M.cursor_active_block_sig() .. '\0' .. M.stub_cursor_sig()
   if sig == cursor_block_sig then return end
@@ -2636,10 +2473,8 @@ function M.setup(opts)
   if backend.img_available() then
     M._init()
   else
-    -- neopp installs vim.ui.img at UI attach, which happens after startup has
-    -- sourced plugins/user config. Defer real init until neopp signals ready.
-    -- (If we are not running under neopp, NeoppReady never fires and this module
-    -- stays dormant, which is correct.)
+    -- neopp installs vim.ui.img at UI attach, after config is sourced; wait for
+    -- NeoppReady. Outside neopp it never fires and this module stays dormant.
     vim.api.nvim_create_autocmd('User', {
       pattern = 'NeoppReady', once = true,
       callback = function() M._init() end,
@@ -2652,8 +2487,7 @@ function M._init()
   M.ensure_image_namespace()
   autocmd_group = vim.api.nvim_create_augroup('rendermark_image', { clear = true })
 
-  -- Preview show/hide controls. These set an explicit override (M._preview_user)
-  -- that wins over the configured `auto` flag until toggled back.
+  -- Show/hide overrides M._preview_user, which wins over the configured `auto`.
   vim.api.nvim_create_user_command('RendermarkPreviewShow', function()
     M._preview_user = true
     M.send_images()
@@ -2671,9 +2505,8 @@ function M._init()
     { 'BufEnter', 'BufReadPost', 'FileType' },
     { group = autocmd_group, callback = function() M.send_images() end })
 
-  -- TextChanged fires per keystroke; coalesce bursts into one render. SafeState
-  -- still issues the authoritative render once typing pauses, so the final on-
-  -- screen state is identical -- only intermediate per-keystroke renders are saved.
+  -- Coalesce per-keystroke TextChanged bursts; SafeState still renders once
+  -- typing pauses, so only intermediate renders are saved.
   local debounce_ms = tonumber(vim.g.rendermark_image_debounce_ms) or 30
   local debounced_send = util.debounce(function() M.send_images() end, debounce_ms)
   vim.api.nvim_create_autocmd(
@@ -2684,10 +2517,9 @@ function M._init()
     { 'WinScrolled', 'WinResized', 'WinNew', 'BufWinEnter', 'WinClosed' },
     { group = autocmd_group, callback = function() M.schedule_image_sync() end })
 
-  -- User dismissal of the preview (<C-w>z / :pclose). This fires synchronously
-  -- during the close, while st.programmatic_close is only true mid-teardown -- so
-  -- it must NOT be scheduled. A user close suppresses auto-reopen until the cursor
-  -- leaves the dismissed block.
+  -- User dismissal (<C-w>z / :pclose): must stay unscheduled, since
+  -- st.programmatic_close is only true during the synchronous teardown.
+  -- Suppresses auto-reopen until the cursor leaves the block.
   vim.api.nvim_create_autocmd('WinClosed', {
     group = autocmd_group,
     callback = function(args)

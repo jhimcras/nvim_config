@@ -1,78 +1,58 @@
 -- rendermark decorations: headings, thematic breaks, checkboxes, list bullets,
--- block quotes and fenced code blocks. This is what used to be drawn by
--- render-markdown.nvim.
+-- block quotes and fenced code blocks (what render-markdown.nvim used to draw).
 --
--- Passive module by design: it owns no autocmds and no scheduling. rendermark.wrap
--- drives it from inside its own refresh (M.clear, then M.render_range per visible
--- segment, before wrap decorates the same rows). That ordering is load-bearing:
--- wrap's collect_deco snapshots every FOREIGN-namespace extmark to learn how wide a
--- line really renders, so the conceals and inline paddings placed here have to be in
--- the buffer already or the wrap points are computed against the raw text.
+-- Passive by design: no autocmds, no scheduling. rendermark.wrap drives it from its
+-- own refresh (M.clear, then M.render_range per segment) BEFORE wrap decorates the
+-- same rows. That order is load-bearing: wrap's collect_deco snapshots foreign
+-- extmarks to learn a line's real width, so these marks must already be placed.
 --
 -- Two Neovim constraints shape most of the code below:
 --
---   * A conceal replacement is a SINGLE character (:h nvim_buf_set_extmark). So a
---     six-column '- [ ] ' cannot collapse to '<glyph> ' with one mark; the ranges are
---     split so the glyph supplies one column and a real source space the other.
---   * The runtime markdown highlights query sets `conceal_lines ""` on
---     fenced_code_block_delimiter and on the info string's language, so both fence
---     rows are not drawn at all at conceallevel>=2 -- they have zero height and
---     virt_lines anchored to them are dropped. The block's top bar (with the
---     right-aligned language) and bottom bar are therefore virt_lines on the first
---     and last CONTENT rows, which is what the fences would have looked like anyway.
---     conceal_lines yields on the cursor line, though (unless 'concealcursor' covers
---     the mode), so a fence row under the cursor comes back and the bar has to move
---     onto it as an overlay -- see place_bar in render_code.
+--   * A conceal replacement is a SINGLE character, so a six-column '- [ ] ' needs
+--     split ranges: the glyph supplies one column, a real source space the other.
+--   * The markdown highlights query sets `conceal_lines ""` on the fence rows, so
+--     they have zero height and virt_lines anchored to them are dropped. The top
+--     and bottom bars are therefore virt_lines on the first and last CONTENT rows.
+--     conceal_lines yields on the cursor line, so a fence row under the cursor
+--     comes back and its bar moves onto it as an overlay -- see place_bar.
 
 local M = {}
 
 local ut = require 'util'
 
--- The code block background is a shade of the colorscheme's 'Normal' rather than a
--- literal, so it tracks whatever colorscheme is in effect.
+-- Shade of the colorscheme's 'Normal', so the code background tracks it.
 local function code_bg()
     local normal = vim.api.nvim_get_hl(0, { name = 'Normal', link = false })
     return normal.bg and ut.shade(normal.bg, 8) or nil
 end
 
 local defaults = {
-    -- A conceal replacement is one character, so only the FIRST character of a
-    -- checkbox glyph is concealed in; anything after it (a space, typically) is
-    -- drawn as inline padding next to it -- see render_list_item. That is how a
-    -- nerd glyph the terminal draws two columns wide gets a real gap in front of
-    -- the item text.
+    -- A conceal replacement is one character, so only the glyph's FIRST character
+    -- is concealed in; the rest is drawn as inline padding (see render_list_item),
+    -- which gives a double-width nerd glyph its gap before the item text.
     checkbox = { unchecked = ' ', checked = ' ' },
     bullet = { '●', '○', '◆' }, -- by nesting depth, cycled
     quote = '▎',
     heading = {
-        -- Columns of indent per heading level when the toggle is on. The toggle is
-        -- the global `vim.g.rendermark_heading_indent`, so it can be flipped at
-        -- runtime (a refresh redraws it) rather than only at setup.
+        -- Columns of indent per heading level. Toggled at runtime through the
+        -- global vim.g.rendermark_heading_indent, not only at setup.
         per_level = 2,
         indent = false,
     },
     code = {
         min_width = 50,
         pad = 1,
-        -- Rendered as images by rendermark.image; a block background would sit
-        -- underneath the picture.
+        -- Rendered as images by rendermark.image; a background would show through.
         disable = { 'plantuml', 'puml', 'uml' },
     },
     dim_checked_sublist = true,
-    -- Every highlight group this module paints with, in one place. A value is
-    -- either a plain `nvim_set_hl` spec or a function returning one, called on
-    -- setup and again on every ColorScheme so a group can be derived from the
-    -- colorscheme in effect (the code background is a shade of 'Normal', for
-    -- instance). Override a single entry through rendermark.setup:
+    -- Every highlight group this module paints with. A value is an nvim_set_hl spec
+    -- or a function returning one, called on setup and on every ColorScheme so a
+    -- group can derive from the active colorscheme. Override one entry via
+    -- rendermark.setup{ highlight = { RendermarkQuote = { fg = '#7aa2f7' } } }.
     --
-    --     require('rendermark').setup {
-    --       highlight = { RendermarkQuote = { fg = '#7aa2f7' } },
-    --     }
-    --
-    -- The treesitter highlighter paints heading text from @markup.heading.N.markdown,
-    -- so those are overridden too; that (rather than layering an extmark) is also what
-    -- makes wrapped continuation rows bold, since wrap re-creates its styling from the
-    -- highlight-query captures.
+    -- @markup.heading.N.markdown is overridden rather than layering an extmark, so
+    -- wrapped rows -- which replay the highlight-query captures -- stay bold too.
     highlight = {
         RendermarkHeading = { bold = true },
         RendermarkRule = { link = 'Comment' },
@@ -101,8 +81,7 @@ local defaults = {
 local config = vim.deepcopy(defaults)
 local ns = vim.api.nvim_create_namespace('rendermark_deco')
 
--- `col` is the screen column the string starts at: a tab's width depends on where
--- it lands, so any text that does not start at column 0 has to say so.
+-- `col` is the starting screen column: a tab's width depends on where it lands.
 local function dw(s, col)
     return vim.fn.strdisplaywidth(s, col or 0)
 end
@@ -131,8 +110,8 @@ local function get_query()
     return deco_query or nil
 end
 
--- The heading indent is a global so it can be toggled without re-running setup.
--- Anything truthy turns it on; a number overrides the per-level column count.
+-- Global so it can be toggled without re-running setup. Truthy turns it on;
+-- a number overrides the per-level column count.
 local function heading_cols()
     local g = vim.g.rendermark_heading_indent
     if g == nil then
@@ -144,23 +123,21 @@ local function heading_cols()
     return g and config.heading.per_level or 0
 end
 
--- Rendered display widths of the prefixes whose drawn width no longer matches the
--- source, handed to wrap_text.compute_indent so continuation rows hang under the
--- text instead of under where the raw markers used to end.
--- Refreshed in place rather than rebuilt: wrap calls this once per wrapped line on
+-- Drawn widths of the prefixes whose rendered width differs from the source, for
+-- wrap_text.compute_indent, so continuation rows hang under the text rather than
+-- under the raw markers. Refreshed in place: wrap calls this per wrapped line on
 -- every CursorMoved, and the heading column count can change between calls.
 local metrics = { checkbox = 0, heading = 0 }
 function M.metrics()
-    -- glyph (+ its inline padding, if the string carries any) + surviving space
+    -- glyph (+ any inline padding) + surviving space
     metrics.checkbox = dw(config.checkbox.unchecked) + 1
     metrics.heading = heading_cols()
     return metrics
 end
 
--- Width of a code block: wide enough for its widest line (plus padding on both
--- sides) and for the language label, never narrower than min_width. Deliberately
--- NOT clamped to the window -- a wide block runs off the right edge rather than
--- reflowing the code.
+-- Block width: its widest line plus padding, and the language label, never under
+-- min_width. Deliberately unclamped -- a wide block runs off the right edge rather
+-- than reflowing the code.
 function M.code_width(widths, lang_w)
     local pad = config.code.pad
     local width = config.code.min_width
@@ -173,10 +150,9 @@ function M.code_width(widths, lang_w)
     return width
 end
 
--- One virt_line spanning the block: blank, or with `label` right-aligned `pad`
--- columns in from the right edge. A virt_line always starts at screen column 0, so
--- an indented block (a fence inside a list item) prepends `indent` unhighlighted
--- columns to put the bar's left edge on the same column as the content rows.
+-- One virt_line spanning the block, optionally with `label` right-aligned `pad`
+-- columns in. virt_lines start at screen column 0, so an indented block prepends
+-- `indent` unhighlighted columns to line the bar up with the content rows.
 function M.code_bar(width, label, indent)
     local chunks = {}
     if indent and indent > 0 then
@@ -198,11 +174,9 @@ function M.rule_chunks(width)
     return { { string.rep('─', math.max(0, width)), 'RendermarkRule' } }
 end
 
--- Prefix chunks drawn in front of each wrapped continuation row. Plain spaces
--- normally (wrap handles that itself, hence the nil), but a block quote repeats its
--- bar so the vertical rule is not broken by the wrap -- the wrap engine cannot
--- reproduce extmark decorations inside virt_lines, only conceals and highlights, so
--- the bar has to be re-emitted here.
+-- Prefix chunks for each wrapped continuation row. nil for plain spaces (wrap does
+-- those itself); a block quote repeats its bar so the rule isn't broken by the wrap,
+-- since wrap cannot replay extmark decorations inside virt_lines.
 function M.prefix_chunks(text, indent)
     if indent <= 0 then
         return nil
@@ -211,9 +185,8 @@ function M.prefix_chunks(text, indent)
     if not quote then
         return nil
     end
-    -- Mirror the source prefix character for character, exactly as render_quote
-    -- conceals it: every '>' becomes a bar, everything else stays as it is, so a
-    -- nested '>> ' stays three columns wide instead of gaining a space per level.
+    -- Mirror the source prefix character for character, as render_quote conceals
+    -- it, so a nested '>> ' stays three columns wide.
     local chunks = {}
     for i = 1, #quote do
         local c = quote:sub(i, i)
@@ -254,16 +227,14 @@ local function render_heading(buf, node)
     if not line then
         return
     end
-    -- Swallow the blanks between the '#'s and the title too, so the text lands at
-    -- column 0 regardless of the heading level.
+    -- Swallow the blanks after the '#'s so the text lands at column 0.
     local text_col = line:find('%S', e_col + 1)
     local stop = text_col and (text_col - 1) or #line
     mark(buf, row, s_col, { end_col = stop, conceal = '' })
     local cols = heading_cols()
     if cols > 0 then
-        -- Indent with inline virt_text rather than a conceal replacement: a
-        -- replacement is one character, and collect_deco counts inline width, so
-        -- wrap stays in step for free.
+        -- Inline virt_text, not a conceal replacement (one character only), and
+        -- collect_deco counts inline width so wrap stays in step.
         local level = e_col - s_col
         if level > 1 then
             mark(buf, row, s_col, {
@@ -282,15 +253,12 @@ local function render_heading(buf, node)
     end
 end
 
--- Both a standalone '---' (thematic_break) and the '---' underlining a setext
--- heading, which is the same three dashes: the grammar only calls it a break when a
--- blank line precedes it, and that distinction should not decide whether the user
--- sees a rule.
+-- Both a standalone '---' and the '---' under a setext heading: the grammar only
+-- calls it a break when a blank line precedes it, which shouldn't decide the look.
 local function render_rule(buf, node, rule_width)
     local row = node:range()
-    -- An overlay covers the raw '---' and keeps extending past the end of the line,
-    -- so no conceal is needed. Being an overlay (not 'inline') it also stays out of
-    -- wrap's width arithmetic.
+    -- An overlay covers the raw '---' and extends past the line end, so no conceal
+    -- is needed; being an overlay it also stays out of wrap's width arithmetic.
     mark(buf, row, 0, {
         virt_text = M.rule_chunks(rule_width),
         virt_text_pos = 'overlay',
@@ -316,9 +284,8 @@ local function list_depth(node)
     return depth
 end
 
--- Rows inside `node` that carry verbatim or tabular content, which the dim of a
--- checked item has to leave alone (the code block's own background and the
--- table's own colors would otherwise be flattened to Comment).
+-- Rows of verbatim or tabular content inside `node`; a checked item's dim must
+-- skip them or their own colors get flattened to Comment.
 local function collect_verbatim_rows(node, out)
     for child in node:iter_children() do
         local t = child:type()
@@ -350,10 +317,8 @@ local function render_list_item(buf, node)
         return
     end
     local row, m_s, _, m_e = marker:range()
-    -- The marker node does not always start AT the marker character: when a nested
-    -- list is indented further than its parent's continuation column, the grammar
-    -- folds the extra indent into the marker ('  - '). Concealing from m_s would
-    -- then replace a space and leave the '-' itself on screen.
+    -- The grammar folds a nested list's extra indent into the marker ('  - '), so
+    -- concealing from m_s would replace a space and leave the '-' on screen.
     local line = line_at(buf, row) or ''
     local off = line:sub(m_s + 1, m_e):find('%S')
     if not off then
@@ -363,8 +328,8 @@ local function render_list_item(buf, node)
     local box_end = c_s
 
     if box then
-        -- '- [ ] ' -> '<glyph> ': the list marker goes entirely, the glyph replaces
-        -- '[ ]', and the source space after the bracket supplies the second column.
+        -- '- [ ] ' -> '<glyph> ': the marker goes, the glyph replaces '[ ]', and the
+        -- source space after the bracket supplies the second column.
         local _, b_s, _, b_e = box:range()
         local glyph = checked and config.checkbox.checked or config.checkbox.unchecked
         local hl = checked and 'RendermarkChecked' or 'RendermarkUnchecked'
@@ -372,9 +337,8 @@ local function render_list_item(buf, node)
         box_end = b_e
         mark(buf, row, c_s, { end_col = m_e, conceal = '' })
         mark(buf, row, b_s, { end_col = b_e, conceal = head, hl_group = hl })
-        -- Whatever the glyph string carries past its first character cannot go into
-        -- the conceal (it holds one character); it is drawn after the box instead,
-        -- which is also what gives a double-width glyph room to breathe.
+        -- The conceal holds one character, so the rest of the glyph string is drawn
+        -- after the box -- which also gives a double-width glyph room.
         local pad = glyph:sub(#head + 1)
         if pad ~= '' then
             mark(buf, row, b_e, {
@@ -383,8 +347,8 @@ local function render_list_item(buf, node)
             })
         end
     elseif marker:type():match('^list_marker_[mps]') then
-        -- '- ' -> '<bullet> ': only the marker character is replaced (ordered list
-        -- markers are left alone), so the item text keeps its column.
+        -- '- ' -> '<bullet> ': only the marker character (ordered lists are left
+        -- alone), so the item text keeps its column.
         local glyph = bullet_for(list_depth(node))
         if glyph then
             mark(buf, row, c_s, {
@@ -395,19 +359,16 @@ local function render_list_item(buf, node)
         end
     end
 
-    -- Dim a completed item whole: its own text and everything nested under it.
-    -- Row by row rather than one range mark, so verbatim rows (a fenced or
-    -- indented code block, a table) can be left with their own colors, and so
-    -- collect_deco -- which only forwards single-row hl_group marks with a real
-    -- end_col -- can re-apply the dim to wrapped continuation rows.
+    -- Dim a completed item whole, nested content included. Row by row, not one range
+    -- mark, so verbatim rows keep their own colors and collect_deco (which forwards
+    -- only single-row hl_group marks) can re-apply the dim to wrapped rows.
     if checked and config.dim_checked_sublist then
         local i_row, _, e_row, e_col = node:range()
         local skip = {}
         collect_verbatim_rows(node, skip)
         for r = i_row, (e_col == 0 and e_row - 1 or e_row) do
             local text = line_at(buf, r)
-            -- The first row starts past the checkbox so the glyph keeps its own
-            -- highlight; deeper rows are dimmed from column 0.
+            -- Start past the checkbox so the glyph keeps its highlight.
             local from = r == i_row and box_end or 0
             if text and #text > from and not skip[r] then
                 mark(buf, r, from, {
@@ -421,8 +382,8 @@ local function render_list_item(buf, node)
     end
 end
 
--- Returns the block's row span so the caller can keep raw-text passes (quote bars)
--- out of verbatim content. `cur` is the 0-based cursor row (nil when there is none).
+-- Returns the block's row span so the caller keeps raw-text passes (quote bars) out
+-- of verbatim content. `cur` is the 0-based cursor row, or nil.
 local function render_code(buf, node, first, last, cur)
     local r1, c1, r2, c2 = node:range()
     if c2 == 0 then
@@ -440,22 +401,19 @@ local function render_code(buf, node, first, last, cur)
     end
 
     local pad = config.code.pad
-    -- The background alone draws the block's border, so every row -- both bars and
-    -- every content row, blank ones included -- has to cover exactly the screen
-    -- columns [indent_w, indent_w + width). indent_w is the fence's own indent.
+    -- The background alone draws the border, so every row (bars and content, blanks
+    -- included) must cover exactly columns [indent_w, indent_w + width).
     local indent_w = dw((line_at(buf, r1) or ''):sub(1, c1))
-    -- Geometry of one content row: where its background starts in bytes, how many
-    -- columns of the block indent that row is missing (a blank or under-indented row
-    -- has some), and how wide the code itself draws.
-    -- The code text always begins at screen column indent_w + pad (the row's own
-    -- indent plus the inline left pad below), which is where its tabs expand from.
+    -- Geometry of one content row: byte where its background starts, columns of the
+    -- block indent it is missing (blank or under-indented rows have some), and the
+    -- drawn width of the code. Text always begins at column indent_w + pad, which is
+    -- where its tabs expand from.
     local function row_geom(line)
         local start = math.min(c1, #line)
         return start, indent_w - dw(line:sub(1, start)),
             dw(line:sub(start + 1), indent_w + pad)
     end
-    -- One read for the whole block: the width depends on every content row, even
-    -- the ones off screen, and this runs on each refresh.
+    -- One read for the whole block: the width depends on off-screen rows too.
     local body = vim.api.nvim_buf_get_lines(buf, r1 + 1, r2, false)
     local widths = {}
     for _, line in ipairs(body) do
@@ -463,20 +421,17 @@ local function render_code(buf, node, first, last, cur)
         widths[#widths + 1] = lead + text_w
     end
     if #widths == 0 then
-        -- No content rows: both fences are conceal_lines-hidden, so there is nothing
-        -- left to anchor a bar to. Degenerate, left unrendered.
+        -- No content rows and both fences hidden: nothing to anchor a bar to.
         return r1, r2
     end
     local width = M.code_width(widths, lang and dw(lang) or 0)
 
-    -- One row of the block's background rectangle, drawn around whatever text the row
-    -- really has. Used for the content rows and, when the cursor is on it, for a
-    -- fence row -- which is then a normal row showing '```lua' on the block colour.
+    -- One row of the background rectangle, around whatever text the row has. Used
+    -- for content rows, and for a fence row the cursor is on.
     local function paint_row(row, line)
         local start, lead, text_w = row_geom(line)
-        -- Left edge: the row's missing indent plus the block padding, in one
-        -- inline chunk. Placed unconditionally, so a blank row inside the block
-        -- still gets a full-width background instead of a hole in the rectangle.
+        -- Left edge: missing indent plus block padding, in one inline chunk. Always
+        -- placed, so a blank row doesn't leave a hole in the rectangle.
         if lead + pad > 0 then
             mark(buf, row, start, {
                 virt_text = { { string.rep(' ', lead + pad), 'RendermarkCode' } },
@@ -486,12 +441,9 @@ local function render_code(buf, node, first, last, cur)
         if #line > start then
             mark(buf, row, start, { end_col = #line, hl_group = 'RendermarkCode' })
         end
-        -- Right edge: 'inline' at the end of the line, NOT 'eol'. An eol virt_text
-        -- is drawn "right after eol character", which leaves one unhighlighted
-        -- column between the code and the fill -- the rectangle would be broken at
-        -- every line end and shifted one column right. Inline is safe here because
-        -- wrap.render_range skips code rows entirely (in_code), so this width never
-        -- enters any wrap arithmetic.
+        -- Right edge: 'inline', NOT 'eol' -- an eol virt_text leaves one
+        -- unhighlighted column, breaking the rectangle at every line end. Safe
+        -- because wrap.render_range skips code rows, so this width never reaches it.
         local fill = width - pad - lead - text_w
         if fill > 0 then
             mark(buf, row, #line, {
@@ -501,16 +453,12 @@ local function render_code(buf, node, first, last, cur)
         end
     end
 
-    -- Bars replace the (undrawn) fence rows, hung off the first and last content row
-    -- -- except on the fence row the CURSOR is on. 'concealcursor' is empty outside
-    -- READ mode, so conceal_lines yields on the cursor line: the fence row is drawn
-    -- again there, with its raw '```lua' back, which is what makes the fence editable.
-    -- Its bar has to go then -- a virt_line on top of the re-appeared row would make
-    -- the block one row taller for as long as the cursor sits there -- and the row is
-    -- painted as an ordinary block row instead, so the rectangle stays closed and only
-    -- the label is traded for the source text.
-    -- (READ mode conceals the cursor line too and signals that with a cursor row of
-    -- -1, so the bars stay virt_lines there.)
+    -- Bars replace the undrawn fence rows, hung off the first and last content row --
+    -- except on the fence row the CURSOR is on: conceal_lines yields there, the raw
+    -- '```lua' comes back (that is what makes it editable), and a virt_line on top
+    -- would make the block one row taller. That row is painted as an ordinary block
+    -- row instead, trading only the label for the source text.
+    -- (READ mode passes a cursor row of -1, so its bars stay virt_lines.)
     local function place_bar(fence, anchor, above, label)
         if cur == fence then
             if fence >= first and fence < last then
@@ -535,10 +483,9 @@ local function render_code(buf, node, first, last, cur)
     return r1, r2
 end
 
--- Quote markers come from the raw text, not the tree: the grammar only produces a
--- block_quote_marker on a quote's FIRST line -- later lines carry a
--- block_continuation buried inside the inline node -- so matching the prefix (the
--- same pattern wrap_text.compute_indent uses) covers every row uniformly.
+-- Quote markers come from the raw text, not the tree: the grammar emits a
+-- block_quote_marker only on the FIRST line, so matching the prefix (as
+-- wrap_text.compute_indent does) covers every row uniformly.
 local function render_quote(buf, row, line)
     local prefix = line:match('^%s*>[%s>]*')
     if not prefix then
@@ -555,8 +502,8 @@ local function render_quote(buf, row, line)
     end
 end
 
--- Decorate rows [first, last). Called once per visible segment by wrap.refresh,
--- before wrap decorates the same rows. `cursor_row` is 1-based, as wrap carries it.
+-- Decorate rows [first, last), once per visible segment, before wrap decorates the
+-- same rows. `cursor_row` is 1-based, as wrap carries it.
 function M.render_range(buf, first, last, rule_width, cursor_row)
     local q = get_query()
     if not q then
@@ -588,8 +535,8 @@ function M.render_range(buf, first, last, rule_width, cursor_row)
                 verbatim[row] = true
             end
         elseif name == 'verbatim' then
-            -- Not styled as a block (it has no info string to align), but its rows
-            -- are literal text: a leading '>' in there is not a quote.
+            -- Not styled as a block (no info string), but its rows are literal text:
+            -- a leading '>' in there is not a quote.
             local r1, _, r2, c2 = node:range()
             for row = r1, (c2 == 0 and r2 - 1 or r2) do
                 verbatim[row] = true
@@ -620,8 +567,8 @@ end
 
 function M.setup(opts)
     config = vim.tbl_deep_extend('force', vim.deepcopy(defaults), opts or {})
-    -- A group is replaced whole, not merged: a { fg = ... } override on a group
-    -- that defaults to { link = ... } would otherwise keep the link, which wins.
+    -- Replaced whole, not merged: a { fg } override on a { link } default would
+    -- otherwise keep the link, which wins.
     for group, spec in pairs((opts or {}).highlight or {}) do
         config.highlight[group] = spec
     end

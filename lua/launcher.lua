@@ -110,13 +110,13 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     api.nvim_set_option_value('bufhidden', 'hide', { buf = buf })
     api.nvim_set_option_value('modifiable', false, { buf = buf })
 
-    -- Initialize matches for navigation
+    -- Matches for navigation
     api.nvim_buf_set_var(buf, 'launcher_matches', {})
 
-    -- Set a unique session token for this launch
+    -- Unique session token for this launch
     local session_token = {}
 
-    -- Ensure lc_object and lc_command are set for statusline
+    -- lc_object / lc_command feed the statusline
     local success, _ = pcall(api.nvim_buf_get_var, buf, 'lc_object')
     if not success then
         api.nvim_buf_set_var(buf, 'lc_object', obj or cmd)
@@ -194,7 +194,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                 local last_line = api.nvim_buf_get_lines(buf, -2, -1, false)
                 processed_lines[1] = (last_line[1] or '') .. processed_lines[1]
 
-                -- Adjust the first line's highlights if we prepended to an existing line
+                -- Shift the first line's highlights when prepending to it
                 if color_mode == 'use' and last_line[1] and #last_line[1] > 0 and highlight_data[1] then
                     for _, hl in ipairs(highlight_data[1]) do
                         hl[1] = hl[1] + #last_line[1]
@@ -222,7 +222,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                         for _, pcfg in pairs(patterns) do
                             local m = { line:match(pcfg.pattern) }
                             if #m > 0 then
-                                -- Extract metadata
+                                -- Metadata
                                 local match_info = { lnum = lnum + 1 }
                                 if pcfg.extract then
                                     for idx, field in ipairs(pcfg.extract) do
@@ -240,13 +240,12 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                                 if pcfg.highlight then
                                     local s, e, c1, c2, c3, c4, c5, c6, c7, c8, c9 = line:find(pcfg.pattern)
                                     local captures = { [0] = {s, e}, c1, c2, c3, c4, c5, c6, c7, c8, c9 }
-                                    
-                                    -- When there are captures, the first N values returned by find (after s, e) are the capture strings OR positions if requested.
-                                    -- Wait, Lua's line:find returns capture strings if they exist.
-                                    -- To get POSITIONS of captures, we need to use () in the pattern as an empty capture.
-                                    -- BUT, if we use the user's pattern, we can't easily get positions.
-                                    -- Alternative: use vim.regex if available, or just search for the capture string within the match.
-                                    
+
+                                    -- find returns capture strings, not positions, and
+                                    -- the user's pattern can't be rewritten with () to
+                                    -- get them -- so each capture is searched for
+                                    -- inside the matched span below.
+
                                     for hl_idx, hl_group_or_color in pairs(pcfg.highlight) do
                                         local hl_group = hl_group_or_color
                                         if hl_group_or_color:match('^#') then
@@ -259,7 +258,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                                                 AddHighlight(buf, hl_group, lnum, s - 1, e)
                                             end
                                         elseif m[hl_idx] then
-                                            -- Search for the exact capture string within the matched portion of the line
+                                            -- Locate the capture inside the match
                                             local cap_str = m[hl_idx]
                                             local search_area = line:sub(s, e)
                                             local cap_s, cap_e = search_area:find(cap_str, 1, true) -- plain search
@@ -299,7 +298,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
             end
         end
 
-        -- Stop spinner timer
+        -- Stop the spinner
         SafeCloseTimer(buf)
 
         local status = (code == 0 and signal == 0) and 'done' or 'terminated'
@@ -319,7 +318,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         end
     end
 
-    -- Start spinner timer
+    -- Start the spinner
     api.nvim_buf_set_var(buf, 'launcher_status', 'running')
     api.nvim_set_option_value('modified', true, { buf = buf })
     local timer = vim.uv.new_timer()
@@ -337,7 +336,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     launcher_timers[buf] = timer
 
     local win = api.nvim_get_current_win()
-    -- Move cursor to the bottom at the start of execution
+    -- Start at the bottom
     api.nvim_win_set_cursor(win, {api.nvim_buf_line_count(buf), 0})
 
     if prjroot_origin then
@@ -368,7 +367,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
         api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
         api.nvim_set_option_value('modified', false, { buf = buf })
 
-        -- Stop timer if failed to start
+        -- Failed to start
         SafeCloseTimer(buf)
         M.running_processes[buf] = nil
         vim.cmd('redrawstatus!')
@@ -387,7 +386,7 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, position, obj, existing_buf)
     api.nvim_set_option_value('filetype', 'terminal', { buf = buf })
     api.nvim_set_option_value('bufhidden', 'hide', { buf = buf })
 
-    -- Set a unique session token for this terminal launch
+    -- Unique session token for this terminal launch
     local session_token = {}
 
     api.nvim_buf_set_var(buf, 'lc_object', obj or cmd)
@@ -575,12 +574,12 @@ function M.LaunchObject(obj)
             local existing_buf = FindExistingLauncherBuffer(obj, parent_win_prjroot)
 
             if existing_buf then
-                -- Terminate any process currently in that buffer
+                -- Terminate whatever is running in that buffer
                 local proc = M.running_processes[existing_buf]
                 if proc then
                     local choice = vim.fn.confirm(string.format('Process [%s] is still running. Replace?', obj), "&Yes\n&No", 2)
                     if choice ~= 1 then
-                        -- If it's already visible, focus it
+                        -- Already visible: focus it
                         local wins = vim.fn.win_findbuf(existing_buf)
                         if #wins > 0 then
                             vim.api.nvim_set_current_win(wins[1])
@@ -596,26 +595,26 @@ function M.LaunchObject(obj)
                     M.running_processes[existing_buf] = nil
                 end
 
-                -- Terminal buffers cannot be converted back to regular buffers
-                -- And termopen() requires an empty unmodified buffer.
+                -- A terminal buffer can't be converted back, and termopen() needs an
+                -- empty unmodified buffer.
                 local old_buftype = vim.api.nvim_get_option_value('buftype', { buf = existing_buf })
                 if old_buftype == 'terminal' or mode == 'terminal' then
                     vim.api.nvim_buf_delete(existing_buf, { force = true })
                     existing_buf = nil
                 else
-                    -- Clear the buffer content for non-terminal reuse
+                    -- Clear it for non-terminal reuse
                     SetBufLines(existing_buf, 0, -1, false, {})
-                    -- Ensure it's not marked as modified so next launch is clean
+                    -- Unmodified, so the next launch starts clean
                     vim.api.nvim_set_option_value('modified', false, { buf = existing_buf })
 
-                    -- If the buffer is hidden, display it again
+                    -- Hidden: show it again
                     local wins = vim.fn.win_findbuf(existing_buf)
                     if #wins == 0 then
                         local temp_buf = ut.NewScratchBuffer(position)
                         vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), existing_buf)
                         vim.api.nvim_buf_delete(temp_buf, { force = true })
                     else
-                        -- If it's already visible, focus it
+                        -- Already visible: focus it
                         vim.api.nvim_set_current_win(wins[1])
                     end
                 end
@@ -723,10 +722,9 @@ local function SearchLauncherFileCandidates(prjroot, filename)
     return candidates
 end
 
--- Mirrors native quickfix's own protection against opening the picked file
--- back into the list window itself: never target a window currently showing
--- the launcher output buffer (lc_parent_win can end up pointing at it, e.g.
--- when the launch key is pressed again from inside the output buffer).
+-- Never target a window showing the launcher output buffer -- lc_parent_win can
+-- point at it when the launch key is pressed from inside it. Same protection
+-- native quickfix has against opening a file into the list window.
 local function FindSafeJumpWindow(exclude_buf)
     local candidates = { vim.b.lc_parent_win, vim.fn.win_getid(vim.fn.winnr('#')) }
     for _, w in ipairs(candidates) do
@@ -773,7 +771,7 @@ function M.Jump()
     end
 
     if not match then
-        -- Try to parse current line directly if not in matches
+        -- Not in matches: parse the current line directly
         local line = api.nvim_get_current_line()
         local prjroot = vim.b.prjroot_folder or pr.GetCurrentProjectRoot()
         local c = pr.GetPrjrootConfig(prjroot)
@@ -795,7 +793,7 @@ function M.Jump()
                 end
             end
         end
-        -- Legacy support for jmp pattern
+        -- Legacy jmp pattern
         if not match and c and c.launchers and c.launchers[obj] and c.launchers[obj].jmp then
             local jmp = c.launchers[obj].jmp
             local m = { line:match(jmp.pattern) }
@@ -825,9 +823,8 @@ function M.Jump()
             end
         end
 
-        -- Only switch windows once we know we're actually opening something,
-        -- and never into the window showing this launcher buffer itself
-        -- (mirrors native quickfix's own protection against that).
+        -- Switch windows only once something is actually being opened, and never
+        -- into the window showing this launcher buffer.
         local target_win = FindSafeJumpWindow(launcher_buf)
         if target_win then
             api.nvim_set_current_win(target_win)
@@ -891,7 +888,7 @@ end
 function M.setup()
     api.nvim_create_autocmd({'BufRead', 'BufNew'}, {callback = BufMapping})
 
-    -- Intercept :bw, :bd, etc. for launcher buffers to ask before wiping
+    -- Ask before :bw/:bd wipes a launcher buffer
     local abbrevs = { 'bd', 'bw', 'bdelete', 'bwipeout' }
     for _, abr in ipairs(abbrevs) do
         vim.cmd(string.format([[cnoreabbrev <expr> %s (getcmdtype() == ':' && getcmdpos() <= %d && getbufvar('%%', '&ft') == 'launcher' ? 'lua require"launcher".CloseLauncherBuffer(true)' : '%s')]], abr, #abr + 1, abr))

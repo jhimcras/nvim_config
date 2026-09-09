@@ -76,7 +76,7 @@ function M.show()
         end
     end
 
-    -- Create floating window
+    -- Floating window
     local width = 0
     for _, line in ipairs(lines) do
         width = math.max(width, vim.fn.strdisplaywidth(line))
@@ -84,7 +84,7 @@ function M.show()
     width = width + 4
     local height = #lines
 
-    -- Resize width if it exceeds editor width
+    -- Clamp to the editor width
     if width > vim.o.columns - 2 then
         width = vim.o.columns - 2
     end
@@ -96,11 +96,8 @@ function M.show()
     local row = math.floor(win_pos[1] + (win_height - height) / 2)
     local col = math.floor(win_pos[2] + (win_width - width) / 2)
 
-    -- Clipping logic to ensure the window stays within editor boundaries
-    -- We assume a border is used, which adds 1 to each side.
-    -- To keep the border within the screen (0 to vim.o.lines - 1):
-    -- row - 1 >= 0 => row >= 1
-    -- row + height + 1 <= vim.o.lines => row <= vim.o.lines - height - 1
+    -- Keep the window (plus its 1-cell border) inside the editor:
+    -- 1 <= row <= vim.o.lines - height - 1
     row = math.max(1, math.min(row, vim.o.lines - height - 1))
     col = math.max(1, math.min(col, vim.o.columns - width - 1))
 

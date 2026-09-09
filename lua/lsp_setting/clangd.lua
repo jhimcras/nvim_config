@@ -31,13 +31,12 @@ local on_attach_clangd = lsp_setting.make_on_attach(function(client, bufnr)
     vim.bo.formatexpr = 'v:lua.vim.lsp.formatexpr()'
 end)
 
--- clangd defaults to one async worker per CPU core, and the background index draws
--- from that same pool, so indexing a large project saturates the machine. Halve the
--- workers and drop the index threads to the lowest priority tier -- the default is
--- `low`, not `background`. On Windows `background` also lowers disk I/O priority,
--- which is where the indexing stall hurts most.
--- `extra` comes from a project's `.prjroot`; clangd takes the last occurrence of a
--- repeated flag, so appending is enough to override any default below.
+-- clangd runs one async worker per core and indexes from that same pool, so a large
+-- project saturates the machine. Halve the workers and drop the index threads to
+-- `background` (the default is `low`), which on Windows also lowers disk I/O
+-- priority -- where the stall hurts most.
+-- `extra` comes from a project's `.prjroot`; clangd honours the last occurrence of a
+-- flag, so appending overrides any default below.
 function M.cmd(extra)
     local cmd = {
         'clangd',

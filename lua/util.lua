@@ -200,8 +200,8 @@ end
 
 function M.AsyncProcess(cmd, args, cwd, ev_or_opts, read_func, end_func)
     local ev
-    -- Accept an opts table as 4th arg: { env=..., onread=..., onexit=... }
-    -- Detected by: table with no integer index (distinguishes from old env list)
+    -- 4th arg may be an opts table { env, onread, onexit }, told apart from the
+    -- old env list by having no integer index.
     if type(ev_or_opts) == 'table' and ev_or_opts[1] == nil then
         ev = ev_or_opts.env
         read_func = ev_or_opts.onread
@@ -403,11 +403,9 @@ function M.SynStack()
     vim.notify(syn_stack, vim.log.levels.INFO)
 end
 
--- Shift a color toward white (pct > 0) or black (pct < 0) by pct% of the distance
--- left to that end, and return it as '#RRGGBB'. Used to derive the markdown code
--- block background from 'Normal', so it tracks the colorscheme instead of being
--- pinned to a literal hex. `rgb` takes either an '#RRGGBB' string or the packed
--- number nvim_get_hl() returns for fg/bg.
+-- Shift a color toward white (pct > 0) or black (pct < 0) by pct% of the remaining
+-- distance, as '#RRGGBB'. `rgb` is an '#RRGGBB' string or nvim_get_hl()'s packed
+-- number. Used to derive the code block background from 'Normal'.
 function M.shade(rgb, pct)
     if type(rgb) == 'string' then
         rgb = tonumber(rgb:gsub('^#', ''), 16)
@@ -440,9 +438,9 @@ end
 function M.set_highlights(hls)
     for group, value in pairs(hls) do
         if type(value) ~= "table" then
-            -- ignore non-table values
+            -- skip non-table values
         elseif value[1] then
-            -- indexed table: [1], [2], ...
+            -- indexed table
             for idx, sub in pairs(value) do
                 local has_modes
                 for k, v in pairs(sub) do
@@ -456,7 +454,7 @@ function M.set_highlights(hls)
                 end
             end
         else
-            -- plain highlight definition
+            -- plain highlight
             vim.api.nvim_set_hl(0, group, value)
         end
     end

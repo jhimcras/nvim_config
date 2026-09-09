@@ -38,7 +38,7 @@ function M.Buffers()
             if 1 ~= vim.fn.buflisted(b) then
                 return false
             end
-            -- only hide unloaded buffers if opts.show_all_buffers is false, keep them listed if true or nil
+            -- hide unloaded buffers only when show_all_buffers is false
             if opts.show_all_buffers == false and not vim.api.nvim_buf_is_loaded(b) then
                 return false
             end
@@ -182,7 +182,7 @@ function M.Tabs()
     local entries = {}
     for i = 1, total do
         local tabtitle = require'tabline'.tabtitle(i)
-        -- Collect all buffer file names in this tab for display/filtering
+        -- Buffer file names in this tab, for display and filtering
         local num_wins = vim.fn.tabpagewinnr(i, '$')
         local files = {}
         for w = 1, num_wins do
@@ -195,7 +195,7 @@ function M.Tabs()
                 end
             end
         end
-        -- Use basenames for ordinal so fzy scores stay tight
+        -- Basenames as the ordinal, so fzy scores stay tight
         local basenames = {}
         for _, f in ipairs(files) do
             basenames[#basenames + 1] = vim.fn.fnamemodify(f, ':t')

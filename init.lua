@@ -25,10 +25,9 @@ local function TerminalSetting()
 end
 
 local function SetAutoChangedFileReloading()
-    -- Automatically reload the file if it is changed outside of Nvim, see
-    -- https://unix.stackexchange.com/a/383044/221410. It seems that `checktime`
-    -- command does not work in command line. We need to check if we are in command
-    -- line before executing this command. See also http://tinyurl.com/y6av4sy9.
+    -- Reload files changed outside Nvim. `checktime` does not work from the
+    -- command line, hence the mode check.
+    -- https://unix.stackexchange.com/a/383044/221410
     api.nvim_create_autocmd({ 'FocusGained','BufEnter','CursorHold','CursorHoldI' }, { callback = function()
         if vim.fn.mode() == 'n' and vim.fn.getcmdwintype() == '' then
             cmd.checktime()

@@ -115,8 +115,7 @@ function M.lsp(bufnr)
             parts[#parts + 1] = seg[2] .. seg[1]
         end
     end
-    -- vim.lsp.status() concatenates every progress report buffered since the
-    -- last read; keep only the newest one so 'indexing' shows a single count.
+    -- vim.lsp.status() concatenates every buffered report; keep only the newest.
     local prog = ''
     for _, c in ipairs(clients) do
         for progress in c.progress do
@@ -166,7 +165,7 @@ function M.current_function(bufnr, winid)
             local ntype = node:type()
 
             if ntype == "function_definition" or ntype == "function_declaration" then
-                -- Python / Lua: function name directly in 'name' field
+                -- Python / Lua: name is the function name
                 local name_node = node:field("name")[1]
                 if name_node then
                     local name_type = name_node:type()
@@ -182,7 +181,7 @@ function M.current_function(bufnr, winid)
                     end
                 end
 
-                -- C / C++: function name in declarator
+                -- C / C++: name is in the declarator
                 local decl = node:field("declarator")[1]
                 if decl then
                     local inner = decl:field("declarator")[1]
@@ -570,8 +569,8 @@ local function fugitive_info_compact(bufnr, winid)
 end
 
 local function quickfix_search_query(bufnr, winid)
-    -- Read title directly from loclist data via filewinid, bypassing w:quickfix_title
-    -- which Neovim sets with incorrect timing when lopen splits an existing loclist window.
+    -- Read the title from the loclist data, not w:quickfix_title, which Neovim sets
+    -- too late when lopen splits an existing loclist window.
     local title
     local filewinid = vim.fn.getloclist(winid, { filewinid = 0 }).filewinid
     if filewinid and filewinid ~= 0 then
@@ -653,7 +652,7 @@ local function make_statusline_text(bufnr, winid, components, sep, ctx)
         local hl = components.hl and ("%%#%s#"):format(components.hl) or ""
         local t = {}
         for _, c in ipairs(components) do
-            -- Only process if it's a type we support as a statusline component
+            -- Only types we support as a statusline component
             if type(c) == 'string' or type(c) == 'number' or type(c) == 'function' or type(c) == 'table' then
                 local c_str = make_statusline_text(bufnr, winid, c, sep, ctx)
                 if c_str and c_str ~= '' then
@@ -809,12 +808,8 @@ local function launcher_statusline(activation, mode, winid)
     }
 end
 
--- Let's make not to use any functions on stausline option.
--- Refreshing on the selected events is the place that to execute funtions.
-
--- events (user selected by components)
--- → update status and tab line information (some are asyncronously done)
--- → redraw when it done at the all events (check the duration between redraws)
+-- The statusline option holds no function calls: the components' events update the
+-- status and tab line (some asynchronously) and a redraw follows.
 local statusline_setup = {
     components = {
         general = general_statusline,
@@ -880,7 +875,7 @@ function M.statusline_entry()
 end
 
 function M.setup()
-    -- Skip statusline setup in test environment to avoid headless UI errors
+    -- Skip in tests: headless UI errors
     if vim.g.is_testing then return end
 
     vim.o.laststatus = 2

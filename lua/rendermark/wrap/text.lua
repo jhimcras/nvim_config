@@ -8,11 +8,11 @@ end
 
 -- Hanging indent (display columns) for a logical line's continuation rows.
 --
--- `render` (optional) describes what rendermark.deco actually DRAWS, for the two
--- prefixes whose rendered width no longer matches the source:
---   render.checkbox : columns the '- [ ] ' prefix collapses to (glyph + space)
+-- `render` (optional) is what rendermark.deco actually DRAWS, for the two prefixes
+-- whose rendered width differs from the source:
+--   render.checkbox : columns '- [ ] ' collapses to (glyph + space)
 --   render.heading  : indent columns per heading level (0 = flush left)
--- Called without it the result is the raw-text width, as before.
+-- Without it the result is the raw-text width.
 function M.compute_indent(text, render)
     local marker = vim.fn.matchstr(text, list_pat)
     if marker ~= '' then
@@ -217,12 +217,10 @@ function M.char_items(chars)
     return items
 end
 
--- Conceal/insert-aware variant of char_items. `runs` are the flattened inline
--- runs (sorted, non-overlapping, each { s, e, conceal, conceal_anchor }); a char
--- inside a conceal-"" run gets width 0, a non-empty replacement contributes its
--- width once at the run's anchor. `inserts` are inline virt_text widths keyed by
--- byte position ({ b, w }); their columns are reserved on the char at that byte.
--- Every char is kept so char-index <-> byte_at alignment is preserved.
+-- Conceal/insert-aware char_items. In `runs` (flattened, sorted, non-overlapping)
+-- a char inside a conceal-"" run has width 0 and a replacement counts once at the
+-- run's anchor; `inserts` ({ b, w }) reserve virt_text columns at their byte.
+-- Every char is kept, so char-index <-> byte_at alignment holds.
 function M.conceal_items(chars, byte_at, runs, inserts)
     if not runs and not inserts then
         return M.char_items(chars)

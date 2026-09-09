@@ -1,22 +1,13 @@
--- Browser-like soft-wrap for markdown using virtual lines.
+-- Browser-like soft-wrap for markdown: 'wrap' is off and continuation rows are
+-- drawn as extmark virt_lines, which looks better than native wrap with
+-- breakindent and concealed prefix icons.
 --
--- Instead of Neovim's native `wrap` (which looks unnatural with breakindent and
--- concealed prefix icons), this renders long lines with `wrap = false` and draws
--- the wrapped continuation rows as extmark `virt_lines`, applied only to markdown
--- buffers.
+-- The cursor can never enter a virtual line, so the cursor's own line is always
+-- shown raw on one row; every other visible line is decorated as soft-wrapped.
 --
--- Hard constraint: the cursor can never enter a virtual line, and with
--- `wrap = false` the cursor's own line scrolls horizontally to follow it. So the
--- active (cursor) line is always shown raw on a single row; every other visible
--- line is decorated as soft-wrapped. See docs/known limitations in the plan.
---
--- Continuation rows and table cells re-create inline styling (bold, italic,
--- `code`, links, ...) from the treesitter highlight queries, including their
--- conceal of syntax markers, so they match real buffer lines rendered at
--- conceallevel=2. Known limitation: decorations added via extmarks cannot be
--- reproduced there, only conceals and highlights -- rendermark.deco therefore
--- hands back the block-quote bar explicitly (see deco.prefix_chunks) so at least
--- that one survives the wrap.
+-- Continuation rows and table cells re-create inline styling and marker conceal
+-- from the treesitter highlight queries. Extmark decorations cannot be replayed
+-- there, so deco hands back the block-quote bar explicitly (deco.prefix_chunks).
 
 local M = {}
 local wrap_text = require('rendermark.wrap.text')
@@ -39,9 +30,8 @@ local config = vim.deepcopy(defaults)
 local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
 local group
 local saved_state = {} -- per-window saved options, keyed by window id
--- Fold-change detection state, keyed by window id (see the decoration provider in
--- M.setup): the last topline/botline seen while drawing, and a flag telling the
--- provider to swallow the first draw after a refresh.
+-- Fold-change detection state per window (see the decoration provider in M.setup):
+-- last topline/botline drawn, plus a flag to swallow the first draw after a refresh.
 local win_seen, win_settled = {}, {}
 
 local function dw(s)
@@ -71,8 +61,7 @@ local function get_table_query()
     return table_query or nil
 end
 
--- Continuation indent (display columns) for a logical line, so wrapped rows hang
--- under the line's text the way a browser renders it.
+-- Continuation indent (display columns), so wrapped rows hang under the text.
 function M.compute_indent(text)
     return wrap_text.compute_indent(text, deco.metrics())
 end
@@ -81,46 +70,38 @@ local function slice_concat(t, a, b)
     return wrap_text.slice_concat(t, a, b)
 end
 
--- Flatten possibly-overlapping highlight/conceal intervals of one line into
--- sorted, non-overlapping runs. Each interval is
---   { s, e, hl = group|nil, conceal = nil|string, priority, seq }
--- (byte offsets, 0-based, end-exclusive). Each resulting run is
---   { s, e, hl = {group,...}|nil, conceal = nil|string, conceal_anchor = byte }
--- The hl stack is ordered by (priority, seq) so later groups win attribute
--- conflicts; conceal_anchor marks the interval start so a non-empty replacement
--- char is emitted exactly once even when the run is sliced.
--- Exported only so it can be unit-tested without treesitter.
+-- Flatten overlapping intervals { s, e, hl, conceal, priority, seq } of one line
+-- into sorted, non-overlapping runs { s, e, hl = {group,...}, conceal,
+-- conceal_anchor } (byte offsets, 0-based, end-exclusive). The hl stack is ordered
+-- by (priority, seq) so later groups win; conceal_anchor marks the interval start
+-- so a replacement char is emitted once even when the run is sliced.
+-- Exported for unit tests.
 function M.flatten_runs(intervals, line_len)
     return wrap_text.flatten_runs(intervals, line_len)
 end
 
--- Prepend the base continuation-row highlight (config.hl) to a run's hl stack;
--- inline groups come later, so they win attribute conflicts over the base.
+-- Prepend the base row highlight (config.hl); inline groups come later and win.
 local function with_base(hl)
     return wrap_text.with_base(config.hl, hl)
 end
 
--- Append a virt_text chunk, merging into the previous chunk when the hl stack is
--- identical (keeps extmark payloads small; refresh runs on CursorMoved).
+-- Append a virt_text chunk, merging into the previous one when the hl stack
+-- matches, to keep extmark payloads small.
 local function push_chunk(out, text, hl)
     return wrap_text.push_chunk(out, text, hl)
 end
 
--- Emit virt_text chunks for the raw byte range [sb, eb) of `line`, applying the
--- flattened runs: styled slices keep their hl stacks, conceal-"" slices are
--- dropped, and a non-empty conceal replacement is emitted once at its anchor.
+-- Emit chunks for byte range [sb, eb) of `line` under the flattened runs:
+-- conceal-"" slices are dropped, a replacement char is emitted once at its anchor.
 -- runs == nil falls back to a single plain chunk.
 local function slice_chunks(out, line, runs, sb, eb)
     return wrap_text.slice_chunks(out, line, runs, sb, eb, config.hl)
 end
 
--- Inline treesitter highlight/conceal runs for rows [first, last), keyed by row
--- (0-based). Walks every language tree (markdown + injected markdown_inline) and
--- collects highlight-query captures, so virtual continuation rows and table cells
--- can re-create the styling that real buffer lines get from the highlighter.
--- extra_conceals (from collect_deco) is an optional row -> interval list of
--- foreign-namespace (rendermark.deco) conceal ranges. They are merged into the
--- treesitter intervals before flattening so inline[row] is the conceal union.
+-- Inline highlight/conceal runs for rows [first, last), keyed by 0-based row, from
+-- the highlight-query captures of every language tree (markdown + markdown_inline),
+-- so virtual rows can re-create what the highlighter gives real lines.
+-- extra_conceals (from collect_deco) is merged in, so inline[row] is the union.
 local function collect_inline(parser, buf, first, last, extra_conceals)
     local row_lines = vim.api.nvim_buf_get_lines(buf, first, last, false)
     local function line_len(row)
@@ -179,17 +160,13 @@ local function collect_inline(parser, buf, first, last, extra_conceals)
     return marks
 end
 
--- Gather display metrics from foreign-namespace buffer extmarks (rendermark.deco
--- decorations) over rows [first, last). Returns two row-keyed tables:
---   conceals[row] = { { s, e, hl, conceal, priority, seq }, ... }
---                   conceal ranges AND plain hl_group highlights (e.g.
---                   deco's dimmed sub-list under a checked item, or our own
---                   custom_handlers dim marks) to merge into collect_inline
---                   (width + styling) so wrapped continuation rows stay styled
---   inserts[row]  = { { b = byte_col, w = displaywidth }, ... }
---                   inline virt_text (icons) that ADD width at a byte position
--- own_ns/img_ns are skipped (our own decorations, and image-band marks whose
--- lines are not wrapped anyway).
+-- Display metrics from foreign-namespace extmarks (rendermark.deco) over rows
+-- [first, last). Returns two row-keyed tables:
+--   conceals[row] = conceal ranges AND plain hl_group highlights, merged into
+--                   collect_inline so wrapped rows keep their width and styling
+--   inserts[row]  = { b = byte_col, w = displaywidth } for inline virt_text icons,
+--                   which ADD width at a byte position
+-- own_ns/img_ns are skipped.
 local function collect_deco(buf, first, last, own_ns, img_ns)
     local conceals, inserts = {}, {}
     local ok, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, -1,
@@ -249,10 +226,9 @@ local function collect_deco(buf, first, last, own_ns, img_ns)
 end
 
 -- Core charwise break loop shared by wrap_line, wrap_cell and styled table cells.
--- items[i] = { w = display width, sp = true for breakable whitespace }.
--- Returns inclusive index ranges { {s, e}, ... }, one per display row, with
--- trailing whitespace trimmed from each row (e < s for an all-space row).
--- Breaks at spaces when possible, otherwise per item (handles CJK / long words).
+-- items[i] = { w = display width, sp = breakable whitespace }. Returns one
+-- inclusive index range per display row, trailing whitespace trimmed (e < s for an
+-- all-space row). Breaks at spaces, else per item (CJK / long words).
 local function wrap_indices(items, width1, widthN)
     return wrap_text.wrap_indices(items, width1, widthN)
 end
@@ -261,22 +237,19 @@ local function char_items(chars)
     return wrap_text.char_items(chars)
 end
 
--- Pure wrap computation. Given a line and the available widths, returns:
---   first_end_byte : 0-based byte offset where the first display row ends, i.e.
---                    where the real line should be concealed (nil if it fits).
---   lines          : continuation rows (strings, already indented) for virt_lines.
---   spans          : per continuation row, its { start, end } raw byte range in
---                    `text` (0-based, end-exclusive, after trailing-space trim).
+-- Pure wrap computation. Returns:
+--   first_end_byte : byte offset ending the first display row, i.e. where the real
+--                    line is concealed (nil if it fits)
+--   lines          : continuation rows (indented) for virt_lines
+--   spans          : each continuation row's { start, end } byte range in `text`
 function M.wrap_line(text, width1, widthN, indent, runs, inserts)
     return wrap_text.wrap_line(text, width1, widthN, indent, runs, inserts)
 end
 
 -- Split a table row into trimmed cells, dropping the outer pipes and unescaping
--- "\|" so an escaped pipe stays inside its cell. Each cell carries its chars with
--- their 0-based source byte offsets, so inline highlights/conceals (byte ranges on
--- the raw line) can be mapped onto the rendered cell:
---   { text = 'a|b', chars = { { c = 'a', b = 2 }, ... } }
--- An unescaped "\|" maps to the pipe's byte (the backslash is the concealed part).
+-- "\|". Each cell keeps its chars with source byte offsets --
+-- { text = 'a|b', chars = { { c = 'a', b = 2 }, ... } } -- so the line's inline
+-- highlights/conceals map onto the rendered cell. "\|" maps to the pipe's byte.
 function M.split_cells_pos(line)
     local chars = vim.fn.split(line, '\\zs')
     local pos = {}
@@ -286,7 +259,7 @@ function M.split_cells_pos(line)
         acc = acc + #c
     end
 
-    -- surrounding whitespace (vim.trim equivalent, kept as index bounds)
+    -- trim surrounding whitespace, as index bounds
     local a, b = 1, #chars
     while a <= b and chars[a]:match('%s') do a = a + 1 end
     while b >= a and chars[b]:match('%s') do b = b - 1 end
@@ -354,8 +327,7 @@ function M.parse_aligns(delim_line)
     return aligns
 end
 
--- Wrap one cell's text to `width` display columns, returning the display rows.
--- Breaks at spaces, hard-breaks long words / CJK. Always returns at least one row.
+-- Wrap a cell to `width` columns; hard-breaks long words / CJK, always >= 1 row.
 function M.wrap_cell(text, width)
     if width < 1 then width = 1 end
     local chars = vim.fn.split(text, '\\zs')
@@ -369,10 +341,9 @@ function M.wrap_cell(text, width)
     return lines
 end
 
--- Column widths for a table. `rows` is a list of cell-arrays (header + data, not
--- the delimiter). "Cap then distribute": each column is capped at `cap`; leftover
--- budget goes to capped columns up to their natural width; if even the capped
--- widths overflow, columns shrink proportionally down to `min`.
+-- Column widths for a table (`rows` = header + data cell-arrays, no delimiter).
+-- Cap each column at `cap`, hand leftover budget back to capped columns up to their
+-- natural width, and shrink proportionally down to `min` if even that overflows.
 function M.compute_table_layout(rows, avail, cap, min)
     local N = 0
     for _, r in ipairs(rows) do
@@ -448,11 +419,9 @@ function M.compute_table_layout(rows, avail, cap, min)
     return widths
 end
 
--- Map one cell's source chars (from split_cells_pos) through the line's inline
--- runs: returns display items { c, w, hl, sp } with conceal-"" chars dropped and
--- a non-empty conceal replacement emitted once at its anchor. Layout, wrapping
--- and padding all use these display items, so the grid stays aligned regardless
--- of how many marker chars were concealed.
+-- Map a cell's source chars through the line's inline runs into display items
+-- { c, w, hl, sp }, dropping conceal-"" chars. Layout, wrapping and padding use
+-- these, so the grid stays aligned however many markers were concealed.
 local function styled_cell(chars, runs)
     local items = {}
     local function add(c, hl)
@@ -474,7 +443,7 @@ local function styled_cell(chars, runs)
         if not (r and ch.b >= r.s) then
             add(ch.c, nil)
         elseif r.conceal == '' then
-            -- concealed: dropped
+            -- concealed
         elseif r.conceal then
             if not emitted[r.conceal_anchor] then
                 emitted[r.conceal_anchor] = true
@@ -512,12 +481,10 @@ local function table_border(left, mid, right, widths)
     return left .. table.concat(parts, mid) .. right
 end
 
--- Render one pipe table (buffer rows t_start..t_end, 0-based) as a boxed grid with
--- wrapped cells. Each source row is reused (concealed + overlaid); the extra grid
--- lines (top/bottom border, row separators, wrapped continuations) are virt_lines.
--- The cursor's own row is left raw so the cursor can sit on real text.
--- `inline` carries the per-row inline highlight/conceal runs (collect_inline), so
--- cell content is styled and its syntax markers concealed like real lines.
+-- Render a pipe table (rows t_start..t_end, 0-based) as a boxed grid with wrapped
+-- cells: each source row is concealed and overlaid, the extra grid lines (borders,
+-- separators, continuations) are virt_lines. The cursor's row stays raw.
+-- `inline` (collect_inline) styles the cell content like real lines.
 local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
     local lines = vim.api.nvim_buf_get_lines(buf, t_start, t_end + 1, false)
     if #lines < 2 then
@@ -539,7 +506,7 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
         data[#data + 1] = styled_row(lnum0)
     end
 
-    -- Column layout from the conceal-stripped display text.
+    -- Column layout from the conceal-stripped text.
     local function disp_row(cells)
         local r = {}
         for c, items in ipairs(cells) do
@@ -569,7 +536,7 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
     local sep = table_border('├', '┼', '┤', widths)
     local bot = table_border('└', '┴', '┘', widths)
 
-    -- Grid rows for one source row, as virt_text chunk lists (one per display row).
+    -- Grid rows for one source row, as virt_text chunk lists.
     local function row_block(cells)
         local cols, height = {}, 1
         for c = 1, N do
@@ -622,7 +589,7 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
             { virt_lines = rows, virt_lines_above = above or nil })
     end
 
-    -- Header: top border above, content overlaid, wrapped continuations below.
+    -- Header: top border above, content overlaid, continuations below.
     vlines(t_start, { { hl_chunk(top) } }, true)
     if t_start + 1 ~= cursor_lnum then
         local block = row_block(header)
@@ -634,14 +601,13 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
         vlines(t_start, cont, false)
     end
 
-    -- Delimiter row hosts the header/body separator (or the bottom border when the
-    -- table has no data rows).
+    -- Delimiter row hosts the separator, or the bottom border if there is no data.
     local d_lnum = t_start + 1
     if d_lnum + 1 ~= cursor_lnum then
         overlay(d_lnum, { hl_chunk(#data > 0 and sep or bot) })
     end
 
-    -- Data rows, each followed by a separator (or the bottom border for the last).
+    -- Data rows, each followed by a separator (bottom border for the last).
     for i, cells in ipairs(data) do
         local lnum0 = t_start + 1 + i
         local below = (i == #data) and bot or sep
@@ -669,12 +635,10 @@ local function buffer_enabled(buf)
     return vim.g.markdown_visual_wrap_enabled ~= false and vim.b[buf].markdown_visual_wrap == true
 end
 
--- The drawn line ranges of topline..botline, i.e. with closed folds cut out.
--- Returns 0-indexed half-open { first, last } pairs. A closed fold's first line
--- is left out too: that row draws 'foldtext', not the buffer text, so decorating
--- it is pointless.
--- 'foldclosed' works on the current window, hence the nvim_win_call (refresh also
--- runs for non-current windows -- same reason as the leftcol lookup below).
+-- Drawn line ranges of topline..botline with closed folds cut out, as 0-indexed
+-- half-open { first, last } pairs. A closed fold's first line is dropped too: it
+-- draws 'foldtext', not buffer text. 'foldclosed' is current-window only, hence
+-- the nvim_win_call (refresh also runs for non-current windows).
 local function visible_segments(win, topline, botline)
     if botline - topline < vim.api.nvim_win_get_height(win) then
         return { { math.max(topline - 1, 0), botline } }
@@ -696,26 +660,22 @@ local function visible_segments(win, topline, botline)
     end)
 end
 
--- Decorate one visible range [first, last). Everything here is keyed by row, so
--- ranges are independent of each other and need no merging.
--- Limitation: a pipe table straddling a closed fold is rendered only for the part
--- inside this range, so its grid is cut off -- the folded part is not drawn anyway.
+-- Decorate one visible range [first, last). Everything is keyed by row, so ranges
+-- are independent. A table straddling a closed fold renders only the part in this
+-- range; the folded part isn't drawn anyway.
 local function render_range(buf, first, last, width, cursor_row, images_active)
-    -- Detect code blocks (read verbatim, exempt from wrapping) and pipe tables
-    -- (rendered as a boxed grid) with treesitter. A full parse keeps table node
-    -- ranges complete even when a table is only partly on screen; the captures are
-    -- still limited to the visible range. The parser/tree are cached.
+    -- Find code blocks (exempt from wrapping) and pipe tables via treesitter. The
+    -- parse is full so a partly-visible table keeps its complete node range;
+    -- captures stay limited to the visible range. Parser/tree are cached.
     local in_code, in_table, tables = {}, {}, {}
     local inline = {} -- row -> flattened inline highlight/conceal runs
-    -- rendermark.deco (and any other foreign) extmark metrics: concealed ranges are
-    -- merged into inline below; inline virt_text icon widths are added to the
-    -- wrap-point computation so the break matches the actually displayed width.
+    -- Foreign extmark metrics: conceals merge into inline below, icon widths feed
+    -- the wrap point so the break matches the displayed width.
     local img_ns = vim.api.nvim_create_namespace('rendermark_neopp_images')
     local ex_conceals, inserts = collect_deco(buf, first, last, ns, img_ns)
     local ts_ok, parser = pcall(vim.treesitter.get_parser, buf, 'markdown')
     if ts_ok and parser then
-        -- The ranged parse additionally parses injections (markdown_inline) in the
-        -- visible range; the top-level markdown tree is still the full document.
+        -- Parses markdown_inline injections in the range; the markdown tree stays full.
         local ok_tree, trees = pcall(function() return parser:parse({ first, last }) end)
         local tree = ok_tree and trees and trees[1]
         if tree then
@@ -735,9 +695,8 @@ local function render_range(buf, first, last, width, cursor_row, images_active)
                 for _, node in tq:iter_captures(root, buf, first, last) do
                     local r1, _, r2, c2 = node:range()
                     if c2 == 0 then r2 = r2 - 1 end
-                    -- The markdown grammar absorbs trailing pipe-less prose lines into
-                    -- the table node. Trim to the contiguous run of rows that contain a
-                    -- '|' so absorbed prose stays normal, wrappable text.
+                    -- The grammar absorbs trailing pipe-less prose into the table node;
+                    -- trim to the contiguous run of '|' rows so it stays wrappable.
                     local rows = vim.api.nvim_buf_get_lines(buf, r1, r2 + 1, false)
                     local tend = r1 + 1 -- header + delimiter
                     for k = 3, #rows do
@@ -761,9 +720,8 @@ local function render_range(buf, first, last, width, cursor_row, images_active)
         render_table(buf, t[1], t[2], width, cursor_row, inline)
     end
 
-    -- Lines with image links are laid out by rendermark.image (images as a band +
-    -- bottom-aligned gap text); don't double-wrap them here or the continuation rows
-    -- stack below the image. Only skip when the image pipeline is actually active.
+    -- rendermark.image lays out image-link lines itself; wrapping them here too
+    -- would stack continuation rows below the image.
     local image = images_active and require('rendermark.image') or nil
 
     for lnum = first, last - 1 do
@@ -781,10 +739,9 @@ local function render_range(buf, first, last, width, cursor_row, images_active)
                         conceal = '',
                     })
                     local indent_str = string.rep(' ', indent)
-                    -- A block quote repeats its bar instead of padding with blanks,
-                    -- so the vertical rule is not cut off at the wrap. Decorations
-                    -- from extmarks cannot be replayed inside virt_lines, so deco
-                    -- hands us the chunks to re-emit here.
+                    -- A block quote repeats its bar so the rule isn't cut off at the
+                    -- wrap. Extmark decorations can't be replayed in virt_lines, so
+                    -- deco hands us the chunks.
                     local pre = deco.prefix_chunks(text, indent)
                     local vlines = {}
                     for k = 1, #r.lines do
@@ -833,11 +790,9 @@ function M.refresh(win)
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
     deco.clear(buf)
 
-    -- Horizontal scroll (leftcol) is window-global, so it slides every line's real
-    -- text, which we can't counter-compensate per line. Treat any horizontal scroll
-    -- as "show raw text": with the namespace just cleared, bail out so all lines
-    -- scroll uniformly. Decorations are restored on the next refresh once leftcol
-    -- returns to 0.
+    -- leftcol is window-global and slides every line's real text, which we can't
+    -- compensate per line. Bail with the namespace cleared so everything scrolls
+    -- uniformly; decorations return once leftcol is back to 0.
     local leftcol = vim.api.nvim_win_call(win, function()
         return vim.fn.winsaveview().leftcol
     end)
@@ -847,8 +802,7 @@ function M.refresh(win)
 
     local info = vim.fn.getwininfo(win)[1]
     local width = vim.api.nvim_win_get_width(win) - info.textoff - config.right_pad
-    -- A user-set max_width takes priority, but only as a cap: a narrower window
-    -- still wraps at the window width.
+    -- max_width is only a cap; a narrower window still wraps at its own width.
     if config.max_width and config.max_width > 0 then
         width = math.min(width, config.max_width)
     end
@@ -856,24 +810,18 @@ function M.refresh(win)
         return
     end
 
-    -- vim.w[win].read_mode_active (set/cleared by read_mode.lua, if loaded --
-    -- this module has no hard dependency on it) wraps every visible line,
-    -- including the one under the (hidden) cursor: a sentinel of -1 never
-    -- matches a real line number, so the cursor-line exception below and in
-    -- render_table is effectively disabled.
-    -- Limitation: this namespace is buffer-scoped, so if the same buffer is
-    -- split across a READ window and a Normal window, whichever window's
-    -- refresh runs last wins the buffer's rendered wrapping -- accepted, not
-    -- fixed (would need cross-window refresh ordering).
+    -- read_mode.lua (optional) sets read_mode_active to wrap every visible line,
+    -- cursor line included: the -1 sentinel matches no real line, disabling the
+    -- cursor-line exception here and in render_table.
+    -- The namespace is buffer-scoped, so with the buffer in both a READ and a
+    -- Normal window, the last refresh wins -- accepted.
     local cursor_row = vim.w[win].read_mode_active and -1
         or vim.api.nvim_win_get_cursor(win)[1]
     local images_active = require('rendermark.image').is_active()
     local segs = visible_segments(win, info.topline, info.botline)
-    -- Decorations first, for every segment: render_range's collect_deco snapshots
-    -- foreign-namespace extmarks to learn each line's real display width, so the
-    -- conceals and inline paddings have to be in the buffer before it runs.
-    -- The rule spans the full window width, not the (right_pad/max_width-capped)
-    -- text column.
+    -- Decorations first for every segment: render_range's collect_deco snapshots
+    -- foreign extmarks for each line's real width, so they must already be placed.
+    -- The rule spans the full window width, not the capped text column.
     local rule_width = vim.api.nvim_win_get_width(win) - info.textoff
     paint_deco(buf, segs, rule_width, cursor_row)
     for _, seg in ipairs(segs) do
@@ -891,16 +839,11 @@ local function schedule_refresh(win)
         return
     end
     pending[win] = true
-    -- Double-deferred: a single vim.schedule can still run before a foreign
-    -- plugin's own same-event vim.schedule callback (a foreign decorator's
-    -- recompute, also queued off this same CursorMoved/FileType/etc
-    -- event) -- whichever autocmd was registered first wins that race, and if
-    -- this one wins, collect_deco snapshots the buffer's extmarks before the
-    -- foreign highlight exists (only visible on a jump into never-rendered
-    -- lines, e.g. gg/G, since a small move stays inside the already-decorated
-    -- viewport). Nesting one more vim.schedule guarantees this refresh runs
-    -- after every plain single-defer callback already queued for this event,
-    -- regardless of autocmd registration order.
+    -- Double-deferred: a single vim.schedule races a foreign decorator's own
+    -- schedule off the same event (autocmd registration order decides), and losing
+    -- means collect_deco snapshots before the foreign highlights exist -- visible
+    -- on jumps into never-rendered lines (gg/G). One more nesting level guarantees
+    -- we run after every single-deferred callback already queued.
     vim.schedule(function()
         vim.schedule(function()
             pending[win] = nil
@@ -909,14 +852,11 @@ local function schedule_refresh(win)
     end)
 end
 
--- A code fence is the one decoration whose shape depends on where the cursor is:
--- 'concealcursor' is empty, so conceal_lines yields on the cursor line, the fence row
--- comes back and deco has to move its bar onto that row (see place_bar in
--- render_code). The deferred refresh above is one frame too late for that -- the
--- redraw that follows CursorMoved still shows the previous placement, and correcting
--- it a frame later is exactly the flicker -- so crossing a fence row repaints the
--- decorations synchronously, inside the event. The deferred refresh then repaints the
--- same thing (plus the wrapping) and nothing moves.
+-- A code fence is the one decoration whose shape depends on the cursor: with
+-- 'concealcursor' empty the fence row reappears on the cursor line and deco must
+-- move its bar there (place_bar in render_code). The deferred refresh above lands a
+-- frame late, which is exactly the flicker, so crossing a fence row repaints
+-- synchronously inside the event; the deferred pass then changes nothing.
 local last_cursor_row = {}
 
 local function looks_like_fence(buf, lnum)
@@ -929,8 +869,7 @@ local function repaint_deco_now(win, buf)
     if not info then
         return
     end
-    -- Same bail as M.refresh: with the view scrolled horizontally the decorations
-    -- stay off, so painting them here would only be undone a frame later.
+    -- Same bail as M.refresh: decorations stay off while scrolled horizontally.
     local leftcol = vim.api.nvim_win_call(win, function()
         return vim.fn.winsaveview().leftcol
     end)
@@ -943,9 +882,8 @@ local function repaint_deco_now(win, buf)
         vim.api.nvim_win_get_width(win) - info.textoff, cursor_row)
 end
 
--- A non-empty 'statuscolumn' replaces the default number column entirely, so we
--- rebuild signs + number/relativenumber ourselves and append the reading margin.
--- Numbers render only on real lines (v:virtnum == 0), not on wrapped/virtual ones.
+-- 'statuscolumn' replaces the number column entirely, so rebuild signs +
+-- number/relativenumber and append the reading margin. Numbers only on real lines.
 local function build_statuscolumn(pad)
     local num = "%{(&nu||&rnu) ? (v:virtnum!=0 ? '' : (v:relnum==0 ? (&nu ? v:lnum : v:relnum) : (&rnu ? v:relnum : v:lnum))) : ''}"
     return '%s%=' .. num .. string.rep(' ', pad)
@@ -974,11 +912,9 @@ function M.apply(win)
     if vim.wo[w].conceallevel < 2 then
         vim.wo[w].conceallevel = 2
     end
-    -- The decorated rows re-create inline styles from the treesitter highlight
-    -- queries; real lines need the treesitter highlighter itself for the same
-    -- styling and marker conceal. Nothing else attaches it for markdown (nvim's
-    -- runtime ftplugin only auto-starts it for a few filetypes, and the
-    -- nvim-treesitter highlight module does not in this setup).
+    -- Decorated rows replay the treesitter highlight queries; real lines need the
+    -- highlighter itself for the same styling. Nothing else attaches it for
+    -- markdown in this setup.
     if not vim.treesitter.highlighter.active[buf] then
         pcall(vim.treesitter.start, buf)
     end
@@ -1016,18 +952,16 @@ local function apply_current_window()
     if vim.g.markdown_visual_wrap_enabled == false then
         return
     end
-    -- Don't decorate floating preview windows (LSP hover, signature help, etc.).
-    -- Their narrow, fixed width plus the left_pad statuscolumn make stylize_markdown's
-    -- full-width separator rules wrap and long lines truncate; Neovim's built-in
-    -- markdown stylize already handles these floats.
+    -- Skip floating preview windows (LSP hover, signature help): their fixed narrow
+    -- width plus our statuscolumn wraps the separator rules and truncates lines, and
+    -- nvim's own markdown stylize already handles them.
     if vim.api.nvim_win_get_config(0).relative ~= '' then
         return
     end
     if is_markdown_buffer(0) then
         M.apply(0)
     elseif saved_state[vim.api.nvim_get_current_win()] then
-        -- The window's 'statuscolumn' (window-local) leaks to non-markdown
-        -- buffers shown in the same window; restore it when leaving markdown.
+        -- 'statuscolumn' is window-local and would leak to non-markdown buffers.
         M.disable(0)
     end
 end
@@ -1065,15 +999,12 @@ function M.setup(opts)
         callback = apply_current_window,
     })
 
-    -- Opening or closing a fold (zo/zc/za/zR/zM, a click in the fold column,
-    -- 'foldlevel' changes) fires no autocmd at all, so the events below never see
-    -- it -- yet it changes which lines are drawn, and refresh only decorates those.
-    -- A decoration provider is the one hook that runs on every redraw: use it purely
-    -- as a change detector (no extmarks here) on the drawn line range.
-    -- Only a *fold* change is acted on here: the drawn range grew or shrank while
-    -- the top line stayed put. Scrolling and resizing move the top line too, and
-    -- those are already covered by the events below -- reacting to them here as
-    -- well would just double the refreshes.
+    -- Opening/closing a fold fires no autocmd, yet it changes which lines are
+    -- drawn. A decoration provider is the one hook running on every redraw, so use
+    -- it purely as a change detector (no extmarks here).
+    -- Only fold changes are acted on: the drawn range grew or shrank while topline
+    -- stayed put. Scrolling and resizing move topline and are covered by the events
+    -- below, so handling them here too would just double the refreshes.
     vim.api.nvim_set_decoration_provider(
         vim.api.nvim_create_namespace('markdown_visual_wrap_watch'), {
             on_win = function(_, win, buf, top, bot)
@@ -1082,9 +1013,8 @@ function M.setup(opts)
                 end
                 local seen = win_seen[win]
                 win_seen[win] = { top, bot }
-                -- The virt_lines a refresh adds move the bottom line themselves, so
-                -- the first draw after one is only recorded; without this, refresh
-                -- and detection would keep re-triggering each other.
+                -- A refresh's own virt_lines move botline, so the first draw after
+                -- one is only recorded -- otherwise the two re-trigger each other.
                 if win_settled[win] then
                     win_settled[win] = nil
                     return

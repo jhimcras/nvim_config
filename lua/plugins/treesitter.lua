@@ -34,25 +34,17 @@ function M.setup()
         },
     }
 
-    -- Neovim 0.12 removed the `all` option from Query:iter_matches(): it now
-    -- always maps each capture to a TSNode[] array instead of a single TSNode
-    -- (core's highlighter/injection code was updated for this; the pinned
-    -- nvim-treesitter/-textobjects master branches were not). The textobjects
-    -- machinery (select/move/swap) stashes those raw capture values into
-    -- `prepared_match`, and consumers then call TSNode methods directly on
-    -- them -- e.g. tsrange.from_nodes' start_node:start(), or move.lua's
-    -- filter/scoring functions doing match.node:range()/:start(). A plain Lua
-    -- array has no such method, so [m/]m (and af/if/swap) crash with
+    -- Neovim 0.12's Query:iter_matches() always maps a capture to a TSNode[]
+    -- array, never a single TSNode. The pinned nvim-treesitter/-textobjects
+    -- masters were not updated, so they stash those arrays in `prepared_match`
+    -- and then call TSNode methods on them, crashing [m/]m, af/if and swap with
     -- "attempt to call method 'start'/'range' (a nil value)".
     --
-    -- These patches are additive wrappers (no reimplementation of upstream
-    -- logic) so they stay correct across master commits, and they only unwrap
-    -- when a value is actually a TSNode[] array, so they're harmless on
-    -- Neovim <0.12 where captures are already single nodes.
+    -- These are additive wrappers, not reimplementations, so they survive master
+    -- commits, and they unwrap only actual TSNode[] arrays -- harmless on <0.12.
     do
-        -- A raw capture array is a plain table whose first element is a TSNode
-        -- (userdata). TSNodes are userdata, and TSRanges (from make-range!)
-        -- have a numeric [1], so neither is mistaken for an array to unwrap.
+        -- A raw capture array is a plain table whose [1] is a TSNode (userdata).
+        -- TSNodes are userdata and TSRanges have a numeric [1], so neither matches.
         local function unwrap(v)
             if type(v) == 'table' and type(v[1]) == 'userdata' then
                 return v[#v] -- last match, matching the old all=false semantics
@@ -60,8 +52,8 @@ function M.setup()
             return v
         end
 
-        -- 1) make-range! path: keep upstream's own iter_prepared_matches, just
-        --    stop from_nodes from crashing when handed TSNode[] arrays.
+        -- 1) make-range!: keep upstream's iter_prepared_matches, just stop
+        --    from_nodes crashing on TSNode[] arrays.
         local tsrange = require'nvim-treesitter.tsrange'
         local TSRange = tsrange.TSRange
         local orig_from_nodes = TSRange.from_nodes
@@ -73,9 +65,8 @@ function M.setup()
             return orig_from_nodes(buf, start_node, end_node)
         end
 
-        -- 2) regular captures: wrap iter_prepared_matches and unwrap every
-        --    `.node` array in the prepared_match it yields, so downstream
-        --    filter/scoring/goto code always sees a single TSNode.
+        -- 2) regular captures: unwrap every `.node` array it yields, so downstream
+        --    code always sees a single TSNode.
         local nt_query = require'nvim-treesitter.query'
         local orig_iter = nt_query.iter_prepared_matches
         local function unwrap_nodes(t)
@@ -100,9 +91,8 @@ function M.setup()
         end
     end
 
-    -- nvim-treesitter still registers a few directives as if query captures are
-    -- single TSNode values. Neovim 0.12 passes TSNode[] per capture, which breaks
-    -- markdown injection parsing through render-markdown.nvim.
+    -- nvim-treesitter registers a few directives as if captures were single
+    -- TSNodes; 0.12's TSNode[] breaks markdown injection parsing.
     if vim.fn.has('nvim-0.12') == 1 then
         require'nvim-treesitter.query_predicates'
         local query = require'vim.treesitter.query'
