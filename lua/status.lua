@@ -115,7 +115,19 @@ function M.lsp(bufnr)
             parts[#parts + 1] = seg[2] .. seg[1]
         end
     end
-    local prog = vim.trim(vim.lsp.status()):gsub('^%d+%%:%s*', '')
+    -- vim.lsp.status() concatenates every progress report buffered since the
+    -- last read; keep only the newest one so 'indexing' shows a single count.
+    local prog = ''
+    for _, c in ipairs(clients) do
+        for progress in c.progress do
+            local value = progress.value
+            if type(value) == 'table' and value.kind then
+                prog = value.message and (value.title .. ': ' .. value.message)
+                    or value.title
+            end
+        end
+    end
+    prog = vim.trim(prog)
     if prog ~= '' then
         parts[#parts + 1] = prog
     else
