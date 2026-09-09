@@ -57,8 +57,10 @@ local defaults = {
 local config = vim.deepcopy(defaults)
 local ns = vim.api.nvim_create_namespace('rendermark_deco')
 
-local function dw(s)
-    return vim.fn.strdisplaywidth(s)
+-- `col` is the screen column the string starts at: a tab's width depends on where
+-- it lands, so any text that does not start at column 0 has to say so.
+local function dw(s, col)
+    return vim.fn.strdisplaywidth(s, col or 0)
 end
 
 local function line_at(buf, row)
@@ -401,9 +403,12 @@ local function render_code(buf, node, first, last, cur)
     -- Geometry of one content row: where its background starts in bytes, how many
     -- columns of the block indent that row is missing (a blank or under-indented row
     -- has some), and how wide the code itself draws.
+    -- The code text always begins at screen column indent_w + pad (the row's own
+    -- indent plus the inline left pad below), which is where its tabs expand from.
     local function row_geom(line)
         local start = math.min(c1, #line)
-        return start, indent_w - dw(line:sub(1, start)), dw(line:sub(start + 1))
+        return start, indent_w - dw(line:sub(1, start)),
+            dw(line:sub(start + 1), indent_w + pad)
     end
     -- One read for the whole block: the width depends on every content row, even
     -- the ones off screen, and this runs on each refresh.

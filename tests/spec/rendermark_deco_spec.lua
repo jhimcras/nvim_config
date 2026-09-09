@@ -146,16 +146,25 @@ describe('deco rendering', function()
     -- highlighted stretch of real text. Must equal the block width on every row.
     local function code_row_width(lnum)
         local line = vim.api.nvim_buf_get_lines(0, lnum, lnum + 1, false)[1] or ''
-        local w = 0
+        local lead, fill, text, text_col = 0, 0, nil, 0
         for _, m in ipairs(marks_on(lnum)) do
             local d, col = m[4], m[3]
             if d.virt_text and d.virt_text_pos == 'inline' then
-                w = w + width_of(d.virt_text)
+                -- the left pad sits at the start of the row, the fill past its end
+                if col >= #line then
+                    fill = fill + width_of(d.virt_text)
+                else
+                    lead = lead + width_of(d.virt_text)
+                end
             elseif d.hl_group == 'RendermarkCode' and d.end_col then
-                w = w + vim.fn.strdisplaywidth(line:sub(col + 1, d.end_col))
+                text = line:sub(col + 1, d.end_col)
+                text_col = vim.fn.strdisplaywidth(line:sub(1, col))
             end
         end
-        return w
+        -- The real text is drawn after the row's own indent and the inline lead, so
+        -- that is the column its tabs expand from -- the indent itself is outside
+        -- the block and does not count towards the width.
+        return lead + (text and vim.fn.strdisplaywidth(text, text_col + lead) or 0) + fill
     end
 
     local function find(lnum, pred)
@@ -361,6 +370,25 @@ describe('deco rendering', function()
         for lnum = 1, 4 do
             assert.equals(72, code_row_width(lnum))
         end
+    end)
+
+    it('measures a tab in a code line from the column it is drawn at', function()
+        -- The code text starts one pad in from the block's left edge, so its tabs
+        -- expand from there. Measuring them from column 0 makes the block one
+        -- column too wide and the fill one column too long.
+        local saved = vim.o.tabstop
+        vim.o.tabstop = 4
+        local ok, err = pcall(function()
+            local body = '\t' .. string.rep('c', 60)
+            render({ '```lua', body, '```', 'tail' })
+            local width = 1 + 3 + 60 + 1 -- pad + tab (col 1 -> 4) + text + pad
+            local top = find(1, function(d) return d.virt_lines and d.virt_lines_above end)
+            assert.is_truthy(top)
+            assert.equals(width, width_of(top.virt_lines[1]))
+            assert.equals(width, code_row_width(1))
+        end)
+        vim.o.tabstop = saved
+        assert.is_true(ok, tostring(err))
     end)
 
     it('widens a code block past the window rather than clamping', function()
