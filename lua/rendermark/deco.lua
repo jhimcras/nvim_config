@@ -28,6 +28,13 @@ local M = {}
 
 local ut = require 'util'
 
+-- The code block background is a shade of the colorscheme's 'Normal' rather than a
+-- literal, so it tracks whatever colorscheme is in effect.
+local function code_bg()
+    local normal = vim.api.nvim_get_hl(0, { name = 'Normal', link = false })
+    return normal.bg and ut.shade(normal.bg, 8) or nil
+end
+
 local defaults = {
     -- A conceal replacement is one character, so only the FIRST character of a
     -- checkbox glyph is concealed in; anything after it (a space, typically) is
@@ -52,6 +59,43 @@ local defaults = {
         disable = { 'plantuml', 'puml', 'uml' },
     },
     dim_checked_sublist = true,
+    -- Every highlight group this module paints with, in one place. A value is
+    -- either a plain `nvim_set_hl` spec or a function returning one, called on
+    -- setup and again on every ColorScheme so a group can be derived from the
+    -- colorscheme in effect (the code background is a shade of 'Normal', for
+    -- instance). Override a single entry through rendermark.setup:
+    --
+    --     require('rendermark').setup {
+    --       highlight = { RendermarkQuote = { fg = '#7aa2f7' } },
+    --     }
+    --
+    -- The treesitter highlighter paints heading text from @markup.heading.N.markdown,
+    -- so those are overridden too; that (rather than layering an extmark) is also what
+    -- makes wrapped continuation rows bold, since wrap re-creates its styling from the
+    -- highlight-query captures.
+    highlight = {
+        RendermarkHeading = { bold = true },
+        RendermarkRule = { link = 'Comment' },
+        RendermarkQuote = { link = 'Comment' },
+        RendermarkBullet = { link = 'Comment' },
+        RendermarkUnchecked = { link = 'Comment' },
+        RendermarkChecked = { link = 'Comment' },
+        RendermarkCode = function()
+            local bg = code_bg()
+            return bg and { bg = bg } or {}
+        end,
+        RendermarkCodeInfo = function()
+            local bg = code_bg()
+            local comment = vim.api.nvim_get_hl(0, { name = 'Comment', link = false })
+            return bg and { bg = bg, fg = comment.fg } or { link = 'Comment' }
+        end,
+        ['@markup.heading.1.markdown'] = { link = 'RendermarkHeading' },
+        ['@markup.heading.2.markdown'] = { link = 'RendermarkHeading' },
+        ['@markup.heading.3.markdown'] = { link = 'RendermarkHeading' },
+        ['@markup.heading.4.markdown'] = { link = 'RendermarkHeading' },
+        ['@markup.heading.5.markdown'] = { link = 'RendermarkHeading' },
+        ['@markup.heading.6.markdown'] = { link = 'RendermarkHeading' },
+    },
 }
 
 local config = vim.deepcopy(defaults)
@@ -567,35 +611,20 @@ function M.clear(buf)
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
 end
 
--- Colors that have to track the colorscheme: the code background is derived from
--- 'Normal' rather than pinned to a literal, and the heading groups are overridden so
--- a heading is bold in the normal text color instead of the colorscheme's own
--- per-level heading colors.
 local function define_highlights()
-    local normal = vim.api.nvim_get_hl(0, { name = 'Normal', link = false })
-    local bg = normal.bg and ut.shade(normal.bg, 8) or nil
-
-    vim.api.nvim_set_hl(0, 'RendermarkHeading', { bold = true })
-    vim.api.nvim_set_hl(0, 'RendermarkRule', { link = 'Comment' })
-    vim.api.nvim_set_hl(0, 'RendermarkQuote', { link = 'Comment' })
-    vim.api.nvim_set_hl(0, 'RendermarkBullet', { link = 'Comment' })
-    vim.api.nvim_set_hl(0, 'RendermarkUnchecked', { link = 'Comment' })
-    vim.api.nvim_set_hl(0, 'RendermarkChecked', { link = 'Comment' })
-    vim.api.nvim_set_hl(0, 'RendermarkCode', bg and { bg = bg } or {})
-    local comment = vim.api.nvim_get_hl(0, { name = 'Comment', link = false })
-    vim.api.nvim_set_hl(0, 'RendermarkCodeInfo',
-        bg and { bg = bg, fg = comment.fg } or { link = 'Comment' })
-    -- The treesitter highlighter paints heading text from these; overriding them
-    -- (rather than layering an extmark) also makes wrapped continuation rows bold,
-    -- since wrap re-creates its styling from the highlight-query captures.
-    for level = 1, 6 do
-        vim.api.nvim_set_hl(0, ('@markup.heading.%d.markdown'):format(level),
-            { link = 'RendermarkHeading' })
+    for group, spec in pairs(config.highlight) do
+        if type(spec) == 'function' then spec = spec() end
+        vim.api.nvim_set_hl(0, group, spec)
     end
 end
 
 function M.setup(opts)
     config = vim.tbl_deep_extend('force', vim.deepcopy(defaults), opts or {})
+    -- A group is replaced whole, not merged: a { fg = ... } override on a group
+    -- that defaults to { link = ... } would otherwise keep the link, which wins.
+    for group, spec in pairs((opts or {}).highlight or {}) do
+        config.highlight[group] = spec
+    end
     define_highlights()
     vim.api.nvim_create_autocmd('ColorScheme', {
         group = vim.api.nvim_create_augroup('rendermark_deco', { clear = true }),
