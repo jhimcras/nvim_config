@@ -1,4 +1,5 @@
 local wrap = require('rendermark.wrap')
+local wrap_text = require('rendermark.wrap.text')
 
 describe('wrap.compute_indent', function()
     it('returns hanging indent for list/quote/paragraph lines', function()
@@ -9,10 +10,44 @@ describe('wrap.compute_indent', function()
         assert.are.equal(3, wrap.compute_indent('1. item'))
         assert.are.equal(4, wrap.compute_indent('12) item'))
         assert.are.equal(4, wrap.compute_indent('  - nested'))
-        assert.are.equal(6, wrap.compute_indent('- [ ] task'))
-        assert.are.equal(6, wrap.compute_indent('- [x] task'))
+        -- rendermark.deco collapses '- [ ] ' to a two-column glyph, and
+        -- wrap.compute_indent hangs continuation rows under the RENDERED prefix.
+        assert.are.equal(2, wrap.compute_indent('- [ ] task'))
+        assert.are.equal(2, wrap.compute_indent('- [x] task'))
         assert.are.equal(2, wrap.compute_indent('> quote'))
         assert.are.equal(2, wrap.compute_indent('  paragraph'))
+    end)
+end)
+
+describe('wrap_text.compute_indent with rendered widths', function()
+    local render = { checkbox = 2, heading = 0 }
+
+    it('hangs a checkbox item under its glyph, not the raw prefix', function()
+        assert.are.equal(2, wrap_text.compute_indent('- [ ] task', render))
+        assert.are.equal(2, wrap_text.compute_indent('- [x] task', render))
+        assert.are.equal(4, wrap_text.compute_indent('  - [x] task', render))
+    end)
+
+    it('leaves a plain list item at its raw marker width', function()
+        assert.are.equal(2, wrap_text.compute_indent('- item', render))
+        assert.are.equal(3, wrap_text.compute_indent('1. item', render))
+    end)
+
+    it('flushes headings left when the indent is off', function()
+        assert.are.equal(0, wrap_text.compute_indent('# T', render))
+        assert.are.equal(0, wrap_text.compute_indent('#### T', render))
+    end)
+
+    it('indents headings per level when the indent is on', function()
+        local on = { checkbox = 2, heading = 2 }
+        assert.are.equal(0, wrap_text.compute_indent('# T', on))
+        assert.are.equal(2, wrap_text.compute_indent('## T', on))
+        assert.are.equal(6, wrap_text.compute_indent('#### T', on))
+    end)
+
+    it('falls back to the raw widths when no render table is given', function()
+        assert.are.equal(6, wrap_text.compute_indent('- [ ] task'))
+        assert.are.equal(2, wrap_text.compute_indent('# T'))
     end)
 end)
 
@@ -450,7 +485,7 @@ describe('wrap behavior', function()
         end
     end)
 
-    it('uses hanging indent spaces, not task-list prefixes, on continuation rows', function()
+    it('hangs task-list continuation rows under the rendered checkbox glyph', function()
         wrap.setup({ max_width = 24, left_pad = 0, right_pad = 0 })
         local line = '- [x] one two three four five six seven eight'
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { line, 'short' })
@@ -462,7 +497,9 @@ describe('wrap behavior', function()
         local rows = continuation_rows(0)
         assert.is_true(#rows > 0)
         for _, row in ipairs(rows) do
-            assert.is_truthy(row:find('^      '))
+            -- deco collapses '- [x] ' to a two-column glyph, so the hang is 2, and
+            -- the continuation rows are plain spaces -- never a repeated marker.
+            assert.is_truthy(row:find('^  %S'))
             assert.is_falsy(row:find('●', 1, true))
             assert.is_falsy(row:find('○', 1, true))
             assert.is_falsy(row:find('◆', 1, true))
@@ -489,7 +526,7 @@ describe('wrap behavior', function()
         end
     end)
 
-    it('uses heading prefix width as spaces on continuation rows in read mode', function()
+    it('flushes heading continuation rows left in read mode', function()
         wrap.setup({ max_width = 24, left_pad = 0, right_pad = 0 })
         local line = '# one two three four five six seven eight'
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { line })
@@ -500,14 +537,16 @@ describe('wrap behavior', function()
         wrap.refresh(0)
 
         local rows = continuation_rows(0)
+        require('read_mode').exit(0) -- before the assertions, so a failure cannot
+                                     -- leak read mode into the next test
         assert.is_true(#rows > 0)
         for _, row in ipairs(rows) do
-            assert.is_truthy(row:find('^  '))
+            -- deco conceals the '#'s and the blank after them, so the title starts
+            -- at column 0 and its continuation rows hang there too.
+            assert.is_truthy(row:find('^%S'))
             assert.is_falsy(row:find('#', 1, true))
             assert.is_falsy(row:find('●', 1, true))
         end
-
-        require('read_mode').exit(0)
     end)
 
     it('renders a table as a grid and leaves the cursor row raw', function()

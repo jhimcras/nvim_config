@@ -13,12 +13,14 @@
 -- Continuation rows and table cells re-create inline styling (bold, italic,
 -- `code`, links, ...) from the treesitter highlight queries, including their
 -- conceal of syntax markers, so they match real buffer lines rendered at
--- conceallevel=2. Known limitation: render-markdown decorations added via
--- extmarks (link icons, checkbox glyphs) cannot be reproduced there, so e.g.
--- [text](url) shows as plain "text" without the icon inside virtual rows.
+-- conceallevel=2. Known limitation: decorations added via extmarks cannot be
+-- reproduced there, only conceals and highlights -- rendermark.deco therefore
+-- hands back the block-quote bar explicitly (see deco.prefix_chunks) so at least
+-- that one survives the wrap.
 
 local M = {}
 local wrap_text = require('rendermark.wrap.text')
+local deco = require('rendermark.deco')
 
 local defaults = {
     markdown = true,
@@ -72,7 +74,7 @@ end
 -- Continuation indent (display columns) for a logical line, so wrapped rows hang
 -- under the line's text the way a browser renders it.
 function M.compute_indent(text)
-    return wrap_text.compute_indent(text)
+    return wrap_text.compute_indent(text, deco.metrics())
 end
 
 local function slice_concat(t, a, b)
@@ -117,7 +119,7 @@ end
 -- collects highlight-query captures, so virtual continuation rows and table cells
 -- can re-create the styling that real buffer lines get from the highlighter.
 -- extra_conceals (from collect_deco) is an optional row -> interval list of
--- foreign-namespace (render-markdown) conceal ranges. They are merged into the
+-- foreign-namespace (rendermark.deco) conceal ranges. They are merged into the
 -- treesitter intervals before flattening so inline[row] is the conceal union.
 local function collect_inline(parser, buf, first, last, extra_conceals)
     local row_lines = vim.api.nvim_buf_get_lines(buf, first, last, false)
@@ -177,11 +179,11 @@ local function collect_inline(parser, buf, first, last, extra_conceals)
     return marks
 end
 
--- Gather display metrics from foreign-namespace buffer extmarks (render-markdown
+-- Gather display metrics from foreign-namespace buffer extmarks (rendermark.deco
 -- decorations) over rows [first, last). Returns two row-keyed tables:
 --   conceals[row] = { { s, e, hl, conceal, priority, seq }, ... }
 --                   conceal ranges AND plain hl_group highlights (e.g.
---                   render-markdown's checkbox scope_highlight, or our own
+--                   deco's dimmed sub-list under a checked item, or our own
 --                   custom_handlers dim marks) to merge into collect_inline
 --                   (width + styling) so wrapped continuation rows stay styled
 --   inserts[row]  = { { b = byte_col, w = displaywidth }, ... }
@@ -705,7 +707,7 @@ local function render_range(buf, first, last, width, cursor_row, images_active)
     -- still limited to the visible range. The parser/tree are cached.
     local in_code, in_table, tables = {}, {}, {}
     local inline = {} -- row -> flattened inline highlight/conceal runs
-    -- render-markdown (and other foreign) extmark metrics: concealed ranges are
+    -- rendermark.deco (and any other foreign) extmark metrics: concealed ranges are
     -- merged into inline below; inline virt_text icon widths are added to the
     -- wrap-point computation so the break matches the actually displayed width.
     local img_ns = vim.api.nvim_create_namespace('rendermark_neopp_images')
@@ -779,10 +781,19 @@ local function render_range(buf, first, last, width, cursor_row, images_active)
                         conceal = '',
                     })
                     local indent_str = string.rep(' ', indent)
+                    -- A block quote repeats its bar instead of padding with blanks,
+                    -- so the vertical rule is not cut off at the wrap. Decorations
+                    -- from extmarks cannot be replayed inside virt_lines, so deco
+                    -- hands us the chunks to re-emit here.
+                    local pre = deco.prefix_chunks(text, indent)
                     local vlines = {}
                     for k = 1, #r.lines do
                         local chunks = {}
-                        if indent > 0 then
+                        if pre then
+                            for _, c in ipairs(pre) do
+                                push_chunk(chunks, c[1], with_base(c[2]))
+                            end
+                        elseif indent > 0 then
                             push_chunk(chunks, indent_str, with_base(nil))
                         end
                         slice_chunks(chunks, text, inline[lnum],
@@ -812,6 +823,7 @@ function M.refresh(win)
     end
 
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+    deco.clear(buf)
 
     -- Horizontal scroll (leftcol) is window-global, so it slides every line's real
     -- text, which we can't counter-compensate per line. Treat any horizontal scroll
@@ -848,7 +860,17 @@ function M.refresh(win)
     local cursor_row = vim.w[win].read_mode_active and -1
         or vim.api.nvim_win_get_cursor(win)[1]
     local images_active = require('rendermark.image').is_active()
-    for _, seg in ipairs(visible_segments(win, info.topline, info.botline)) do
+    local segs = visible_segments(win, info.topline, info.botline)
+    -- Decorations first, for every segment: render_range's collect_deco snapshots
+    -- foreign-namespace extmarks to learn each line's real display width, so the
+    -- conceals and inline paddings have to be in the buffer before it runs.
+    -- The rule spans the full window width, not the (right_pad/max_width-capped)
+    -- text column.
+    local rule_width = vim.api.nvim_win_get_width(win) - info.textoff
+    for _, seg in ipairs(segs) do
+        deco.render_range(buf, seg[1], seg[2], rule_width)
+    end
+    for _, seg in ipairs(segs) do
         render_range(buf, seg[1], seg[2], width, cursor_row, images_active)
     end
     win_settled[win] = true
@@ -864,8 +886,8 @@ local function schedule_refresh(win)
     end
     pending[win] = true
     -- Double-deferred: a single vim.schedule can still run before a foreign
-    -- plugin's own same-event vim.schedule callback (e.g. render-markdown's
-    -- decorator recompute, also queued off this same CursorMoved/FileType/etc
+    -- plugin's own same-event vim.schedule callback (a foreign decorator's
+    -- recompute, also queued off this same CursorMoved/FileType/etc
     -- event) -- whichever autocmd was registered first wins that race, and if
     -- this one wins, collect_deco snapshots the buffer's extmarks before the
     -- foreign highlight exists (only visible on a jump into never-rendered
@@ -930,6 +952,7 @@ function M.disable(win)
     local buf = vim.api.nvim_win_get_buf(w)
 
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+    deco.clear(buf)
     vim.b[buf].markdown_visual_wrap = false
 
     local saved = saved_state[w]
@@ -956,8 +979,7 @@ local function apply_current_window()
     -- Don't decorate floating preview windows (LSP hover, signature help, etc.).
     -- Their narrow, fixed width plus the left_pad statuscolumn make stylize_markdown's
     -- full-width separator rules wrap and long lines truncate; Neovim's built-in
-    -- markdown stylize already handles these floats (render-markdown.nvim likewise
-    -- skips them via the nofile buftype override).
+    -- markdown stylize already handles these floats.
     if vim.api.nvim_win_get_config(0).relative ~= '' then
         return
     end

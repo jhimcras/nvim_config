@@ -3,10 +3,11 @@
 -- The cursor and cursorline are hidden, editing is blocked, navigation is pure
 -- scrolling. Works on any filetype; when the current buffer is rendered by the
 -- rendermark plugin, its raw-fallback reveals (wrap unfolding the cursor line,
--- render-markdown anti-conceal, image-link reveal, PlantUML preview) are also
--- neutralised via rendermark.wrap/rendermark.image/rendermark.rm_compat calling
--- back into M.is_active(win) -- this module has no hard dependency on
--- rendermark and must keep working with none of it loaded.
+-- image-link reveal, PlantUML preview) are also neutralised via
+-- rendermark.wrap/rendermark.image calling back into M.is_active(win) -- this
+-- module has no hard dependency on rendermark and must keep working with none of
+-- it loaded. The cursor line's own conceal is handled here, by raising
+-- 'concealcursor' for the duration.
 --
 -- State is per WINDOW, not per buffer: the same buffer split across two windows
 -- can have one in READ mode and the other in Normal mode. <leader>r toggles from
@@ -16,10 +17,10 @@
 local ut = require 'util'
 local M = {}
 
-local win_state = {}     -- win -> { buf, saved_modifiable, saved_cursorline, saved_relativenumber, saved_scrolloff }
+local win_state = {}     -- win -> { buf, saved_modifiable, saved_cursorline, saved_relativenumber, saved_scrolloff, saved_concealcursor }
 local mapped_bufs = {}   -- buf -> true once j/k/<Esc> are installed for that buffer
 local saved_guicursor = nil
-local global_applied = false -- whether guicursor/rm_compat suppression is currently ON
+local global_applied = false -- whether the guicursor suppression is currently ON
 
 local search_state = {} -- win -> { anchor = {line, col}, hl_id }
 local search_ns = vim.api.nvim_create_namespace('read_mode_search')
@@ -28,11 +29,6 @@ local search_ns = vim.api.nvim_create_namespace('read_mode_search')
 -- capture it before clamping back to column 0 itself -- pin_current_view must
 -- not clobber that column out from under it first.
 local resolving_search = false
-
-local function rm()
-    local ok, mod = pcall(require, 'rendermark.rm_compat')
-    return ok and mod or nil
-end
 
 local function wrap_refresh(win)
     local ok, wrap = pcall(require, 'rendermark.wrap')
@@ -76,13 +72,9 @@ local function restore_cursor()
     end
 end
 
--- guicursor and render-markdown's anti-conceal/concealcursor are editor-global:
--- Neovim only ever shows one cursor, in the focused window, so gate these on
--- whether the FOCUSED window is active, not any window. Note: while the focused
--- window is reading, this briefly suppresses anti-conceal editor-wide, so an
--- unfocused Normal-mode markdown split's own cursor line won't reveal raw
--- syntax until it regains focus -- an accepted limitation of a plugin-global
--- setting, not fixable from here.
+-- guicursor is editor-global: Neovim only ever shows one cursor, in the focused
+-- window, so gate it on whether the FOCUSED window is active, not any window.
+-- ('concealcursor' is window-local and is handled in M.enter/M.exit instead.)
 local function sync_global(win)
     win = resolve_win(win)
     local should = M.is_active(win)
@@ -92,18 +84,8 @@ local function sync_global(win)
     global_applied = should
     if should then
         hide_cursor()
-        local m = rm()
-        if m then
-            m.set_anti_conceal(false)
-            m.set_conceal_cursor('nvic')
-        end
     else
         restore_cursor()
-        local m = rm()
-        if m then
-            m.set_anti_conceal(true)
-            m.set_conceal_cursor(nil)
-        end
     end
 end
 
@@ -283,6 +265,7 @@ function M.enter(win)
         saved_cursorline = vim.wo[win].cursorline,
         saved_relativenumber = vim.wo[win].relativenumber,
         saved_scrolloff = vim.wo[win].scrolloff,
+        saved_concealcursor = vim.wo[win].concealcursor,
     }
     -- Window-local flag other modules (rendermark/wrap.lua, rendermark/image.lua)
     -- can read without requiring this module, so read_mode stays decoupled from them.
@@ -291,6 +274,11 @@ function M.enter(win)
     vim.wo[win].cursorline = false
     vim.wo[win].relativenumber = false
     vim.wo[win].scrolloff = 0
+    -- Conceal the cursor's own line too. Outside READ mode 'concealcursor' is left
+    -- empty on purpose, so the line under the cursor reveals its raw markdown; here
+    -- the cursor is hidden and every line should render, matching the cursor_row
+    -- sentinel rendermark.wrap uses for READ windows.
+    vim.wo[win].concealcursor = 'nvic'
 
     vim.api.nvim_win_call(win, function()
         local view = vim.fn.winsaveview()
@@ -315,6 +303,7 @@ function M.exit(win)
         vim.wo[win].cursorline = st.saved_cursorline
         vim.wo[win].relativenumber = st.saved_relativenumber
         vim.wo[win].scrolloff = st.saved_scrolloff
+        vim.wo[win].concealcursor = st.saved_concealcursor or ''
         vim.w[win].read_mode_active = nil
     end
     local buf = st.buf

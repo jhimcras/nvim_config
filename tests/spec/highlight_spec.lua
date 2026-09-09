@@ -13,7 +13,7 @@ describe('highlight', function()
         end
 
         assert.is_true(defined('QuickFixLine'))
-        assert.is_true(defined('RenderMarkdownH1Bg'))
+        assert.is_true(defined('TabLineImeHangul'))
         assert.is_true(defined('TabLineSel'))
         assert.is_true(defined('AnsiBlack'))
         assert.is_true(defined('StatuslineGeneralActive_1_n'))

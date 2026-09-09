@@ -403,6 +403,28 @@ function M.SynStack()
     vim.notify(syn_stack, vim.log.levels.INFO)
 end
 
+-- Shift a color toward white (pct > 0) or black (pct < 0) by pct% of the distance
+-- left to that end, and return it as '#RRGGBB'. Used to derive the markdown code
+-- block background from 'Normal', so it tracks the colorscheme instead of being
+-- pinned to a literal hex. `rgb` takes either an '#RRGGBB' string or the packed
+-- number nvim_get_hl() returns for fg/bg.
+function M.shade(rgb, pct)
+    if type(rgb) == 'string' then
+        rgb = tonumber(rgb:gsub('^#', ''), 16)
+    end
+    if type(rgb) ~= 'number' then
+        return nil
+    end
+    local out = 0
+    for _, shift in ipairs({ 16, 8, 0 }) do
+        local c = math.floor(rgb / 2 ^ shift) % 256
+        local target = pct >= 0 and 255 or 0
+        c = math.floor(c + (target - c) * math.abs(pct) / 100 + 0.5)
+        out = out + math.max(0, math.min(255, c)) * 2 ^ shift
+    end
+    return string.format('#%06X', out)
+end
+
 function M.set_highlight(name, args)
     if type(args) == 'table' then
         local a = { name }

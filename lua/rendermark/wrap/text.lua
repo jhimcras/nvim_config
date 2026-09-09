@@ -6,14 +6,27 @@ function M.dw(s)
     return vim.fn.strdisplaywidth(s)
 end
 
-function M.compute_indent(text)
+-- Hanging indent (display columns) for a logical line's continuation rows.
+--
+-- `render` (optional) describes what rendermark.deco actually DRAWS, for the two
+-- prefixes whose rendered width no longer matches the source:
+--   render.checkbox : columns the '- [ ] ' prefix collapses to (glyph + space)
+--   render.heading  : indent columns per heading level (0 = flush left)
+-- Called without it the result is the raw-text width, as before.
+function M.compute_indent(text, render)
     local marker = vim.fn.matchstr(text, list_pat)
     if marker ~= '' then
+        if render and render.checkbox and marker:match('%[.%]%s*$') then
+            return M.dw(marker:match('^%s*')) + render.checkbox
+        end
         return M.dw(marker)
     end
-    local heading = text:match('^%s*#+%s+')
-    if heading then
-        return M.dw(heading)
+    local hashes = text:match('^%s*(#+)%s+')
+    if hashes then
+        if render and render.heading then
+            return M.dw(text:match('^%s*')) + (#hashes - 1) * render.heading
+        end
+        return M.dw(text:match('^%s*#+%s+'))
     end
     local quote = text:match('^%s*>[%s>]*')
     if quote then

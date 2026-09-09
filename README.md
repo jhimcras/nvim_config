@@ -72,7 +72,6 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 **UI**
 - `sam4llis/nvim-tundra` — colorscheme
 - `norcalli/nvim-colorizer.lua` — color preview
-- `MeanderingProgrammer/render-markdown.nvim` — draws headings/checkboxes/links/code blocks; `lua/rendermark/` layers soft-wrap, image previews, link navigation/completion and checkbox toggling on top (only `lua/rendermark/rm_compat.lua` touches the plugin directly)
 
 **Misc**
 - `weirongxu/plantuml-previewer.vim` — PlantUML preview

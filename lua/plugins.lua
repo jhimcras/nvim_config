@@ -43,12 +43,6 @@ function M.setup()
         { 'sam4llis/nvim-tundra', config = require('plugins.colorscheme').setup },
         -- { 'catppuccin/nvim', config = SetColorsAndHighlighting },
 
-        {
-            'MeanderingProgrammer/render-markdown.nvim',
-            requires = {'nvim-treesitter/nvim-treesitter'},
-            config = require('plugins.markdown').setup,
-            cond = event({'FileType'}, {'markdown'}),
-        },
         { 'norcalli/nvim-colorizer.lua' },
     }
 

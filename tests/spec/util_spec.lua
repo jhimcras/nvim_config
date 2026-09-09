@@ -124,3 +124,27 @@ describe('util.memoize_ttl', function()
         assert.equals(2, count)
     end)
 end)
+
+describe('util.shade', function()
+    it('mixes toward white for a positive percentage', function()
+        assert.equals('#808080', ut.shade('#000000', 50))
+        assert.equals('#FFFFFF', ut.shade('#000000', 100))
+    end)
+
+    it('mixes toward black for a negative percentage', function()
+        assert.equals('#808080', ut.shade('#ffffff', -50))
+        assert.equals('#000000', ut.shade('#ffffff', -100))
+    end)
+
+    it('is a no-op at 0%', function()
+        assert.equals('#1E1E2E', ut.shade('#1e1e2e', 0))
+    end)
+
+    it('accepts the packed number nvim_get_hl returns', function()
+        assert.equals(ut.shade('#1e1e2e', 8), ut.shade(0x1e1e2e, 8))
+    end)
+
+    it('returns nil when there is no color to shade', function()
+        assert.is_nil(ut.shade(nil, 8))
+    end)
+end)

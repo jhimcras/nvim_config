@@ -43,17 +43,6 @@ local statusline_highlights = {
 function M.setup()
     ut.set_highlight('QuickFixLine', { gui='underline' })
 
-    ut.set_highlight('RenderMarkdownH1Bg', { guibg='#3B2C3C' })
-    ut.set_highlight('RenderMarkdownH2Bg', { guibg='#3A352C' })
-    ut.set_highlight('RenderMarkdownH3Bg', { guibg='#1F343D' })
-    ut.set_highlight('RenderMarkdownH4Bg', { guibg='#28304D' })
-    ut.set_highlight('RenderMarkdownH5Bg', { guibg='#32313A' })
-    ut.set_highlight('@markup.heading.1.markdown', { guifg='#FECDD3' })
-    ut.set_highlight('@markup.heading.2.markdown', { guifg='#E8D4B0' })
-    ut.set_highlight('@markup.heading.3.markdown', { guifg='#B5E8B0' })
-    ut.set_highlight('@markup.heading.4.markdown', { guifg='#A5B4FC' })
-    ut.set_highlight('@markup.heading.5.markdown', { guifg='#DDD6FE' })
-
     ut.set_highlight('TabLineSel', {gui = 'bold,italic'})
     ut.set_highlight('TabLineImeHangul', { guibg = '#a6e3a1', guifg = '#1e1e2e', gui = 'bold' })
     ut.set_highlight('TabLineImeEng',    { guibg = '#45475a', guifg = '#cdd6f4' })
