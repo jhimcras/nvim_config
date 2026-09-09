@@ -379,10 +379,46 @@ describe('deco rendering', function()
         end
     end)
 
-    it('dims the sub-list nested under a checked item', function()
-        render({ '- [x] done', '  - sub', 'tail' })
-        -- the mark spans the nested list, so it starts on the sub-item's own row
+    it('dims a checked item and its whole sub-tree', function()
+        render({ '- [x] done', '  more', '  - sub', 'tail' })
+        -- the item's own text (past the checkbox), its lazy continuation and the
+        -- nested list all carry the dim
+        local d, col = find(0, function(x) return x.hl_group == 'Comment' end)
+        assert.is_truthy(d)
+        assert.equals(5, col) -- past the '[x]' the glyph replaces
+        assert.equals(#'- [x] done', d.end_col)
+        for _, lnum in ipairs({ 1, 2 }) do
+            local m = find(lnum, function(x) return x.hl_group == 'Comment' end)
+            assert.is_truthy(m)
+            assert.equals(0, select(2, find(lnum,
+                function(x) return x.hl_group == 'Comment' end)))
+        end
+    end)
+
+    it('leaves an unchecked item undimmed', function()
+        render({ '- [ ] todo', '  - sub', 'tail' })
+        assert.is_nil(find(0, function(d) return d.hl_group == 'Comment' end))
+        assert.is_nil(find(1, function(d) return d.hl_group == 'Comment' end))
+    end)
+
+    it('skips code block and table rows inside a checked item', function()
+        render({
+            '- [x] done',
+            '  text',
+            '',
+            '  ```lua',
+            '  local x = 1',
+            '  ```',
+            '',
+            '  | a | b |',
+            '  | - | - |',
+            '  | 1 | 2 |',
+            'tail',
+        })
         assert.is_truthy(find(1, function(d) return d.hl_group == 'Comment' end))
+        for _, lnum in ipairs({ 3, 4, 5, 7, 8, 9 }) do
+            assert.is_nil(find(lnum, function(d) return d.hl_group == 'Comment' end))
+        end
     end)
 
     it('renders a setext underline as a rule too, not just a standalone ---', function()

@@ -270,8 +270,26 @@ local function list_depth(node)
     return depth
 end
 
+-- Rows inside `node` that carry verbatim or tabular content, which the dim of a
+-- checked item has to leave alone (the code block's own background and the
+-- table's own colors would otherwise be flattened to Comment).
+local function collect_verbatim_rows(node, out)
+    for child in node:iter_children() do
+        local t = child:type()
+        if t == 'fenced_code_block' or t == 'indented_code_block'
+            or t == 'pipe_table' then
+            local r1, _, r2, c2 = child:range()
+            for row = r1, (c2 == 0 and r2 - 1 or r2) do
+                out[row] = true
+            end
+        else
+            collect_verbatim_rows(child, out)
+        end
+    end
+end
+
 local function render_list_item(buf, node)
-    local marker, box, checked, sublist
+    local marker, box, checked
     for child in node:iter_children() do
         local t = child:type()
         if t:match('^list_marker_') then
@@ -280,8 +298,6 @@ local function render_list_item(buf, node)
             box, checked = child, false
         elseif t == 'task_list_marker_checked' then
             box, checked = child, true
-        elseif t == 'list' then
-            sublist = child
         end
     end
     if not marker then
@@ -298,6 +314,7 @@ local function render_list_item(buf, node)
         return
     end
     local c_s = m_s + off - 1
+    local box_end = c_s
 
     if box then
         -- '- [ ] ' -> '<glyph> ': the list marker goes entirely, the glyph replaces
@@ -306,6 +323,7 @@ local function render_list_item(buf, node)
         local glyph = checked and config.checkbox.checked or config.checkbox.unchecked
         local hl = checked and 'RendermarkChecked' or 'RendermarkUnchecked'
         local head = vim.fn.strcharpart(glyph, 0, 1)
+        box_end = b_e
         mark(buf, row, c_s, { end_col = m_e, conceal = '' })
         mark(buf, row, b_s, { end_col = b_e, conceal = head, hl_group = hl })
         -- Whatever the glyph string carries past its first character cannot go into
@@ -331,16 +349,29 @@ local function render_list_item(buf, node)
         end
     end
 
-    -- Dim the sub-list nested under a completed item; the checked item's own line is
-    -- dimmed too, since neither is covered by the checkbox glyph's highlight.
-    if checked and config.dim_checked_sublist and sublist then
-        local s_row, s_col, e_row, e_col = sublist:range()
-        mark(buf, s_row, s_col, {
-            end_row = e_row,
-            end_col = e_col,
-            hl_group = 'Comment',
-            hl_eol = true,
-        })
+    -- Dim a completed item whole: its own text and everything nested under it.
+    -- Row by row rather than one range mark, so verbatim rows (a fenced or
+    -- indented code block, a table) can be left with their own colors, and so
+    -- collect_deco -- which only forwards single-row hl_group marks with a real
+    -- end_col -- can re-apply the dim to wrapped continuation rows.
+    if checked and config.dim_checked_sublist then
+        local i_row, _, e_row, e_col = node:range()
+        local skip = {}
+        collect_verbatim_rows(node, skip)
+        for r = i_row, (e_col == 0 and e_row - 1 or e_row) do
+            local text = line_at(buf, r)
+            -- The first row starts past the checkbox so the glyph keeps its own
+            -- highlight; deeper rows are dimmed from column 0.
+            local from = r == i_row and box_end or 0
+            if text and #text > from and not skip[r] then
+                mark(buf, r, from, {
+                    end_row = r,
+                    end_col = #text,
+                    hl_group = 'Comment',
+                    hl_eol = true,
+                })
+            end
+        end
     end
 end
 
