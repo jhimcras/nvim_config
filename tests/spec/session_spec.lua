@@ -207,6 +207,13 @@ describe('session cmdheight fix on VimEnter', function()
         assert.are.equal(1, vim.o.cmdheight)
     end)
 
+    it('normalises cmdheight on TabEnter', function()
+        session.setup()
+        vim.o.cmdheight = 7
+        vim.api.nvim_exec_autocmds('TabEnter', {})
+        assert.are.equal(1, vim.o.cmdheight)
+    end)
+
     it('normalises cmdheight on VimResized without a session', function()
         session.setup()
         vim.o.cmdheight = 7

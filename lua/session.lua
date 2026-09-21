@@ -643,7 +643,8 @@ function M.setup()
 
     -- A resize reflows windows against the new &lines/&columns, and rows that
     -- don't tile evenly get absorbed into cmdheight, as in mksession's restore.
-    vim.api.nvim_create_autocmd("VimResized", {
+    -- Entering a tab whose layout was sized for another screen does the same.
+    vim.api.nvim_create_autocmd({ "VimResized", "TabEnter" }, {
         group = cmdheight_fix_group,
         callback = function()
             vim.o.cmdheight = 1
