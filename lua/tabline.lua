@@ -105,6 +105,20 @@ local function tabline_vis_end(offset, widths, total, avail)
     return vend
 end
 
+-- Largest offset that still shows the last tab; scrolling further would only
+-- leave blank space on the left.
+local function max_tab_offset(total)
+    local used = 0
+    local offset = total + 1
+    for i = total, 1, -1 do
+        local avail = vim.o.columns - session_width - ime_width - (i > 1 and 3 or 0)
+        if used + widths[i] > avail then break end
+        used = used + widths[i]
+        offset = i
+    end
+    return math.min(offset, total)
+end
+
 -- Rebuild the per-tab title/width cache. Expensive (M.tabtitle walks every tab's
 -- buffers and resolves project roots), so only tab-content events call it.
 local function rebuild_titles()
@@ -149,6 +163,9 @@ local function render()
             end
         end
     end
+
+    -- Never leave room unused: pull the offset back so the tail fills the line
+    tab_offset = math.min(tab_offset, max_tab_offset(total))
 
     -- known before visible_end is computed
     local left_cur_hidden = cur < tab_offset
@@ -210,17 +227,7 @@ function M.tab_scroll(delta)
     local new_offset = math.max(1, math.min(total, tab_offset + delta))
 
     if delta > 0 then
-        -- Find the first offset where the last tab is visible; don't scroll past it
-        local max_offset = total
-        for offset = 1, total do
-            local left_ind_w = offset > 1 and 3 or 0
-            local avail = vim.o.columns - session_width - ime_width - left_ind_w
-            if tabline_vis_end(offset, widths, total, avail) >= total then
-                max_offset = offset
-                break
-            end
-        end
-        new_offset = math.min(new_offset, max_offset)
+        new_offset = math.min(new_offset, max_tab_offset(total))
     end
 
     tab_offset = new_offset
