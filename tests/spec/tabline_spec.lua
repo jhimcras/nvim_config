@@ -42,4 +42,12 @@ describe('tabline', function()
         vim.o.columns = 300
         assert.is_true(visible_tabs(tabline.TabLine()) > 4)
     end)
+
+    it('repaints on VimResized without an explicit TabLine call', function()
+        vim.cmd('tablast')
+        tabline.TabLine()
+        vim.o.columns = 300
+        vim.api.nvim_exec_autocmds('VimResized', {})
+        assert.is_true(visible_tabs(vim.o.tabline) > 4)
+    end)
 end)

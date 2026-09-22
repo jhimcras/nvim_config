@@ -268,6 +268,11 @@ function M.setup()
         rebuild_ime()
         vim.go.tabline = render()
     end
+    -- Window resize (incl. GUI fullscreen toggle): titles/highlights are
+    -- unchanged, but render()'s scroll math depends on vim.o.columns.
+    local function paint_resize()
+        vim.go.tabline = render()
+    end
 
     -- Set before paint_tabs so auto-scroll applies. prev_tabpage is derived here
     -- rather than from TabLeave, which also fires for the tab :tabclose is closing
@@ -305,6 +310,7 @@ function M.setup()
     vim.api.nvim_create_autocmd('SessionLoadPost', { callback = paint_session })
     -- neopp fires this on every toggle; refresh just the indicator.
     vim.api.nvim_create_autocmd('User', { pattern = 'NeoppImeChanged', callback = paint_ime })
+    vim.api.nvim_create_autocmd('VimResized', { callback = paint_resize })
 end
 
 return M
