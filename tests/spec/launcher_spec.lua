@@ -40,6 +40,43 @@ describe('launcher', function()
     end)
 end)
 
+describe('launcher.WipeLauncherBuffers', function()
+    it('force-deletes only launcher buffers matching the current prjroot, terminating any running process', function()
+        local root_a = vim.fn.tempname()
+        local root_b = vim.fn.tempname()
+
+        local matching_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_var(matching_buf, 'prjroot_folder', root_a)
+
+        local running_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_var(running_buf, 'prjroot_folder', root_a)
+        local terminated = false
+        require('launcher').RegisterProcess(running_buf, {
+            type = 'general',
+            terminate = function() terminated = true end,
+        })
+
+        local other_prjroot_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_var(other_prjroot_buf, 'prjroot_folder', root_b)
+
+        -- The current buffer must not itself carry prjroot_folder = root_a, or
+        -- WipeLauncherBuffers would wipe it out from under the test.
+        local original_get_root = require('prjroot').GetCurrentProjectRoot
+        require('prjroot').GetCurrentProjectRoot = function() return root_a end
+
+        launcher.WipeLauncherBuffers()
+
+        require('prjroot').GetCurrentProjectRoot = original_get_root
+
+        assert.is_false(vim.api.nvim_buf_is_valid(matching_buf))
+        assert.is_false(vim.api.nvim_buf_is_valid(running_buf))
+        assert.is_true(terminated)
+        assert.is_true(vim.api.nvim_buf_is_valid(other_prjroot_buf))
+
+        vim.api.nvim_buf_delete(other_prjroot_buf, { force = true })
+    end)
+end)
+
 describe('launcher.Jump filename resolution', function()
     after_each(function()
         -- Jump may open a split (vsplit fallback / copen); keep tests isolated.
