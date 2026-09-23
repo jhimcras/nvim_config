@@ -40,6 +40,43 @@ describe('launcher', function()
     end)
 end)
 
+describe('launcher.Restore', function()
+    it('marks a saved running process as terminated', function()
+        local buf = launcher.Restore({ obj = 'build', cmd = 'make', status = 'running', content = { 'output' } })
+
+        assert.are.equal('terminated', vim.b[buf].launcher_status)
+        assert.are.same({ 'output' }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+        assert.is_nil(launcher.running_processes[buf])
+
+        vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it('preserves a saved completed status', function()
+        local buf = launcher.Restore({ obj = 'build', cmd = 'make', status = 'done' })
+
+        assert.are.equal('done', vim.b[buf].launcher_status)
+
+        vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it('restores when another buffer already has its expected name', function()
+        local existing = vim.api.nvim_create_buf(false, true)
+        local expected_buf = vim.fn.bufnr('$') + 1
+        local expected_name = string.format('(%d) build', expected_buf)
+        vim.api.nvim_buf_set_name(existing, expected_name)
+
+        local restored = launcher.Restore({ obj = 'build', cmd = 'make', status = 'running' })
+
+        assert.are.equal(expected_buf, restored)
+        assert.are.equal(vim.fn.fnamemodify(expected_name, ':p'), vim.api.nvim_buf_get_name(existing))
+        assert.are.equal(vim.fn.fnamemodify(expected_name .. ' [restored]', ':p'), vim.api.nvim_buf_get_name(restored))
+        assert.are.equal('terminated', vim.b[restored].launcher_status)
+
+        vim.api.nvim_buf_delete(restored, { force = true })
+        vim.api.nvim_buf_delete(existing, { force = true })
+    end)
+end)
+
 describe('launcher.CloseLauncherBuffer', function()
     local util = require('util')
     local original_async, original_confirm

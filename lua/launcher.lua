@@ -62,7 +62,7 @@ function M.Restore(data)
     api.nvim_buf_set_var(buf, 'lc_object', data.obj)
     api.nvim_buf_set_var(buf, 'lc_command', data.cmd_full or data.cmd)
     api.nvim_buf_set_var(buf, 'prjroot_folder', data.prjroot)
-    api.nvim_buf_set_var(buf, 'launcher_status', data.status or 'done')
+    api.nvim_buf_set_var(buf, 'launcher_status', data.status == 'running' and 'terminated' or (data.status or 'done'))
     api.nvim_buf_set_var(buf, 'launcher_matches', data.matches or {})
     api.nvim_buf_set_var(buf, 'this_buf_can_be_closed', true)
     
@@ -81,7 +81,11 @@ function M.Restore(data)
     M.set_launcher_mapping(buf)
     
     if data.obj then
-        api.nvim_buf_set_name(buf, string.format("(%d) %s", buf, data.obj))
+        local name = string.format("(%d) %s", buf, data.obj)
+        while vim.fn.bufnr(name) ~= -1 do
+            name = name .. ' [restored]'
+        end
+        api.nvim_buf_set_name(buf, name)
     end
     
     return buf
