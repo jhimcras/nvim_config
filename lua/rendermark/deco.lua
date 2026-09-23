@@ -301,6 +301,12 @@ local function collect_verbatim_rows(node, out)
     end
 end
 
+local function list_marker_col(line)
+    local indent = line:match('^(%s*)[%-%*%+]%s+')
+        or line:match('^(%s*)%d+[%.%)]%s+')
+    return indent and #indent or nil
+end
+
 local function render_list_item(buf, node, cur)
     local marker, box, checked
     for child in node:iter_children() do
@@ -370,6 +376,13 @@ local function render_list_item(buf, node, cur)
         collect_verbatim_rows(node, skip)
         for r = i_row, (e_col == 0 and e_row - 1 or e_row) do
             local text = line_at(buf, r)
+            -- The markdown parser can absorb a following item into this node when
+            -- both are indented four spaces. A marker at this item's depth (or
+            -- shallower) is a sibling, not part of the checked item's sub-tree.
+            local next_marker = r > i_row and text and list_marker_col(text)
+            if next_marker and next_marker <= c_s then
+                break
+            end
             -- Start past the checkbox so the glyph keeps its highlight.
             local from = r == i_row and box_end or 0
             if text and #text > from and not skip[r] then

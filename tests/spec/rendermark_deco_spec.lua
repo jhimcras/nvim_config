@@ -435,6 +435,12 @@ describe('deco rendering', function()
         assert.is_nil(find(1, function(d) return d.hl_group == 'Comment' end))
     end)
 
+    it('does not dim the item after a checked nested item', function()
+        render({ '- [ ] Test', '    - [x] sub1', '    - [ ] sub2', 'tail' })
+        assert.is_truthy(find(1, function(d) return d.hl_group == 'Comment' end))
+        assert.is_nil(find(2, function(d) return d.hl_group == 'Comment' end))
+    end)
+
     it('skips code block and table rows inside a checked item', function()
         render({
             '- [x] done',
