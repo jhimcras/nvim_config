@@ -579,10 +579,11 @@ function M.LaunchObject(obj)
                 if proc then
                     local choice = vim.fn.confirm(string.format('Process [%s] is still running. Replace?', obj), "&Yes\n&No", 2)
                     if choice ~= 1 then
-                        -- Already visible: focus it
-                        local wins = vim.fn.win_findbuf(existing_buf)
-                        if #wins > 0 then
-                            vim.api.nvim_set_current_win(wins[1])
+                        if lcfg.focus == true then
+                            local wins = vim.fn.win_findbuf(existing_buf)
+                            if #wins > 0 then
+                                vim.api.nvim_set_current_win(wins[1])
+                            end
                         end
                         return
                     end
@@ -614,8 +615,9 @@ function M.LaunchObject(obj)
                         vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), existing_buf)
                         vim.api.nvim_buf_delete(temp_buf, { force = true })
                     else
-                        -- Already visible: focus it
-                        vim.api.nvim_set_current_win(wins[1])
+                        if lcfg.focus == true then
+                            vim.api.nvim_set_current_win(wins[1])
+                        end
                     end
                 end
             end

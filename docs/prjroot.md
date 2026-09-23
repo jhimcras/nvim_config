@@ -120,6 +120,7 @@ return {
 | `key` | string | no | Buffer-local normal keymap that triggers this launcher |
 | `env` | table | no | Extra environment variables as `{ KEY = 'value' }` |
 | `position` | table or `'external'` | no | Where to open the output buffer. `{ orientation = 'vertical' }` (default), `'horizontal'`, `'tab'`, or `'external'` (no window, background only) |
+| `focus` | boolean | no | Focus the output window when `true`; otherwise keep focus in the invoking window. Defaults to `false`. |
 | `highlight` | table | no | `{ pattern = 'HlGroup' }` pairs — matched with `matchadd` in the output buffer |
 | `patterns` | table | no | Named output-line matchers used to extract jump targets (`<CR>` in the output buffer). See below. |
 
