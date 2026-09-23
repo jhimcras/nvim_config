@@ -111,7 +111,7 @@ describe('session.SaveSession', function()
         local original_cmd = vim.cmd
         local original_notify = vim.notify
         local original_go = vim.go
-        vim.cmd = function() end
+        vim.cmd = setmetatable({}, { __index = original_cmd, __call = function() end })
         vim.notify = function() end
         vim.go = { tabline = '' }
 
@@ -224,6 +224,7 @@ describe('session cmdheight fix on VimEnter', function()
 end)
 
 describe('session QuitPre exit guard', function()
+    local launcher = require('launcher')
     local original_confirm
     local original_get_running_processes
     local original_cmd
@@ -270,6 +271,22 @@ describe('session QuitPre exit guard', function()
         return bufnr
     end
 
+    local function make_running_launcher(filetype, modified)
+        local bufnr = vim.api.nvim_create_buf(true, false)
+        vim.bo[bufnr].filetype = filetype
+        vim.b[bufnr].lc_object = 'Hidden build'
+        vim.bo[bufnr].modified = modified or false
+        local stopped = false
+        launcher.RegisterProcess(bufnr, {
+            type = filetype == 'terminal' and 'terminal' or 'general',
+            obj = 'Hidden build',
+            buf = bufnr,
+            terminate = function(signal) stopped = signal == 15 end,
+        })
+        session.get_running_processes = original_get_running_processes
+        return bufnr, function() return stopped end
+    end
+
     before_each(function()
         cleanup_buffers()
         confirm_msg = nil
@@ -299,6 +316,11 @@ describe('session QuitPre exit guard', function()
         vim.fn.confirm = original_confirm
         session.get_running_processes = original_get_running_processes
         vim.cmd = original_cmd
+        for buf in pairs(launcher.running_processes) do
+            launcher.UnregisterProcess(buf)
+        end
+        pcall(vim.cmd, 'silent! tabonly!')
+        pcall(vim.cmd, 'silent! only!')
         cleanup_buffers()
     end)
 
@@ -387,5 +409,99 @@ describe('session QuitPre exit guard', function()
         assert.truthy(confirm_msg:find('Stop processes, ignore unsaved changes, and continue?', 1, true))
         assert.same('&Stop and Ignore\n&Cancel', confirm_choices)
         assert.same(2, confirm_default)
+    end)
+
+    it('guards a hidden launcher in a clean buffer on programmatic :qa', function()
+        setup_exit_guard()
+        local buf, stopped = make_running_launcher('launcher', false)
+        confirm_result = 2
+
+        vim.cmd('qa')
+
+        assert.truthy(confirm_msg:find('Hidden build', 1, true))
+        assert.same('&Stop and Continue\n&Cancel', confirm_choices)
+        assert.same(2, confirm_default)
+        assert.is_not_nil(launcher.running_processes[buf])
+        assert.is_false(stopped())
+    end)
+
+    it('guards all programmatic quit-all and write-quit aliases', function()
+        setup_exit_guard()
+        local buf, stopped = make_running_launcher('launcher', false)
+        confirm_result = 2
+
+        for _, command in ipairs({ 'qa', 'qall', 'quita', 'quitall', 'wqa', 'wqall', 'xa', 'xall' }) do
+            confirm_msg = nil
+            vim.cmd(command)
+            assert.truthy(confirm_msg and confirm_msg:find('Hidden build', 1, true), command)
+            assert.is_not_nil(launcher.running_processes[buf])
+            assert.is_false(stopped())
+        end
+    end)
+
+    it('guards a terminal launcher on another tab and preserves a modified buffer on Cancel', function()
+        setup_exit_guard()
+        local buf, stopped = make_running_launcher('terminal', true)
+        vim.cmd('tabnew')
+        confirm_result = 2
+
+        vim.cmd('qall')
+
+        assert.truthy(confirm_msg:find('Hidden build', 1, true))
+        assert.same('&Stop and Ignore\n&Cancel', confirm_choices)
+        assert.is_true(vim.bo[buf].modified)
+        assert.is_false(stopped())
+        assert.is_not_nil(launcher.running_processes[buf])
+    end)
+
+    it('includes hidden launcher and external processes when Stop is selected', function()
+        local callback = setup_exit_guard()
+        local buf, stopped = make_running_launcher('launcher', false)
+        local external_stopped = false
+        launcher.RegisterProcess('external-test', {
+            obj = 'External build',
+            terminate = function(signal) external_stopped = signal == 15 end,
+        })
+
+        callback()
+
+        assert.truthy(confirm_msg:find('Hidden build', 1, true))
+        assert.truthy(confirm_msg:find('External build', 1, true))
+        assert.is_true(stopped())
+        assert.is_true(external_stopped)
+    end)
+
+    it('lets bang quit-all commands exit without confirmation or unsaved-buffer blocking', function()
+        local script_path = vim.fn.tempname() .. '.lua'
+        local log_path = vim.fn.tempname()
+        local script = string.format([[
+            local session = require('session')
+            local launcher = require('launcher')
+            session.setup()
+            local buf = vim.api.nvim_create_buf(true, false)
+            vim.bo[buf].filetype = 'launcher'
+            launcher.RegisterProcess(buf, { obj = 'Build', terminate = function() end })
+            vim.api.nvim_set_current_buf(buf)
+            local confirms = 0
+            vim.fn.confirm = function() confirms = confirms + 1; return 2 end
+            vim.api.nvim_create_autocmd('VimLeavePre', {
+                callback = function() vim.fn.writefile({ tostring(confirms) }, %q) end,
+            })
+            vim.bo[buf].modified = %s
+            vim.cmd(%q)
+            vim.fn.writefile({ 'did not exit' }, %q)
+            vim.cmd('qa!')
+        ]], log_path, '%s', '%s', log_path)
+
+        for _, command in ipairs({ 'qa!', 'qall!', 'wqa!', 'xa!' }) do
+            local dirty = command == 'qa!' or command == 'qall!'
+            vim.fn.writefile(vim.split(script:format(tostring(dirty), command), '\n'), script_path)
+            vim.fn.delete(log_path)
+            vim.fn.system({ 'nvim', '--headless', '-u', 'NONE', '--cmd', 'set rtp^=' .. vim.fn.getcwd(), '-c', 'luafile ' .. script_path })
+            assert.same({ '0' }, vim.fn.readfile(log_path), command)
+        end
+
+        vim.fn.delete(script_path)
+        vim.fn.delete(log_path)
     end)
 end)

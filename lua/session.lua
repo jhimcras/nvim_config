@@ -14,6 +14,7 @@ end
 local env = require 'env'
 local api = vim.api
 local ut = require 'util'
+local native_cmd = vim.cmd
 
 local function write_list_file(data, path)
     local ok, content = pcall(vim.inspect, data)
@@ -652,7 +653,46 @@ function M.setup()
     })
 
     local exit_warned = false
+    local skip_quit_guard = false
     local exit_guard_group = vim.api.nvim_create_augroup("ExitGuard", { clear = true })
+    local original_cmd = native_cmd
+
+    local quit_all_commands = { qa = true, qall = true, quita = true, quitall = true }
+    local write_quit_all_commands = { wqa = true, wqall = true, xa = true, xall = true }
+    local function run_forced_quit(command)
+        skip_quit_guard = true
+        local ok, err = pcall(original_cmd, command)
+        skip_quit_guard = false
+        if not ok then error(err) end
+    end
+
+    -- Programmatic vim.cmd('qa') does not expand command-line abbreviations.
+    vim.cmd = setmetatable({}, {
+        __index = original_cmd,
+        __call = function(_, command)
+            if type(command) == 'string' then
+                local name, bang = command:match('^%s*(%a+)(!?)%s*$')
+                if quit_all_commands[name] or write_quit_all_commands[name] then
+                    if bang == '!' then
+                        return run_forced_quit(command)
+                    end
+                    return original_cmd(quit_all_commands[name] and 'SessionQuitAll' or 'SessionWriteQuitAll')
+                end
+            end
+            return original_cmd(command)
+        end,
+    })
+
+    api.nvim_create_autocmd('CmdlineLeavePre', {
+        group = exit_guard_group,
+        callback = function()
+            local name = vim.fn.getcmdline():match('^%s*(%a+)!%s*$')
+            if vim.fn.getcmdtype() == ':' and (quit_all_commands[name] or write_quit_all_commands[name]) then
+                skip_quit_guard = true
+                vim.schedule(function() skip_quit_guard = false end)
+            end
+        end,
+    })
 
     local function abort_exit()
         print("Aborting exit...")
@@ -676,7 +716,7 @@ function M.setup()
     end
 
     local function handle_quit_guard(cancel_mode, force_global)
-        if exit_warned then return true end
+        if exit_warned or skip_quit_guard then return true end
 
         local buf = vim.api.nvim_get_current_buf()
         local wins = vim.api.nvim_list_wins()
@@ -727,10 +767,7 @@ function M.setup()
             -- Only if there are processes besides the current one
             for _, p in ipairs(processes) do
                 if p ~= current_proc then
-                    local p_buf = p.buf or (type(p.key) == 'number' and p.key)
-                    if not p_buf or not vim.api.nvim_buf_is_valid(p_buf) or vim.bo[p_buf].filetype ~= 'launcher' then
-                        table.insert(other_processes, p.obj or p.title or p.cmd or "Process")
-                    end
+                    table.insert(other_processes, p.obj or p.title or p.cmd or "Process")
                 end
             end
             if #other_processes > 0 then
@@ -767,19 +804,21 @@ function M.setup()
         return true
     end
 
-    api.nvim_create_user_command('SessionQuitAll', function()
+    api.nvim_create_user_command('SessionQuitAll', function(opts)
+        if opts.bang then return run_forced_quit('qa!') end
         if handle_quit_guard('return', true) == false then
             return
         end
-        vim.cmd('qa')
-    end, {})
+        original_cmd('qa')
+    end, { bang = true })
 
     vim.cmd([[cnoreabbrev <expr> qa (getcmdtype() == ':' && getcmdline() ==# 'qa' ? 'SessionQuitAll' : 'qa')]])
     vim.cmd([[cnoreabbrev <expr> qall (getcmdtype() == ':' && getcmdline() ==# 'qall' ? 'SessionQuitAll' : 'qall')]])
     vim.cmd([[cnoreabbrev <expr> quita (getcmdtype() == ':' && getcmdline() ==# 'quita' ? 'SessionQuitAll' : 'quita')]])
     vim.cmd([[cnoreabbrev <expr> quitall (getcmdtype() == ':' && getcmdline() ==# 'quitall' ? 'SessionQuitAll' : 'quitall')]])
 
-    api.nvim_create_user_command('SessionWriteQuitAll', function()
+    api.nvim_create_user_command('SessionWriteQuitAll', function(opts)
+        if opts.bang then return run_forced_quit('wqa!') end
         local ok, err = pcall(vim.cmd, 'wall')
         if not ok then
             vim.cmd('redraw')
@@ -789,8 +828,8 @@ function M.setup()
         if handle_quit_guard('return', true) == false then
             return
         end
-        vim.cmd('qa')
-    end, {})
+        original_cmd('qa')
+    end, { bang = true })
 
     vim.cmd([[cnoreabbrev <expr> wqa (getcmdtype() == ':' && getcmdline() ==# 'wqa' ? 'SessionWriteQuitAll' : 'wqa')]])
     vim.cmd([[cnoreabbrev <expr> wqall (getcmdtype() == ':' && getcmdline() ==# 'wqall' ? 'SessionWriteQuitAll' : 'wqall')]])
