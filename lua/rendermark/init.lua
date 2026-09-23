@@ -13,10 +13,12 @@ local deco = require('rendermark.deco')
 local wrap = require('rendermark.wrap')
 local image = require('rendermark.image')
 local checkbox = require('rendermark.checkbox')
+local html = require('rendermark.html')
 
 function M.setup(opts)
     -- Before wrap, so the highlight groups exist by the time it first draws.
     deco.setup(opts)
+    html.setup()
     wrap.setup(opts) -- soft-wrap + tables (registers its own autocmds/command)
     -- Computes placement and drives the neopp image backend via vim.ui.img.
     image.setup(opts)

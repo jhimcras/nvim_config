@@ -12,6 +12,7 @@
 local M = {}
 local wrap_text = require('rendermark.wrap.text')
 local deco = require('rendermark.deco')
+local html = require('rendermark.html')
 
 local defaults = {
     markdown = true,
@@ -422,13 +423,16 @@ end
 -- Map a cell's source chars through the line's inline runs into display items
 -- { c, w, hl, sp }, dropping conceal-"" chars. Layout, wrapping and padding use
 -- these, so the grid stays aligned however many markers were concealed.
-local function styled_cell(chars, runs)
+local function styled_cell(chars, runs, breaks)
     local items = {}
     local function add(c, hl)
         items[#items + 1] = { c = c, w = dw(c), hl = hl, sp = c:match('%s') ~= nil }
     end
     if not runs then
         for _, ch in ipairs(chars) do
+            if breaks and breaks[ch.b] then
+                items[#items + 1] = { c = '', w = 0, br = true }
+            end
             add(ch.c, nil)
         end
         return items
@@ -436,6 +440,9 @@ local function styled_cell(chars, runs)
     local ri = 1
     local emitted = {} -- conceal anchors already replaced
     for _, ch in ipairs(chars) do
+        if breaks and breaks[ch.b] then
+            items[#items + 1] = { c = '', w = 0, br = true }
+        end
         while ri <= #runs and runs[ri].e <= ch.b do
             ri = ri + 1
         end
@@ -463,13 +470,29 @@ local function wrap_items(items, width)
         return { {} }
     end
     local rows = {}
-    for _, r in ipairs(wrap_indices(items, width, width)) do
-        local row = {}
-        for k = r[1], r[2] do
-            row[#row + 1] = items[k]
+    local segment = {}
+    local function append_segment()
+        if #segment == 0 then
+            rows[#rows + 1] = {}
+        else
+            for _, r in ipairs(wrap_indices(segment, width, width)) do
+                local row = {}
+                for k = r[1], r[2] do
+                    row[#row + 1] = segment[k]
+                end
+                rows[#rows + 1] = row
+            end
         end
-        rows[#rows + 1] = row
     end
+    for _, item in ipairs(items) do
+        if item.br then
+            append_segment()
+            segment = {}
+        else
+            segment[#segment + 1] = item
+        end
+    end
+    append_segment()
     return rows
 end
 
@@ -496,7 +519,7 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
     local function styled_row(lnum0)
         local row = {}
         for c, cell in ipairs(M.split_cells_pos(lines[lnum0 - t_start + 1])) do
-            row[c] = styled_cell(cell.chars, inline[lnum0])
+            row[c] = styled_cell(cell.chars, inline[lnum0], html.table_breaks(buf, lnum0))
         end
         return row
     end
@@ -507,20 +530,27 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
     end
 
     -- Column layout from the conceal-stripped text.
-    local function disp_row(cells)
-        local r = {}
+    local function disp_rows(cells)
+        local rows = { {} }
         for c, items in ipairs(cells) do
-            local t = {}
+            local part = 1
             for _, it in ipairs(items) do
-                t[#t + 1] = it.c
+                if it.br then
+                    part = part + 1
+                    rows[part] = rows[part] or {}
+                else
+                    rows[part][c] = (rows[part][c] or '') .. it.c
+                end
             end
-            r[c] = table.concat(t)
         end
-        return r
+        for _, row in ipairs(rows) do
+            for c = 1, #cells do row[c] = row[c] or '' end
+        end
+        return rows
     end
-    local all_rows = { disp_row(header) }
+    local all_rows = disp_rows(header)
     for _, d in ipairs(data) do
-        all_rows[#all_rows + 1] = disp_row(d)
+        vim.list_extend(all_rows, disp_rows(d))
     end
     local widths = M.compute_table_layout(all_rows, avail,
         config.table_max_col_width, config.table_min_col_width)
@@ -725,7 +755,8 @@ local function render_range(buf, first, last, width, cursor_row, images_active)
     local image = images_active and require('rendermark.image') or nil
 
     for lnum = first, last - 1 do
-        if lnum + 1 ~= cursor_row and not in_code[lnum] and not in_table[lnum] then
+        if lnum + 1 ~= cursor_row and not in_code[lnum] and not in_table[lnum]
+            and not html.is_hidden(buf, lnum) then
             local text = vim.api.nvim_buf_get_lines(buf, lnum, lnum + 1, false)[1]
             if image and text and image.line_has_image_link(text) then
                 -- handled by rendermark.image
@@ -797,6 +828,7 @@ function M.refresh(win)
         return vim.fn.winsaveview().leftcol
     end)
     if leftcol > 0 then
+        html.clear(buf)
         return
     end
 
@@ -817,6 +849,7 @@ function M.refresh(win)
     -- Normal window, the last refresh wins -- accepted.
     local cursor_row = vim.w[win].read_mode_active and -1
         or vim.api.nvim_win_get_cursor(win)[1]
+    html.refresh(buf, cursor_row - 1)
     local images_active = require('rendermark.image').is_active()
     local segs = visible_segments(win, info.topline, info.botline)
     -- Decorations first for every segment: render_range's collect_deco snapshots
@@ -929,6 +962,7 @@ function M.disable(win)
 
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
     deco.clear(buf)
+    html.clear(buf)
     vim.b[buf].markdown_visual_wrap = false
 
     local saved = saved_state[w]
@@ -1050,6 +1084,9 @@ function M.setup(opts)
                 local win = vim.api.nvim_get_current_win()
                 local row = vim.api.nvim_win_get_cursor(win)[1]
                 local prev = last_cursor_row[win]
+                if html.skip_hidden(win, prev) then
+                    row = vim.api.nvim_win_get_cursor(win)[1]
+                end
                 last_cursor_row[win] = row
                 if prev ~= row
                     and (looks_like_fence(buf, row) or (prev and looks_like_fence(buf, prev))) then

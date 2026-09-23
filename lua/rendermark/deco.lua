@@ -19,6 +19,7 @@
 local M = {}
 
 local ut = require 'util'
+local html = require 'rendermark.html'
 
 -- Shade of the colorscheme's 'Normal', so the code background tracks it.
 local function code_bg()
@@ -91,6 +92,7 @@ local function line_at(buf, row)
 end
 
 local function mark(buf, row, col, opts)
+    if html.is_hidden(buf, row) then return end
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, col, opts)
 end
 
