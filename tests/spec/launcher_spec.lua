@@ -40,8 +40,166 @@ describe('launcher', function()
     end)
 end)
 
+describe('launcher.CloseLauncherBuffer', function()
+    local util = require('util')
+    local original_async, original_confirm
+    local buf, killed
+
+    before_each(function()
+        original_async = util.AsyncProcess
+        original_confirm = vim.fn.confirm
+        killed = false
+        util.AsyncProcess = function()
+            return 123, function() killed = true end, function() return 'running' end,
+                { is_closing = function() return false end, kill = function() killed = true end }
+        end
+        buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_win_set_buf(0, buf)
+        launcher.Launch('sleep', { '100' }, '.', nil, nil, nil, 'use', buf)
+    end)
+
+    after_each(function()
+        util.AsyncProcess = original_async
+        vim.fn.confirm = original_confirm
+        if vim.api.nvim_buf_is_valid(buf) then
+            launcher.UnregisterProcess(buf)
+            vim.api.nvim_buf_delete(buf, { force = true })
+        end
+    end)
+
+    it('stops the process and deletes the buffer on Stop', function()
+        vim.fn.confirm = function(_, choices, default)
+            assert.are.equal('&Stop\n&Cancel', choices)
+            assert.are.equal(2, default)
+            return 1
+        end
+
+        launcher.CloseLauncherBuffer()
+
+        assert.is_false(vim.api.nvim_buf_is_valid(buf))
+        assert.is_true(killed)
+        assert.is_nil(launcher.running_processes[buf])
+    end)
+
+    it('leaves the running buffer untouched on Cancel', function()
+        vim.fn.confirm = function() return 2 end
+
+        launcher.CloseLauncherBuffer()
+
+        assert.is_true(vim.api.nvim_buf_is_valid(buf))
+        assert.is_false(killed)
+        assert.is_not_nil(launcher.running_processes[buf])
+    end)
+
+    it('asks before :bwipeout! deletes a running buffer', function()
+        local prompted = false
+        vim.fn.confirm = function()
+            prompted = true
+            return 2
+        end
+
+        vim.cmd.LauncherBwipeout { bang = true }
+
+        assert.is_true(prompted)
+        assert.is_true(vim.api.nvim_buf_is_valid(buf))
+        assert.is_false(killed)
+    end)
+
+    it('asks before deleting a hidden launcher buffer by number', function()
+        local filler = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_win_set_buf(0, filler)
+        local prompted = false
+        vim.fn.confirm = function()
+            prompted = true
+            return 2
+        end
+
+        vim.cmd.LauncherBwipeout { args = { tostring(buf) } }
+
+        assert.is_true(prompted)
+        assert.is_true(vim.api.nvim_buf_is_valid(buf))
+        assert.is_false(killed)
+        vim.api.nvim_buf_delete(filler, { force = true })
+    end)
+
+    it('asks before a typed :bwipe command deletes a running buffer', function()
+        local prompted = false
+        vim.fn.confirm = function()
+            prompted = true
+            return 2
+        end
+
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(':bwipe<CR>', true, false, true), 'xt', false)
+
+        assert.is_true(prompted)
+        assert.is_true(vim.api.nvim_buf_is_valid(buf))
+        assert.is_false(killed)
+    end)
+
+    it('keeps the buffer and process when its window closes, and can reopen it', function()
+        local filler = vim.api.nvim_create_buf(false, true)
+        local confirms = 0
+        vim.fn.confirm = function() confirms = confirms + 1; return 2 end
+        vim.bo[buf].modifiable = true
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'launcher output' })
+        vim.bo[buf].modifiable = false
+        vim.cmd.vsplit()
+        vim.api.nvim_win_set_buf(0, filler)
+        vim.cmd('wincmd p')
+        local windows_before = #vim.api.nvim_list_wins()
+
+        vim.cmd.quit()
+
+        assert.are.equal(windows_before - 1, #vim.api.nvim_list_wins())
+        assert.are.equal(0, confirms)
+        assert.is_true(vim.api.nvim_buf_is_valid(buf))
+        assert.is_false(killed)
+        assert.is_not_nil(launcher.running_processes[buf])
+        assert.are.equal(0, #vim.fn.win_findbuf(buf))
+        vim.api.nvim_win_set_buf(0, buf)
+        assert.are.same({ 'launcher output' }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+        vim.api.nvim_buf_delete(filler, { force = true })
+    end)
+end)
+
+describe('launcher terminal window close', function()
+    it('keeps the job and buffer when its window closes', function()
+        if vim.fn.has('win32') == 1 then return end
+
+        local original_confirm = vim.fn.confirm
+        local confirms = 0
+        vim.fn.confirm = function() confirms = confirms + 1; return 2 end
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_win_set_buf(0, buf)
+        launcher.LaunchOnTerm('sh', { '-c', 'sleep 10' }, '.', nil, nil, nil, buf)
+        local job_id = launcher.running_processes[buf].job_id
+        local filler = vim.api.nvim_create_buf(false, true)
+        vim.cmd.vsplit()
+        vim.api.nvim_win_set_buf(0, filler)
+        vim.cmd('wincmd p')
+        local windows_before = #vim.api.nvim_list_wins()
+
+        vim.cmd.quit()
+
+        vim.fn.confirm = original_confirm
+        assert.are.equal(windows_before - 1, #vim.api.nvim_list_wins())
+        assert.are.equal(0, confirms)
+        assert.is_true(vim.api.nvim_buf_is_valid(buf))
+        assert.are.equal(0, #vim.fn.win_findbuf(buf))
+        assert.are.equal(-1, vim.fn.jobwait({ job_id }, 0)[1])
+        vim.api.nvim_win_set_buf(0, buf)
+
+        vim.fn.jobstop(job_id)
+        assert.is_true(vim.wait(2000, function() return launcher.running_processes[buf] == nil end))
+        assert.is_true(vim.api.nvim_buf_is_valid(buf))
+        vim.api.nvim_buf_delete(buf, { force = true })
+        vim.api.nvim_buf_delete(filler, { force = true })
+        assert.is_nil(launcher.running_processes[buf])
+    end)
+end)
+
 describe('launcher.WipeLauncherBuffers', function()
-    it('force-deletes only launcher buffers matching the current prjroot, terminating any running process', function()
+    it('asks before deleting a running buffer from the current prjroot', function()
         local root_a = vim.fn.tempname()
         local root_b = vim.fn.tempname()
 
@@ -62,11 +220,18 @@ describe('launcher.WipeLauncherBuffers', function()
         -- The current buffer must not itself carry prjroot_folder = root_a, or
         -- WipeLauncherBuffers would wipe it out from under the test.
         local original_get_root = require('prjroot').GetCurrentProjectRoot
+        local original_confirm = vim.fn.confirm
         require('prjroot').GetCurrentProjectRoot = function() return root_a end
+        vim.fn.confirm = function(_, choices, default)
+            assert.are.equal('&Stop\n&Cancel', choices)
+            assert.are.equal(2, default)
+            return 1
+        end
 
         launcher.WipeLauncherBuffers()
 
         require('prjroot').GetCurrentProjectRoot = original_get_root
+        vim.fn.confirm = original_confirm
 
         assert.is_false(vim.api.nvim_buf_is_valid(matching_buf))
         assert.is_false(vim.api.nvim_buf_is_valid(running_buf))

@@ -695,11 +695,13 @@ function M.setup()
             end
         end
 
-        local is_unsaved_nofile = (vim.bo[buf].buftype == 'nofile' and vim.bo[buf].modified)
+        local is_launcher_buffer = vim.bo[buf].filetype == 'launcher'
+            or (vim.bo[buf].filetype == 'terminal' and vim.b[buf].lc_object ~= nil)
+        local is_unsaved_nofile = (vim.bo[buf].buftype == 'nofile' and vim.bo[buf].modified and not is_launcher_buffer)
 
         -- Neither the last window nor a special buffer: stay silent
         if not is_last_win and not is_unsaved_nofile then
-            if not current_proc or vim.bo[buf].filetype == 'launcher' or vim.bo[buf].filetype == 'qf' then
+            if not current_proc or is_launcher_buffer or vim.bo[buf].filetype == 'qf' then
                 return true
             end
         end
@@ -712,7 +714,7 @@ function M.setup()
             msg = msg .. "Unsaved changes in scratch buffer: " .. 
                        (vim.api.nvim_buf_get_name(buf) ~= "" and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ':t') or "[No Name]") .. "\n"
         end
-        if current_proc and vim.bo[buf].filetype ~= 'launcher' then
+        if current_proc and (is_last_win or not is_launcher_buffer) then
             msg = msg .. "Process [" .. (current_proc.obj or current_proc.title or "Launcher") .. "] is still running in this buffer.\n"
         end
 
@@ -737,7 +739,7 @@ function M.setup()
         end
 
         if msg == "" then return true end
-        local has_processes = (current_proc and vim.bo[buf].filetype ~= 'launcher') or (is_last_win and #other_processes > 0)
+        local has_processes = (current_proc and (is_last_win or not is_launcher_buffer)) or (is_last_win and #other_processes > 0)
         local has_unsaved = is_unsaved_nofile or (is_last_win and #modified_buffers > 0)
         local prompt, choices = exit_confirm_text(has_processes, has_unsaved)
         msg = msg .. "\n" .. prompt

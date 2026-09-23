@@ -33,29 +33,18 @@ local function SafeCloseTimer(buf)
     end
 end
 
--- TODO: check whether the thread actually processing
-function M.CloseLauncherBuffer(force_wipe)
-    local buf = vim.api.nvim_get_current_buf()
-    local success, failed = pcall(api.nvim_buf_get_var, buf, 'launcher_failed')
-    local success2, closed = pcall(api.nvim_buf_get_var, buf, 'this_buf_can_be_closed')
-
-    if (success2 and closed) or (success and failed) then
-        vim.cmd.bwipeout { bang = true }
-    else
-        if force_wipe then
-            local choice = vim.fn.confirm('This process is still running. What do you want to do?', "&Stop and Close Buffer\n&Cancel", 2)
-            if choice == 1 then
-                M.TerminateCurrentLauncherBuffer()
-                vim.cmd.bwipeout { bang = true }
-            end
-        else
-            vim.cmd.hide()
-        end
+function M.CloseLauncherBuffer(buf)
+    buf = buf or api.nvim_get_current_buf()
+    if M.running_processes[buf] then
+        local choice = vim.fn.confirm('This process is still running. Stop it and delete the buffer?', "&Stop\n&Cancel", 2)
+        if choice ~= 1 then return end
+        registry.terminate(buf)
     end
+    api.nvim_buf_delete(buf, { force = true })
 end
 
 function M.set_launcher_mapping(buf)
-    ut.nnoremap('gq', [[<cmd>lua require'launcher'.CloseLauncherBuffer(true)<cr>]], { buffer = buf })
+    ut.nnoremap('gq', [[<cmd>lua require'launcher'.CloseLauncherBuffer()<cr>]], { buffer = buf })
     ut.nnoremap(']e', [[<cmd>lua require'launcher'.NextMatch()<cr>]], { buffer = buf })
     ut.nnoremap('[e', [[<cmd>lua require'launcher'.PrevMatch()<cr>]], { buffer = buf })
     ut.nnoremap('<cr>', [[<cmd>lua require'launcher'.Jump()<cr>]], { buffer = buf })
@@ -853,7 +842,7 @@ function M.WipeLauncherBuffers()
         if vim.api.nvim_buf_is_valid(buf) then
             local success, buf_prj = pcall(api.nvim_buf_get_var, buf, 'prjroot_folder')
             if success and buf_prj == prjroot then
-                vim.api.nvim_buf_delete(buf, { force = true })
+                M.CloseLauncherBuffer(buf)
             end
         end
     end
@@ -890,10 +879,23 @@ end
 function M.setup()
     api.nvim_create_autocmd({'BufRead', 'BufNew'}, {callback = BufMapping})
 
-    -- Ask before :bw/:bd wipes a launcher buffer
-    local abbrevs = { 'bd', 'bw', 'bdelete', 'bwipeout' }
+    -- Route typed buffer-deletion commands through the launcher guard, even
+    -- when their target is a hidden launcher buffer.
+    local abbrevs = { 'bd', 'bw', 'bdelete', 'bwipe', 'bwipeout' }
     for _, abr in ipairs(abbrevs) do
-        vim.cmd(string.format([[cnoreabbrev <expr> %s (getcmdtype() == ':' && getcmdpos() <= %d && getbufvar('%%', '&ft') == 'launcher' ? 'lua require"launcher".CloseLauncherBuffer(true)' : '%s')]], abr, #abr + 1, abr))
+        local command_name = 'Launcher' .. abr:sub(1, 1):upper() .. abr:sub(2)
+        api.nvim_create_user_command(command_name, function(opts)
+            local targets = #opts.fargs > 0 and opts.fargs or { '' }
+            for _, target in ipairs(targets) do
+                local buf = target == '' and api.nvim_get_current_buf() or tonumber(target) or vim.fn.bufnr(target)
+                if buf > 0 and M.running_processes[buf] then
+                    M.CloseLauncherBuffer(buf)
+                else
+                    vim.cmd[abr] { args = target ~= '' and { target } or {}, bang = opts.bang }
+                end
+            end
+        end, { nargs = '*', bang = true, force = true })
+        vim.cmd(string.format([[cnoreabbrev <expr> %s (getcmdtype() == ':' && getcmdpos() <= %d ? '%s' : '%s')]], abr, #abr + 1, command_name, abr))
     end
 
     api.nvim_create_autocmd('BufWipeout', {
@@ -902,6 +904,7 @@ function M.setup()
             registry.terminate(buf)
 
             SafeCloseTimer(buf)
+            buffers_handles[buf] = nil
         end
     })
 end
