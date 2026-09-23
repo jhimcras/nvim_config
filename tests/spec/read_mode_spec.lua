@@ -32,6 +32,16 @@ describe('read_mode', function()
         assert.is_true(vim.wo[win].cursorline)
     end)
 
+    it('hides the cursor without overriding the character colors underneath it', function()
+        read_mode.setup()
+
+        read_mode.enter(vim.api.nvim_get_current_win())
+
+        local cursor_hl = vim.api.nvim_get_hl(0, { name = 'ReadModeHiddenCursor' })
+        assert.are.equal(100, cursor_hl.blend)
+        assert.is_nil(cursor_hl.fg)
+    end)
+
     it('works on a non-markdown buffer', function()
         read_mode.setup()
         local win = vim.api.nvim_get_current_win()

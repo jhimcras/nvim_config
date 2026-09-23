@@ -40,19 +40,16 @@ function M.is_active(win)
     return win_state[resolve_win(win)] ~= nil
 end
 
--- Hide the cursor by painting it in the editor background. GUI-targeted; the most
--- likely spot to need per-terminal tuning.
+-- A fully blended cursor is hidden without replacing the character underneath.
 local function hide_cursor()
     if saved_guicursor == nil then
         saved_guicursor = vim.o.guicursor
     end
     local normal = vim.api.nvim_get_hl(0, { name = 'Normal' })
-    local hl = { blend = 100 }
-    if normal.bg then
-        hl.fg = normal.bg
-        hl.bg = normal.bg
-    end
-    vim.api.nvim_set_hl(0, 'ReadModeHiddenCursor', hl)
+    vim.api.nvim_set_hl(0, 'ReadModeHiddenCursor', {
+        bg = normal.bg or 0,
+        blend = 100,
+    })
     vim.o.guicursor = 'a:block-blinkon0-ReadModeHiddenCursor'
 end
 
