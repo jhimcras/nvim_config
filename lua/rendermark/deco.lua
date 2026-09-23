@@ -301,7 +301,7 @@ local function collect_verbatim_rows(node, out)
     end
 end
 
-local function render_list_item(buf, node)
+local function render_list_item(buf, node, cur)
     local marker, box, checked
     for child in node:iter_children() do
         local t = child:type()
@@ -340,7 +340,9 @@ local function render_list_item(buf, node)
         -- The conceal holds one character, so the rest of the glyph string is drawn
         -- after the box -- which also gives a double-width glyph room.
         local pad = glyph:sub(#head + 1)
-        if pad ~= '' then
+        -- Conceal yields on the cursor row, revealing the source checkbox and its
+        -- own trailing space. Keep the inline pad off that row or the gap doubles.
+        if pad ~= '' and row ~= cur then
             mark(buf, row, b_e, {
                 virt_text = { { pad, hl } },
                 virt_text_pos = 'inline',
@@ -528,7 +530,7 @@ function M.render_range(buf, first, last, rule_width, cursor_row)
         elseif name == 'rule' then
             render_rule(buf, node, rule_width)
         elseif name == 'item' then
-            render_list_item(buf, node)
+            render_list_item(buf, node, cur)
         elseif name == 'code' then
             local r1, r2 = render_code(buf, node, first, last, cur)
             for row = r1, r2 do

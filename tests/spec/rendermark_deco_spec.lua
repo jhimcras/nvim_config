@@ -240,6 +240,12 @@ describe('deco rendering', function()
         assert.equals(' ', pad.virt_text[1][1])
     end)
 
+    it('does not add the checkbox glyph pad on the cursor row', function()
+        render({ '- [ ] todo', 'tail' }, 1)
+        local pad = find(0, function(d, col) return col == 5 and d.virt_text end)
+        assert.is_nil(pad)
+    end)
+
     it('replaces the marker character of a deeply indented nested item', function()
         -- The grammar folds the extra indent into the marker node ('  - ') when a
         -- nested list is indented past its parent's continuation column; the
