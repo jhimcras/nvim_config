@@ -135,6 +135,44 @@ describe('session.SaveSession', function()
     end)
 end)
 
+describe('launcher session highlights', function()
+    it('saves and restores ANSI and custom color highlights', function()
+        local launcher = require('launcher')
+        local name = '__test__launcher_highlights'
+        local dir = make_sessions_dir()
+        local previous = vim.api.nvim_get_current_buf()
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_win_set_buf(0, buf)
+        vim.bo[buf].buftype = 'nofile'
+        vim.bo[buf].filetype = 'launcher'
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'red blue', 'custom' })
+        vim.b[buf].lc_object = 'build'
+        vim.b[buf].lc_command = 'make'
+        vim.b[buf].launcher_status = 'done'
+        local ns = vim.api.nvim_create_namespace('launcher_highlights')
+        vim.hl.range(buf, ns, 'AnsiRed', { 0, 0 }, { 0, 3 }, {})
+        vim.hl.range(buf, ns, 'LauncherHL_BB0000', { 1, 0 }, { 1, 6 }, {})
+
+        session.SaveSession(name)
+        local file = string.format('%s/%s.launcher.lua.%d.lua', dir, name, vim.api.nvim_get_current_win())
+        local saved = assert(loadfile(file))()
+        assert.are.same({ { 0, 0, 3, 'AnsiRed' }, { 1, 0, 6, 'LauncherHL_BB0000' } }, saved.highlights)
+
+        vim.api.nvim_set_hl(0, 'LauncherHL_BB0000', {})
+        local restored = launcher.Restore(saved)
+        assert.are.same(saved.content, vim.api.nvim_buf_get_lines(restored, 0, -1, false))
+        assert.are.same(saved.highlights, launcher.GetHighlights(restored))
+        assert.are.equal(0xBB0000, vim.api.nvim_get_hl(0, { name = 'LauncherHL_BB0000' }).fg)
+
+        vim.api.nvim_win_set_buf(0, previous)
+        vim.api.nvim_buf_delete(restored, { force = true })
+        vim.api.nvim_buf_delete(buf, { force = true })
+        for _, path in ipairs(vim.fn.glob(dir .. '/' .. name .. '*', false, true)) do
+            vim.fn.delete(path)
+        end
+    end)
+end)
+
 describe('session cmdheight round trip', function()
     local sessions_dir
     local session_name = '__test__cmdheight'

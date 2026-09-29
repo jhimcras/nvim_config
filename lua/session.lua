@@ -112,6 +112,7 @@ local function save_launcher(winid, path)
         kind    = "launcher",
         origin  = build_origin_window(winid),
         content = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false),
+        highlights = require('launcher').GetHighlights(bufnr),
         obj      = vim.b[bufnr].lc_object,
         cmd      = vim.b[bufnr].lc_command,
         prjroot  = vim.b[bufnr].prjroot_folder,

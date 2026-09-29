@@ -22,6 +22,17 @@ local function AddHighlight(buf, hl_group, lnum, col_start, col_end)
     vim.hl.range(buf, launcher_highlight_ns, hl_group, { lnum, col_start }, { lnum, col_end }, {})
 end
 
+function M.GetHighlights(buf)
+    local highlights = {}
+    for _, mark in ipairs(api.nvim_buf_get_extmarks(buf, launcher_highlight_ns, 0, -1, { details = true })) do
+        local details = mark[4]
+        if details.hl_group then
+            highlights[#highlights + 1] = { mark[2], mark[3], details.end_col, details.hl_group }
+        end
+    end
+    return highlights
+end
+
 local function SafeCloseTimer(buf)
     local timer = launcher_timers[buf]
     if timer then
@@ -58,6 +69,13 @@ function M.Restore(data)
     
     local lines = data.content or {}
     api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    for _, hl in ipairs(data.highlights or {}) do
+        local color = hl[4]:match('^LauncherHL_(%x+)$')
+        if color then
+            api.nvim_set_hl(0, hl[4], { fg = '#' .. color })
+        end
+        AddHighlight(buf, hl[4], hl[1], hl[2], hl[3])
+    end
     
     api.nvim_buf_set_var(buf, 'lc_object', data.obj)
     api.nvim_buf_set_var(buf, 'lc_command', data.cmd_full or data.cmd)
