@@ -615,7 +615,6 @@ local function loclist_tag(bufnr, winid)
     return ('%#StatuslineTag' .. tag .. '#  ')
 end
 
-
 local function make_statusline_text(bufnr, winid, components, sep, ctx)
     sep = sep or ''
     if components == nil then return '' end
@@ -846,7 +845,9 @@ function M.statusline_entry()
     local w = vim.api.nvim_win_get_width(winid)
     local activation = winid == vim.api.nvim_get_current_win()
     local entryfunc = get_entry_func(vim.bo[bufnr].buftype, vim.bo[bufnr].filetype, protocol)
-    local tree = entryfunc(activation, vim.fn.mode(), winid)
+    local is_read = require('read_mode').is_active(winid)
+    local mode = is_read and 'read' or vim.fn.mode()
+    local tree = entryfunc(activation, mode, winid)
 
     local excluded = {}
     local result

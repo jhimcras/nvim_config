@@ -10,6 +10,7 @@ local statusline_highlights = {
             v = { bg = '#1F2937', fg = '#FBC19D' },
             c = { bg = '#1F2937', fg = '#99BBBD' },
             r = { bg = '#1F2937', fg = '#E8D4B0' },
+            read = { bg = '#1F2937', fg = '#89b4fa' },
         },
         [2] = {
             n = { bg = '#334155', fg = '#D1D5DB' },
@@ -17,6 +18,7 @@ local statusline_highlights = {
             v = { bg = '#FBC19D', fg = '#111827' },
             c = { bg = '#99BBBD', fg = '#111827' },
             r = { bg = '#E8D4B0', fg = '#111827' },
+            read = { bg = '#89b4fa', fg = '#111827' },
         },
     },
     StatuslineGeneralInactive = { bg = '#1F2937', fg = '#6B7280' },
@@ -28,6 +30,7 @@ local statusline_highlights = {
         [1] = {
             n = { link = 'StatuslineGeneralActive_1_n' },
             t = { link = 'StatuslineGeneralActive_1_i' },
+            read = { link = 'StatuslineGeneralActive_1_read' },
         }
     },
     StatuslineTermInactive = { link = 'StatuslineGeneralInactive' },
