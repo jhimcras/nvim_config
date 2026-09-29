@@ -29,6 +29,7 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 | `lua/session.lua` | Session management per project root |
 | `lua/status.lua` | Custom statusline with LSP, git branch/commit, diagnostics (`lua/status/mode.lua`: mode indicator) |
 | `lua/tabline.lua` | Custom tabline |
+| `lua/instance_move.lua` | Move a file buffer or tab to a new or running Nvim instance (`:MoveBufferToInstance`, `:MoveTabToInstance`) |
 | `lua/highlight.lua` | Statusline/UI highlight group definitions |
 | `lua/git.lua` | Git branch and commit info with TTL caching |
 | `lua/grep.lua` | RipGrep integration |

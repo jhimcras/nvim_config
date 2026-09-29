@@ -138,6 +138,12 @@ function M.setup()
             require'instance'.new(opts.args ~= '' and opts.args or nil)
         end
     end, { nargs = '?', bang = true, complete = 'file' })
+    api.nvim_create_user_command('MoveBufferToInstance', function()
+        require'instance_move'.move('buffer')
+    end, {})
+    api.nvim_create_user_command('MoveTabToInstance', function()
+        require'instance_move'.move('tab')
+    end, {})
 
     ut.nnoremap('<c-=>', function() gui_zoom('in') end)
     ut.nnoremap('<c-+>', function() gui_zoom('in') end)   -- numpad + / Ctrl+Shift+=

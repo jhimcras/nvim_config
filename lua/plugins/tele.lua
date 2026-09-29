@@ -18,6 +18,28 @@ local function open_in_new_instance()
     end
 end
 
+function M.InstanceTargets(on_select)
+    pickers.new({}, {
+        prompt_title = 'Move to Nvim instance',
+        finder = finders.new_table {
+            results = require'instance_move'.targets(),
+            entry_maker = function(target)
+                return { value = target, display = target.display, ordinal = target.display }
+            end,
+        },
+        sorter = conf.generic_sorter({}),
+        previewer = false,
+        attach_mappings = function(prompt_bufnr)
+            actions.select_default:replace(function()
+                local selection = action_state.get_selected_entry()
+                actions.close(prompt_bufnr)
+                on_select(selection and selection.value)
+            end)
+            return true
+        end,
+    }):find()
+end
+
 function M.Files()
     local cwd = pr.GetCurrentProjectRoot() or ut.GetCurrentBufferDir()
     require 'telescope.builtin'.find_files {

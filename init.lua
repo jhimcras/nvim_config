@@ -86,6 +86,6 @@ require'rendermark'.setup{
     },
 }
 require'keymap'.setup()
+require'instance_move'.setup()
 require'highlight'.setup()
 C_CPP_HeaderCorrection()
-

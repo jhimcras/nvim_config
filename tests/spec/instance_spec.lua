@@ -29,6 +29,14 @@ describe('instance.build_argv', function()
         assert.are.same({ 'tmux', 'new-window', '--', '/usr/bin/nvim', 'a.txt' }, argv)
     end)
 
+    it('passes required environment to the new tmux window', function()
+        local argv = instance.build_argv(
+            { kind = 'tui' }, 'a.txt',
+            ctx{ tmux = '/tmp/tmux', pass_env = { 'PATH=/custom/bin', 'LUALS=/opt/lua ls' } })
+        assert.are.same({ 'tmux', 'new-window', '-e', 'PATH=/custom/bin',
+            '-e', 'LUALS=/opt/lua ls', '--', '/usr/bin/nvim', 'a.txt' }, argv)
+    end)
+
     it('prefers tmux over the windows branches', function()
         local argv = instance.build_argv(
             { kind = 'tui' }, nil,

@@ -7,14 +7,15 @@ local on_attach_lua = lsp_setting.make_on_attach(nil)
 
 function M.setup()
     local lua_lsp_cmd
-    -- if vim.env.LUALS == nil then return end
-    -- local lua_lsp_cmd = { vim.env.LUALS .. (env.os.win and [[\lua-language-server.exe]] or '/bin/lua-language-server') }
     if env.os.win then
-        lua_lsp_cmd = "lua-language-server.exe"
-    else
+        lua_lsp_cmd = 'lua-language-server.exe'
+    elseif vim.env.LUALS and vim.env.LUALS ~= '' then
         lua_lsp_cmd = vim.env.LUALS .. '/bin/lua-language-server'
     end
-    if not vim.fn.executable(lua_lsp_cmd) then return end
+    if not lua_lsp_cmd or vim.fn.executable(lua_lsp_cmd) ~= 1 then
+        lua_lsp_cmd = env.os.win and 'lua-language-server.exe' or 'lua-language-server'
+        if vim.fn.executable(lua_lsp_cmd) ~= 1 then return end
+    end
 
     local function lua_workspace_library()
         local library = { vim.env.VIMRUNTIME }

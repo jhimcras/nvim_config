@@ -103,6 +103,28 @@ describe('lsp_setting', function()
             return lua_config
         end
 
+        it('does not crash when LUALS is absent and no server is installed', function()
+            vim.env.LUALS = nil
+            vim.fn.executable = function() return 0 end
+            vim.lsp.config = setmetatable({}, { __call = function()
+                error('lua_ls should not be configured without an executable')
+            end })
+            assert.has_no.errors(function() require('lsp_setting.lua_ls').setup() end)
+        end)
+
+        it('uses a server on PATH when LUALS is absent', function()
+            vim.env.LUALS = nil
+            vim.fn.executable = function(cmd)
+                return cmd == 'lua-language-server' and 1 or 0
+            end
+            local lua_config
+            vim.lsp.config = setmetatable({}, { __call = function(_, name, config)
+                if name == 'lua_ls' then lua_config = config end
+            end })
+            require('lsp_setting.lua_ls').setup()
+            assert.are.same({ 'lua-language-server' }, lua_config.cmd)
+        end)
+
         it('adds luv metadata when the local LuaLS installation provides it', function()
             local lua_config = setup_lua_with_luv_stat(true)
             assert.are.same({

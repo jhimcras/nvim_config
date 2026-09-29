@@ -128,7 +128,17 @@ function M.build_argv(detected, file, ctx)
     end
 
     if ctx.tmux and ctx.tmux ~= '' then
-        return argv('tmux', 'new-window', '--', ctx.nvim)
+        local args = { 'tmux', 'new-window' }
+        for _, entry in ipairs(ctx.pass_env or {}) do
+            vim.list_extend(args, { '-e', entry })
+        end
+        vim.list_extend(args, { '--', ctx.nvim })
+        if type(file) == 'table' then
+            vim.list_extend(args, file)
+        elseif file then
+            table.insert(args, file)
+        end
+        return args
     end
 
     if ctx.win then
@@ -158,6 +168,15 @@ function M.context(detected)
         wt = os.getenv('WT_SESSION'),
         nvim = vim.v.progpath,
     }
+    if ctx.tmux and ctx.tmux ~= '' then
+        ctx.pass_env = {}
+        for _, name in ipairs({ 'PATH', 'LUALS', 'VIMLS' }) do
+            local value = vim.env[name]
+            if value and value ~= '' then
+                ctx.pass_env[#ctx.pass_env + 1] = name .. '=' .. value
+            end
+        end
+    end
     if detected.kind == 'tui' and not env.os.win and not (ctx.tmux and ctx.tmux ~= '') then
         ctx.term_exe = M.find_terminal()
     end
@@ -176,7 +195,7 @@ function M.new(file)
     local args, err = M.build_argv(detected, file, ctx)
     if not args then
         report(err .. '  (자세한 내용은 :NewInstance!)')
-        return
+        return false
     end
 
     -- jobstart throws on a non-executable command and returns <= 0 on bad args;
@@ -185,10 +204,13 @@ function M.new(file)
     if not ok then
         report(string.format('실행 실패: %s  --  %s  (자세한 내용은 :NewInstance!)',
             tostring(job), table.concat(args, ' ')))
+        return false
     elseif job <= 0 then
         report(string.format('실행 실패 (jobstart=%d): %s  (자세한 내용은 :NewInstance!)',
             job, table.concat(args, ' ')))
+        return false
     end
+    return true
 end
 
 -- :NewInstance! — dump what the detection relied on to :messages.
