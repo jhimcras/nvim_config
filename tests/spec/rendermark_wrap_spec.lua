@@ -351,6 +351,51 @@ describe('wrap behavior', function()
         assert.is_true(#on_other > 0)
     end)
 
+    it('keeps continuation rows while scrolling past their anchor line', function()
+        wrap.setup({ max_width = 24, left_pad = 0, right_pad = 0 })
+        local lines = { string.rep('word ', 20) }
+        for i = 2, 40 do lines[i] = 'line ' .. i end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.wo.scrolloff = 0
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+        vim.fn.winrestview({ topline = 1, lnum = 2, col = 0 })
+        wrap.refresh(0)
+
+        local rows = #continuation_rows(0)
+        assert.is_true(rows >= 2)
+        vim.cmd('normal! \005') -- Ctrl-E: one screen row down
+        assert.are.equal(rows, vim.fn.winsaveview().topfill)
+        wrap.refresh(0) -- same refresh WinScrolled schedules
+        assert.are.equal(rows, #continuation_rows(0))
+        assert.are.equal(rows, vim.fn.winsaveview().topfill)
+
+        vim.cmd('normal! \005')
+        wrap.refresh(0)
+        assert.are.equal(rows - 1, vim.fn.winsaveview().topfill)
+        vim.cmd('normal! \025') -- Ctrl-Y: one screen row up
+        wrap.refresh(0)
+        assert.are.equal(rows, vim.fn.winsaveview().topfill)
+
+        local mouse, mousescroll = vim.o.mouse, vim.o.mousescroll
+        vim.o.mouse = 'a'
+        vim.o.mousescroll = 'ver:1,hor:6'
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<ScrollWheelDown>', true, false, true), 'xt', false)
+        wrap.refresh(0)
+        assert.are.equal(rows - 1, vim.fn.winsaveview().topfill)
+        vim.o.mouse, vim.o.mousescroll = mouse, mousescroll
+
+        for _ = 1, rows - 1 do
+            vim.cmd('normal! \005')
+            wrap.refresh(0)
+        end
+        assert.are.equal(0, vim.fn.winsaveview().topfill)
+        vim.cmd('normal! \025') -- re-enter the wrapped line from below
+        wrap.refresh(0)
+        assert.are.equal(1, vim.fn.winsaveview().topfill)
+    end)
+
     it('skips lines hidden inside a closed fold', function()
         -- A closed fold keeps the drawn row count at a screenful while the window's
         -- topline..botline range covers the whole fold, so refresh must decorate the
@@ -437,6 +482,47 @@ describe('wrap behavior', function()
         local in_code = vim.api.nvim_buf_get_extmarks(0, ns, { 2, 0 }, { 2, -1 }, {})
         assert.is_true(#prose > 0)    -- prose line wrapped
         assert.are.equal(0, #in_code) -- code line untouched
+    end)
+
+    it('scrolls one screen row at a time across code fences', function()
+        wrap.setup({ left_pad = 0, right_pad = 0 })
+        local lines = { 'intro', '```lua', 'local x = 1', 'local y = 2', '```' }
+        for i = 6, 40 do lines[i] = 'line ' .. i end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.wo.scrolloff = 0
+        vim.api.nvim_win_set_cursor(0, { 10, 0 })
+        vim.fn.winrestview({ topline = 1, lnum = 10, col = 0 })
+        wrap.refresh(0)
+
+        local highlighter = vim.treesitter.highlighter.active[vim.api.nvim_get_current_buf()]
+        assert.is_nil(highlighter:get_query('markdown'):query().has_conceal_line)
+        for top = 2, 6 do
+            vim.cmd('normal! \005')
+            wrap.refresh(0)
+            assert.are.equal(top, vim.fn.winsaveview().topline)
+        end
+        for top = 5, 1, -1 do
+            vim.cmd('normal! \025')
+            wrap.refresh(0)
+            assert.are.equal(top, vim.fn.winsaveview().topline)
+        end
+
+        local mouse, mousescroll = vim.o.mouse, vim.o.mousescroll
+        vim.o.mouse = 'a'
+        vim.o.mousescroll = 'ver:1,hor:6'
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<ScrollWheelDown>', true, false, true), 'xt', false)
+        wrap.refresh(0)
+        assert.are.equal(2, vim.fn.winsaveview().topline)
+        vim.o.mouse, vim.o.mousescroll = mouse, mousescroll
+
+        wrap.disable(0)
+        highlighter = vim.treesitter.highlighter.active[vim.api.nvim_get_current_buf()]
+        assert.is_true(highlighter:get_query('markdown'):query().has_conceal_line)
+        wrap.apply(0)
+        highlighter = vim.treesitter.highlighter.active[vim.api.nvim_get_current_buf()]
+        assert.is_nil(highlighter:get_query('markdown'):query().has_conceal_line)
     end)
 
     it('styles and conceals inline markup in continuation rows', function()

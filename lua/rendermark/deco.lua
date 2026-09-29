@@ -10,11 +10,9 @@
 --
 --   * A conceal replacement is a SINGLE character, so a six-column '- [ ] ' needs
 --     split ranges: the glyph supplies one column, a real source space the other.
---   * The markdown highlights query sets `conceal_lines ""` on the fence rows, so
---     they have zero height and virt_lines anchored to them are dropped. The top
---     and bottom bars are therefore virt_lines on the first and last CONTENT rows.
---     conceal_lines yields on the cursor line, so a fence row under the cursor
---     comes back and its bar moves onto it as an overlay -- see place_bar.
+--   * The markdown highlights query hides fence rows with `conceal_lines ""`.
+--     visible_fences removes that metadata for rendered buffers so each fence
+--     remains one screen row; render_code paints its bar over the source row.
 
 local M = {}
 
@@ -81,6 +79,40 @@ local defaults = {
 
 local config = vim.deepcopy(defaults)
 local ns = vim.api.nvim_create_namespace('rendermark_deco')
+local fence_query
+local fence_highlighters = {}
+
+-- Keep fence rows at one screen row so native scrolling can pass each bar.
+-- The stock markdown query hides those rows with conceal_lines; retain its
+-- other captures and conceals while removing only that fence metadata.
+local function query_with_visible_fences()
+    if fence_query then return fence_query end
+    local parts = {}
+    for _, path in ipairs(vim.treesitter.query.get_files('markdown', 'highlights')) do
+        parts[#parts + 1] = table.concat(vim.fn.readfile(path), '\n')
+    end
+    local source = table.concat(parts, '\n')
+    fence_query = source:gsub('(%(%#set! conceal ""%)%s*)%(%#set! conceal_lines ""%)', '%1')
+    return fence_query
+end
+
+function M.visible_fences(buf, enable)
+    if enable and fence_highlighters[buf] == vim.treesitter.highlighter.active[buf] then return end
+    if not enable and not fence_highlighters[buf] then return end
+    if enable then
+        local ok, parser = pcall(vim.treesitter.get_parser, buf, 'markdown')
+        if not ok then return end
+        vim.treesitter.stop(buf)
+        fence_highlighters[buf] = vim.treesitter.highlighter.new(parser,
+            { queries = { markdown = query_with_visible_fences() } })
+    else
+        if fence_highlighters[buf] == vim.treesitter.highlighter.active[buf] then
+            vim.treesitter.stop(buf)
+            pcall(vim.treesitter.start, buf)
+        end
+        fence_highlighters[buf] = nil
+    end
+end
 
 -- `col` is the starting screen column: a tab's width depends on where it lands.
 local function dw(s, col)
@@ -470,26 +502,23 @@ local function render_code(buf, node, first, last, cur)
         end
     end
 
-    -- Bars replace the undrawn fence rows, hung off the first and last content row --
-    -- except on the fence row the CURSOR is on: conceal_lines yields there, the raw
-    -- '```lua' comes back (that is what makes it editable), and a virt_line on top
-    -- would make the block one row taller. That row is painted as an ordinary block
-    -- row instead, trading only the label for the source text.
-    -- (READ mode passes a cursor row of -1, so its bars stay virt_lines.)
-    local function place_bar(fence, anchor, above, label)
+    -- Use each fence's own row for its bar. A virt_line on the adjacent content
+    -- row cannot scroll smoothly across a zero-height concealed fence.
+    local function place_bar(fence, label)
+        if fence < first or fence >= last then return end
+        local line = line_at(buf, fence) or ''
         if cur == fence then
-            if fence >= first and fence < last then
-                paint_row(fence, line_at(buf, fence) or '')
-            end
-        elseif anchor >= first and anchor < last then
-            mark(buf, anchor, 0, {
-                virt_lines = { M.code_bar(width, label, indent_w) },
-                virt_lines_above = above,
+            paint_row(fence, line) -- keep the source editable under the cursor
+        else
+            mark(buf, fence, 0, { end_col = #line, conceal = '' })
+            mark(buf, fence, 0, {
+                virt_text = M.code_bar(width, label, indent_w),
+                virt_text_pos = 'overlay',
             })
         end
     end
-    place_bar(r1, r1 + 1, true, lang)
-    place_bar(r2, r2 - 1, false, nil)
+    place_bar(r1, lang)
+    place_bar(r2, nil)
 
     for row = math.max(r1 + 1, first), math.min(r2 - 1, last - 1) do
         local line = body[row - r1]

@@ -817,6 +817,7 @@ function M.refresh(win)
     if not buffer_enabled(buf) then
         return
     end
+    if is_markdown_buffer(buf) then deco.visible_fences(buf, true) end
 
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
     deco.clear(buf)
@@ -851,7 +852,10 @@ function M.refresh(win)
         or vim.api.nvim_win_get_cursor(win)[1]
     html.refresh(buf, cursor_row - 1)
     local images_active = require('rendermark.image').is_active()
-    local segs = visible_segments(win, info.topline, info.botline)
+    -- The line above topline anchors continuation rows still on screen while
+    -- scrolling down. Keep it decorated after they leave too, so Ctrl-Y (or a
+    -- wheel scroll up) can enter those rows one screen line at a time.
+    local segs = visible_segments(win, math.max(1, info.topline - 1), info.botline)
     -- Decorations first for every segment: render_range's collect_deco snapshots
     -- foreign extmarks for each line's real width, so they must already be placed.
     -- The rule spans the full window width, not the capped text column.
@@ -945,10 +949,10 @@ function M.apply(win)
     if vim.wo[w].conceallevel < 2 then
         vim.wo[w].conceallevel = 2
     end
-    -- Decorated rows replay the treesitter highlight queries; real lines need the
-    -- highlighter itself for the same styling. Nothing else attaches it for
-    -- markdown in this setup.
-    if not vim.treesitter.highlighter.active[buf] then
+    -- Keep fence bars on their own screen rows while this buffer is rendered.
+    if is_markdown_buffer(buf) then
+        deco.visible_fences(buf, true)
+    elseif not vim.treesitter.highlighter.active[buf] then
         pcall(vim.treesitter.start, buf)
     end
 
@@ -964,6 +968,7 @@ function M.disable(win)
     deco.clear(buf)
     html.clear(buf)
     vim.b[buf].markdown_visual_wrap = false
+    deco.visible_fences(buf, false)
 
     local saved = saved_state[w]
     if saved then

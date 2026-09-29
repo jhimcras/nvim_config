@@ -290,16 +290,16 @@ describe('deco rendering', function()
 
     it('draws a code block at min_width with bars and a right-aligned language', function()
         render({ '```lua', 'local x = 1', '```', 'tail' })
-        local top = find(1, function(d) return d.virt_lines and d.virt_lines_above end)
+        local top = find(0, function(d) return d.virt_text_pos == 'overlay' end)
         assert.is_truthy(top)
-        assert.equals(50, width_of(top.virt_lines[1]))
-        assert.equals('lua', top.virt_lines[1][2][1])
-        assert.equals('RendermarkCodeInfo', top.virt_lines[1][2][2])
+        assert.equals(50, width_of(top.virt_text))
+        assert.equals('lua', top.virt_text[2][1])
+        assert.equals('RendermarkCodeInfo', top.virt_text[2][2])
 
-        local bottom = find(1, function(d) return d.virt_lines and not d.virt_lines_above end)
+        local bottom = find(2, function(d) return d.virt_text_pos == 'overlay' end)
         assert.is_truthy(bottom)
-        assert.equals(50, width_of(bottom.virt_lines[1]))
-        assert.equals(1, #bottom.virt_lines[1]) -- blank bar, no label
+        assert.equals(50, width_of(bottom.virt_text))
+        assert.equals(1, #bottom.virt_text) -- blank bar, no label
 
         assert.is_truthy(find(1, function(d) return d.hl_group == 'RendermarkCode' end))
         -- Left pad and right fill are both inline: an 'eol' fill would sit one
@@ -312,19 +312,16 @@ describe('deco rendering', function()
     end)
 
     it('trades the bar for the raw fence row the cursor is on', function()
-        -- The fence row is drawn again under the cursor, raw text and all, so it can
-        -- be edited. A virt_line on top of it would add a row: the bar goes and the
-        -- row is painted as an ordinary block row instead, keeping both the height
-        -- and the rectangle.
+        -- The overlay yields to the editable source on the cursor's fence row.
         render({ '```lua', 'local x = 1', '```', 'tail' }, 1)
-        assert.is_nil(find(1, function(d) return d.virt_lines and d.virt_lines_above end))
+        assert.is_nil(find(0, function(d) return d.virt_text_pos == 'overlay' end))
         assert.equals(50, code_row_width(0))
         -- The other bar is untouched.
-        assert.is_truthy(find(1, function(d) return d.virt_lines and not d.virt_lines_above end))
+        assert.is_truthy(find(2, function(d) return d.virt_text_pos == 'overlay' end))
 
         render({ '```lua', 'local x = 1', '```', 'tail' }, 3)
-        assert.is_truthy(find(1, function(d) return d.virt_lines and d.virt_lines_above end))
-        assert.is_nil(find(1, function(d) return d.virt_lines and not d.virt_lines_above end))
+        assert.is_truthy(find(0, function(d) return d.virt_text_pos == 'overlay' end))
+        assert.is_nil(find(2, function(d) return d.virt_text_pos == 'overlay' end))
         assert.equals(50, code_row_width(2))
     end)
 
@@ -334,12 +331,12 @@ describe('deco rendering', function()
         render({ '```lua', 'local x = 1', '```', 'tail' })
         vim.api.nvim_win_set_cursor(0, { 1, 0 })
         vim.api.nvim_exec_autocmds('CursorMoved', {})
-        assert.is_nil(find(1, function(d) return d.virt_lines and d.virt_lines_above end))
+        assert.is_nil(find(0, function(d) return d.virt_text_pos == 'overlay' end))
         assert.equals(50, code_row_width(0))
 
         vim.api.nvim_win_set_cursor(0, { 2, 0 })
         vim.api.nvim_exec_autocmds('CursorMoved', {})
-        assert.is_truthy(find(1, function(d) return d.virt_lines and d.virt_lines_above end))
+        assert.is_truthy(find(0, function(d) return d.virt_text_pos == 'overlay' end))
         assert.equals(0, code_row_width(0))
     end)
 
@@ -354,14 +351,14 @@ describe('deco rendering', function()
 
     it('starts the bars of an indented block on the content column', function()
         render({ '- item', '  ```lua', '  local x = 1', '  ```', 'tail' })
-        local top = find(2, function(d) return d.virt_lines and d.virt_lines_above end)
+        local top = find(1, function(d) return d.virt_text_pos == 'overlay' end)
         assert.is_truthy(top)
-        assert.equals('  ', top.virt_lines[1][1][1])
-        assert.is_nil(top.virt_lines[1][1][2]) -- unhighlighted: outside the block
-        assert.equals(2 + 50, width_of(top.virt_lines[1]))
-        local bottom = find(2, function(d) return d.virt_lines and not d.virt_lines_above end)
+        assert.equals('  ', top.virt_text[1][1])
+        assert.is_nil(top.virt_text[1][2]) -- unhighlighted: outside the block
+        assert.equals(2 + 50, width_of(top.virt_text))
+        local bottom = find(3, function(d) return d.virt_text_pos == 'overlay' end)
         assert.is_truthy(bottom)
-        assert.equals(2 + 50, width_of(bottom.virt_lines[1]))
+        assert.equals(2 + 50, width_of(bottom.virt_text))
         assert.equals(50, code_row_width(2)) -- content lines up with the bars
     end)
 
@@ -388,9 +385,9 @@ describe('deco rendering', function()
             local body = '\t' .. string.rep('c', 60)
             render({ '```lua', body, '```', 'tail' })
             local width = 1 + 3 + 60 + 1 -- pad + tab (col 1 -> 4) + text + pad
-            local top = find(1, function(d) return d.virt_lines and d.virt_lines_above end)
+            local top = find(0, function(d) return d.virt_text_pos == 'overlay' end)
             assert.is_truthy(top)
-            assert.equals(width, width_of(top.virt_lines[1]))
+            assert.equals(width, width_of(top.virt_text))
             assert.equals(width, code_row_width(1))
         end)
         vim.o.tabstop = saved
@@ -400,10 +397,10 @@ describe('deco rendering', function()
     it('widens a code block past the window rather than clamping', function()
         local long = 'local x = "' .. string.rep('y', 200) .. '"'
         render({ '```lua', long, '```', 'tail' })
-        local top = find(1, function(d) return d.virt_lines and d.virt_lines_above end)
+        local top = find(0, function(d) return d.virt_text_pos == 'overlay' end)
         assert.is_truthy(top)
-        assert.equals(#long + 2, width_of(top.virt_lines[1]))
-        assert.is_true(width_of(top.virt_lines[1]) > vim.api.nvim_win_get_width(0))
+        assert.equals(#long + 2, width_of(top.virt_text))
+        assert.is_true(width_of(top.virt_text) > vim.api.nvim_win_get_width(0))
     end)
 
     it('leaves a plantuml block to the image renderer', function()
