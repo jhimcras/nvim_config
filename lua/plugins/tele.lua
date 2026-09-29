@@ -33,7 +33,8 @@ function M.InstanceTargets(on_select)
             actions.select_default:replace(function()
                 local selection = action_state.get_selected_entry()
                 actions.close(prompt_bufnr)
-                on_select(selection and selection.value)
+                -- Let Telescope finish closing before opening a command-line prompt.
+                vim.schedule(function() on_select(selection and selection.value) end)
             end)
             return true
         end,

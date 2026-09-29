@@ -1,4 +1,4 @@
--- Move file buffers or the visible files in a tab to another Nvim process.
+-- Move file and Oil buffers, or the visible buffers in a tab, to another Nvim process.
 local api = vim.api
 local M = {}
 local registry = vim.fn.stdpath('state') .. '/nvim-instances'
@@ -75,8 +75,11 @@ local function collect(kind)
     local paths = {}
     for _, buf in ipairs(buffers) do
         local name = api.nvim_buf_get_name(buf)
-        if vim.bo[buf].buftype ~= '' or name == '' or vim.fn.isdirectory(name) == 1 then
-            warn('일반 파일이 아닌 버퍼는 옮길 수 없습니다')
+        local oil = vim.bo[buf].filetype == 'oil'
+            and name:match('^oil://')
+            and require'oil'.get_current_dir(buf) ~= nil
+        if not oil and (vim.bo[buf].buftype ~= '' or name == '' or vim.fn.isdirectory(name) == 1) then
+            warn('파일 또는 로컬 Oil 버퍼만 옮길 수 있습니다')
             return nil
         end
         paths[#paths + 1] = name
@@ -93,19 +96,39 @@ local function confirm_changes(buffers, done)
         end
     end
     if #changed == 0 then done(true); return end
-    vim.ui.select({ 'Save', 'Ignore', 'Cancel' }, {
-        prompt = string.format('변경된 버퍼 %d개: 이동 전에 어떻게 할까요?', #changed),
-    }, function(choice)
-        if choice == 'Save' then
-            for _, buf in ipairs(changed) do
-                local ok, err = pcall(api.nvim_buf_call, buf, function() vim.cmd.write() end)
-                if not ok then warn('저장 실패: ' .. tostring(err)); done(false); return end
+    local function ask()
+        vim.ui.input({
+            prompt = string.format('Move %d modified buffer%s (1 Save, 2 Ignore, 3 Cancel): ',
+                #changed, #changed == 1 and '' or 's'),
+        }, function(choice)
+            if choice ~= nil and choice ~= '' and choice ~= '1' and choice ~= '2' and choice ~= '3' then
+                vim.schedule(ask)
+                return
             end
-            done(true)
-        else
-            done(choice == 'Ignore')
-        end
-    end)
+            if choice == '1' then
+                local index = 1
+                local function save_next()
+                    local buf = changed[index]
+                    if not buf then done(true); return end
+                    index = index + 1
+                    if vim.bo[buf].filetype == 'oil' then
+                        require'oil'.save({ confirm = false }, function(err)
+                            if err then warn('저장 실패: ' .. tostring(err)); done(false); return end
+                            save_next()
+                        end)
+                    else
+                        local ok, err = pcall(api.nvim_buf_call, buf, function() vim.cmd.write() end)
+                        if not ok then warn('저장 실패: ' .. tostring(err)); done(false); return end
+                        save_next()
+                    end
+                end
+                save_next()
+            else
+                done(choice == '2')
+            end
+        end)
+    end
+    ask()
 end
 
 -- Called over RPC in the destination process. A tab is one tab with file splits.
