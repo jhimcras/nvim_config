@@ -16,6 +16,12 @@ local session_width = 0
 local ime_text = ''
 local ime_width = 0
 
+-- Folder-tab edges (Nerd Font powerline extras). The left edge is left out so
+-- tabs start with a straight side; '\u{e0ba}' (lower-right triangle) slants it.
+local EDGE_L = ''
+local EDGE_R = '\u{e0b8}' -- lower-left triangle
+local EDGE_W = vim.fn.strdisplaywidth(EDGE_L .. EDGE_R)
+
 local function is_tabline_ignored_buf(bufnum)
     local buftype = vim.bo[bufnum].buftype
     if buftype == 'quickfix' then return true end
@@ -81,10 +87,13 @@ function M.tab_update()
     local total_tab_number = vim.fn.tabpagenr('$')
     for i=1, total_tab_number do
         local tabid = string.format('TabLine%d', i)
+        local edgeid = string.format('TabLineEdge%d', i)
         if i == vim.fn.tabpagenr() then
-            ut.set_highlight(tabid, 'TabLineSel')
+            ut.set_highlight(tabid, 'TabLineTabSel')
+            ut.set_highlight(edgeid, 'TabLineTabSelEdge')
         else
-            ut.set_highlight(tabid, 'TabLine')
+            ut.set_highlight(tabid, 'TabLineTab')
+            ut.set_highlight(edgeid, 'TabLineTabEdge')
         end
     end
     return ''
@@ -127,7 +136,7 @@ local function rebuild_titles()
     widths = {}
     for i = 1, total do
         titles[i] = M.tabtitle(i)
-        widths[i] = vim.fn.strdisplaywidth(string.format(' %d %s │', i, titles[i]))
+        widths[i] = vim.fn.strdisplaywidth(string.format('%s %d %s %s', EDGE_L, i, titles[i], EDGE_R))
     end
 end
 
@@ -169,8 +178,8 @@ local function render()
 
     -- known before visible_end is computed
     local left_cur_hidden = cur < tab_offset
-    -- left indicator: " < " (3) or "< │ N │" (6 + digits)
-    local left_ind_w = tab_offset > 1 and (left_cur_hidden and (6 + #tostring(cur)) or 3) or 0
+    -- left indicator: " < " (3) or "< ◢ N ◣" (4 + edges + digits)
+    local left_ind_w = tab_offset > 1 and (left_cur_hidden and (4 + EDGE_W + #tostring(cur)) or 3) or 0
 
     -- Pass 1: no right indicator
     local avail = vim.o.columns - session_width - ime_width - left_ind_w
@@ -181,8 +190,8 @@ local function render()
     if vend_no_right >= total then
         visible_end = vend_no_right
     else
-        -- right indicator: " >" (2) or " N │ >" (5 + digits)
-        local right_ind_w = cur > vend_no_right and (5 + #tostring(cur)) or 2
+        -- right indicator: " >" (2) or "◢ N ◣ >" (4 + edges + digits)
+        local right_ind_w = cur > vend_no_right and (4 + EDGE_W + #tostring(cur)) or 2
         visible_end = tabline_vis_end(tab_offset, widths, total, avail - right_ind_w)
     end
 
@@ -191,20 +200,22 @@ local function render()
 
     if tab_offset > 1 then
         if left_cur_hidden then
-            -- "< │ N │"
-            s[#s+1] = string.format('%%#MoreMsg#< %%#TabLine#│%%#TabLine%d# %d %%#TabLine#│', cur, cur)
+            -- "< ◢ N ◣"
+            s[#s+1] = string.format('%%#MoreMsg#< %%#TabLineEdge%d#%s%%#TabLine%d# %d %%#TabLineEdge%d#%s',
+                cur, EDGE_L, cur, cur, cur, EDGE_R)
         else
             s[#s+1] = '%#MoreMsg# < '
         end
     end
     for i = tab_offset, visible_end do
-        s[#s+1] = string.format('%%#TabLine%d#%%%dT %d %s', i, i, i, titles[i])
-        s[#s+1] = ' %#TabLine#│'
+        s[#s+1] = string.format('%%%dT%%#TabLineEdge%d#%s%%#TabLine%d# %d %s ', i, i, EDGE_L, i, i, titles[i])
+        s[#s+1] = string.format('%%#TabLineEdge%d#%s', i, EDGE_R)
     end
     if right_hidden > 0 then
         if cur > visible_end then
-            -- " N │ >"
-            s[#s+1] = string.format('%%#TabLine%d# %d %%#TabLine#│ %%#MoreMsg#>', cur, cur)
+            -- "◢ N ◣ >"
+            s[#s+1] = string.format('%%#TabLineEdge%d#%s%%#TabLine%d# %d %%#TabLineEdge%d#%s %%#MoreMsg#>',
+                cur, EDGE_L, cur, cur, cur, EDGE_R)
         else
             s[#s+1] = ' %#MoreMsg#>'
         end
@@ -311,6 +322,9 @@ function M.setup()
     -- neopp fires this on every toggle; refresh just the indicator.
     vim.api.nvim_create_autocmd('User', { pattern = 'NeoppImeChanged', callback = paint_ime })
     vim.api.nvim_create_autocmd('VimResized', { callback = paint_resize })
+
+    -- No TabEnter fires for the first tab, so link its highlights up front.
+    M.tab_update()
 end
 
 return M

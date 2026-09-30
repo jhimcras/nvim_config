@@ -43,6 +43,47 @@ describe('tabline', function()
         assert.is_true(visible_tabs(tabline.TabLine()) > 4)
     end)
 
+    -- The tab part (everything before the right-aligned session name) must fit
+    -- the line, or the width math disagrees with the rendered folder edges.
+    local function tabs_width(line)
+        local tabs = line:match('^(.-)%%#MoreMsg#%%=')
+        return vim.api.nvim_eval_statusline(tabs, { use_tabline = true, maxwidth = 1000 }).width
+    end
+
+    it('ends each visible tab with a folder edge', function()
+        vim.cmd('tabfirst')
+        local line = tabline.TabLine()
+        local _, rights = line:gsub('\u{e0b8}', '')
+        assert.are.equal(visible_tabs(line), rights)
+        assert.is_truthy(line:find('%%#TabLine1# 1 .-%%#TabLineEdge1#\u{e0b8}'))
+    end)
+
+    it('fits the line with overflow indicators on either side', function()
+        vim.cmd('tabfirst')
+        assert.is_true(tabs_width(tabline.TabLine()) <= vim.o.columns)
+        vim.cmd('tablast')
+        assert.is_true(tabs_width(tabline.TabLine()) <= vim.o.columns)
+        -- current tab scrolled out on the left
+        vim.cmd('tabnext 2')
+        tabline.TabLine()
+        tabline.tab_scroll(6)
+        assert.is_true(tabs_width(vim.go.tabline) <= vim.o.columns)
+        -- current tab scrolled out on the right
+        vim.cmd('tablast')
+        tabline.TabLine()
+        tabline.tab_scroll(-12)
+        assert.is_true(tabs_width(vim.go.tabline) <= vim.o.columns)
+    end)
+
+    it('links the first tab highlights at setup, before any TabEnter', function()
+        vim.cmd('tabonly')
+        vim.api.nvim_set_hl(0, 'TabLine1', {})
+        vim.api.nvim_set_hl(0, 'TabLineEdge1', {})
+        tabline.setup()
+        assert.are.equal('TabLineTabSel', vim.api.nvim_get_hl(0, { name = 'TabLine1' }).link)
+        assert.are.equal('TabLineTabSelEdge', vim.api.nvim_get_hl(0, { name = 'TabLineEdge1' }).link)
+    end)
+
     it('repaints on VimResized without an explicit TabLine call', function()
         vim.cmd('tablast')
         tabline.TabLine()
