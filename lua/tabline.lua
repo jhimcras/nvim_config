@@ -16,10 +16,10 @@ local session_width = 0
 local ime_text = ''
 local ime_width = 0
 
--- Folder-tab edges (Nerd Font powerline extras). The left edge is left out so
--- tabs start with a straight side; '\u{e0ba}' (lower-right triangle) slants it.
+-- Rectangular tabs: no edge glyphs (slanted Nerd Font edges overflow the line
+-- in some fonts). The right edge is a TabLineFill-bg space that separates tabs.
 local EDGE_L = ''
-local EDGE_R = '\u{e0b8}' -- lower-left triangle
+local EDGE_R = ' '
 local EDGE_W = vim.fn.strdisplaywidth(EDGE_L .. EDGE_R)
 
 local function is_tabline_ignored_buf(bufnum)
@@ -178,7 +178,7 @@ local function render()
 
     -- known before visible_end is computed
     local left_cur_hidden = cur < tab_offset
-    -- left indicator: " < " (3) or "< ◢ N ◣" (4 + edges + digits)
+    -- left indicator: " < " (3) or "< [ N ]" (4 + edges + digits)
     local left_ind_w = tab_offset > 1 and (left_cur_hidden and (4 + EDGE_W + #tostring(cur)) or 3) or 0
 
     -- Pass 1: no right indicator
@@ -190,7 +190,7 @@ local function render()
     if vend_no_right >= total then
         visible_end = vend_no_right
     else
-        -- right indicator: " >" (2) or "◢ N ◣ >" (4 + edges + digits)
+        -- right indicator: " >" (2) or "[ N ] >" (4 + edges + digits)
         local right_ind_w = cur > vend_no_right and (4 + EDGE_W + #tostring(cur)) or 2
         visible_end = tabline_vis_end(tab_offset, widths, total, avail - right_ind_w)
     end
@@ -200,7 +200,7 @@ local function render()
 
     if tab_offset > 1 then
         if left_cur_hidden then
-            -- "< ◢ N ◣"
+            -- "< [ N ]"
             s[#s+1] = string.format('%%#MoreMsg#< %%#TabLineEdge%d#%s%%#TabLine%d# %d %%#TabLineEdge%d#%s',
                 cur, EDGE_L, cur, cur, cur, EDGE_R)
         else
@@ -213,7 +213,7 @@ local function render()
     end
     if right_hidden > 0 then
         if cur > visible_end then
-            -- "◢ N ◣ >"
+            -- "[ N ] >"
             s[#s+1] = string.format('%%#TabLineEdge%d#%s%%#TabLine%d# %d %%#TabLineEdge%d#%s %%#MoreMsg#>',
                 cur, EDGE_L, cur, cur, cur, EDGE_R)
         else

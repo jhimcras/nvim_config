@@ -47,8 +47,7 @@ function M.setup()
     ut.set_highlight('QuickFixLine', { gui='underline' })
 
     ut.set_highlight('TabLineSel', {gui = 'bold,italic'})
-    -- Folder-shaped tabs: body plus the slanted edge glyphs drawn in the body's
-    -- bg over the TabLineFill bg.
+    -- Rectangular tabs: body plus a gap drawn in the TabLineFill bg.
     ut.set_highlight('TabLineTab',        { guibg = '#1f2937', guifg = '#9ca3af' })
     ut.set_highlight('TabLineTabSel',     { guibg = '#7281c9', guifg = '#111827', gui = 'bold' })
     ut.set_highlight('TabLineTabEdge',    { guibg = '#111827', guifg = '#1f2937' })

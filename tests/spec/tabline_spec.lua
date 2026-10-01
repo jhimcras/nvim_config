@@ -44,18 +44,18 @@ describe('tabline', function()
     end)
 
     -- The tab part (everything before the right-aligned session name) must fit
-    -- the line, or the width math disagrees with the rendered folder edges.
+    -- the line, or the width math disagrees with the rendered tab gaps.
     local function tabs_width(line)
         local tabs = line:match('^(.-)%%#MoreMsg#%%=')
         return vim.api.nvim_eval_statusline(tabs, { use_tabline = true, maxwidth = 1000 }).width
     end
 
-    it('ends each visible tab with a folder edge', function()
+    it('separates each visible tab with a gap', function()
         vim.cmd('tabfirst')
         local line = tabline.TabLine()
-        local _, rights = line:gsub('\u{e0b8}', '')
+        local _, rights = line:gsub('%%#TabLineEdge%d+# ', '')
         assert.are.equal(visible_tabs(line), rights)
-        assert.is_truthy(line:find('%%#TabLine1# 1 .-%%#TabLineEdge1#\u{e0b8}'))
+        assert.is_truthy(line:find('%%#TabLine1# 1 .-%%#TabLineEdge1# '))
     end)
 
     it('fits the line with overflow indicators on either side', function()
