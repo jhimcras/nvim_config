@@ -30,6 +30,8 @@ describe('complete', function()
         local original_cmp = package.loaded['cmp']
         local original_link_complete = package.loaded['rendermark.link_complete']
         package.loaded['rendermark.link_complete'] = { new = function() return {} end }
+        local original_image_complete = package.loaded['rendermark.image_complete']
+        package.loaded['rendermark.image_complete'] = { new = function() return {} end }
         local captured_opts
         local bordered_calls = 0
         package.loaded['cmp'] = {
@@ -75,5 +77,6 @@ describe('complete', function()
         -- Restore original
         package.loaded['cmp'] = original_cmp
         package.loaded['rendermark.link_complete'] = original_link_complete
+        package.loaded['rendermark.image_complete'] = original_image_complete
     end)
 end)

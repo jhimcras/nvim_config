@@ -7,6 +7,7 @@ end
 
 function M.setup()
     cmp.register_source('markdown_link', require('rendermark.link_complete').new())
+    cmp.register_source('markdown_image', require('rendermark.image_complete').new())
 
     cmp.setup {
         mapping = cmp.mapping.preset.insert {
@@ -33,6 +34,7 @@ function M.setup()
         sources = cmp.config.sources({
         --     { name = 'markdown_link' },
         -- }, {
+            { name = 'markdown_image' },
             { name = 'vsnip' },
             { name = 'nvim_lsp' },
             { name = 'nvim_lsp_signature_help' },
