@@ -31,6 +31,12 @@ local config = vim.deepcopy(defaults)
 local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
 local group
 local saved_state = {} -- per-window saved options, keyed by window id
+local table_rows = {} -- buf -> source row -> images positioned in the rendered grid
+
+function M.table_row(buf, row)
+    local rows = table_rows[buf]
+    return rows and rows[row]
+end
 -- Fold-change detection state per window (see the decoration provider in M.setup):
 -- last topline/botline drawn, plus a flag to swallow the first draw after a refresh.
 local win_seen, win_settled = {}, {}
@@ -433,7 +439,11 @@ local function styled_cell(chars, runs, breaks)
             if breaks and breaks[ch.b] then
                 items[#items + 1] = { c = '', w = 0, br = true }
             end
-            add(ch.c, nil)
+            if ch.image then
+                items[#items + 1] = ch.image
+            else
+                add(ch.c, nil)
+            end
         end
         return items
     end
@@ -447,7 +457,9 @@ local function styled_cell(chars, runs, breaks)
             ri = ri + 1
         end
         local r = runs[ri]
-        if not (r and ch.b >= r.s) then
+        if ch.image then
+            items[#items + 1] = ch.image
+        elseif not (r and ch.b >= r.s) then
             add(ch.c, nil)
         elseif r.conceal == '' then
             -- concealed
@@ -515,11 +527,49 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
     end
 
     local aligns = M.parse_aligns(lines[2])
+    local image = require('rendermark.image')
+    local cell_w = tonumber(vim.g.neopp_cell_width_px) or 10
+    local cell_h = tonumber(vim.g.neopp_cell_height_px) or 18
+    local max_rows = tonumber(vim.g.neopp_image_max_height_rows) or 30
+    local zoom = tonumber(vim.g.neopp_font_zoom_scale) or 1
+    local active = image.is_active()
+    for row = t_start, t_end do
+        table_rows[buf][row] = {}
+    end
+
+    local function image_chars(cell, row)
+        if not active then return cell.chars end
+        local images = {}
+        image.scan_markdown_image_text(buf, row, cell.text, images)
+        local chars, offset, index = {}, 0, 1
+        for _, ch in ipairs(cell.chars) do
+            local img = images[index]
+            if img and offset >= img.byte_end_col then
+                index = index + 1
+                img = images[index]
+            end
+            if img and not img.error and offset >= img.byte_col and offset < img.byte_end_col then
+                if offset == img.byte_col then
+                    local placed = vim.deepcopy(img)
+                    placed.col, placed.byte_col = ch.b, ch.b
+                    local w, h = image.compute_image_display_size(placed, avail * cell_w, max_rows, cell_h, zoom)
+                    chars[#chars + 1] = { b = ch.b, image = {
+                        c = string.rep(' ', math.ceil(w / cell_w)), w = math.ceil(w / cell_w),
+                        image = placed, display_w = w, display_h = h,
+                    } }
+                end
+            else
+                chars[#chars + 1] = ch
+            end
+            offset = offset + #ch.c
+        end
+        return chars
+    end
 
     local function styled_row(lnum0)
         local row = {}
         for c, cell in ipairs(M.split_cells_pos(lines[lnum0 - t_start + 1])) do
-            row[c] = styled_cell(cell.chars, inline[lnum0], html.table_breaks(buf, lnum0))
+            row[c] = styled_cell(image_chars(cell, lnum0), inline[lnum0], html.table_breaks(buf, lnum0))
         end
         return row
     end
@@ -567,10 +617,33 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
     local bot = table_border('└', '┴', '┘', widths)
 
     -- Grid rows for one source row, as virt_text chunk lists.
-    local function row_block(cells)
+    local function row_block(cells, lnum0)
         local cols, height = {}, 1
         for c = 1, N do
-            cols[c] = wrap_items(cells[c] or {}, widths[c])
+            local items = cells[c] or {}
+            for _, it in ipairs(items) do
+                if it.image then
+                    it.display_w, it.display_h = image.compute_image_display_size(
+                        it.image, widths[c] * cell_w, max_rows, cell_h, zoom)
+                    it.w = math.ceil(it.display_w / cell_w)
+                    it.c = string.rep(' ', it.w)
+                end
+            end
+            cols[c] = {}
+            for _, row in ipairs(wrap_items(items, widths[c])) do
+                local h = 1
+                for _, it in ipairs(row) do
+                    if it.image then h = math.max(h, math.ceil(it.display_h / cell_h)) end
+                end
+                cols[c][#cols[c] + 1] = row
+                for _ = 2, h do
+                    local blank = {}
+                    for _, it in ipairs(row) do
+                        blank[#blank + 1] = { c = string.rep(' ', it.w), w = it.w }
+                    end
+                    cols[c][#cols[c] + 1] = blank
+                end
+            end
             if #cols[c] > height then height = #cols[c] end
         end
         local out = {}
@@ -592,8 +665,21 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
                     rpad = extra - lpad
                 end
                 push_chunk(chunks, string.rep(' ', lpad + 1), config.hl)
+                local col = 2 + lpad
+                for prev = 1, c - 1 do col = col + widths[prev] + 3 end
                 for _, it in ipairs(row) do
-                    push_chunk(chunks, it.c, with_base(it.hl))
+                    if it.image then
+                        local img = vim.deepcopy(it.image)
+                        img.table_layout = { row = k - 1, col = col,
+                            width = it.display_w, height = it.display_h }
+                        table_rows[buf][lnum0][#table_rows[buf][lnum0] + 1] = img
+                        local label = image._stub_active and ('[img: ' .. vim.fn.fnamemodify(img.path, ':t') .. ']') or ''
+                        label = vim.fn.strcharpart(label, 0, it.w)
+                        push_chunk(chunks, label .. string.rep(' ', math.max(0, it.w - dw(label))), config.hl)
+                    else
+                        push_chunk(chunks, it.c, with_base(it.hl))
+                    end
+                    col = col + it.w
                 end
                 push_chunk(chunks, string.rep(' ', rpad + 1), config.hl)
                 push_chunk(chunks, '│', config.hl)
@@ -622,7 +708,7 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
     -- Header: top border above, content overlaid, continuations below.
     vlines(t_start, { { hl_chunk(top) } }, true)
     if t_start + 1 ~= cursor_lnum then
-        local block = row_block(header)
+        local block = row_block(header, t_start)
         overlay(t_start, block[1])
         local cont = {}
         for k = 2, #block do
@@ -642,7 +728,7 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
         local lnum0 = t_start + 1 + i
         local below = (i == #data) and bot or sep
         if lnum0 + 1 ~= cursor_lnum then
-            local block = row_block(cells)
+            local block = row_block(cells, lnum0)
             overlay(lnum0, block[1])
             local rest = {}
             for k = 2, #block do
@@ -820,6 +906,7 @@ function M.refresh(win)
     if is_markdown_buffer(buf) then deco.visible_fences(buf, true) end
 
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+    table_rows[buf] = {}
     deco.clear(buf)
 
     -- leftcol is window-global and slides every line's real text, which we can't
@@ -865,6 +952,7 @@ function M.refresh(win)
         render_range(buf, seg[1], seg[2], width, cursor_row, images_active)
     end
     win_settled[win] = true
+    if images_active then require('rendermark.image').schedule_image_sync() end
 end
 
 local pending = {}
@@ -965,6 +1053,7 @@ function M.disable(win)
     local buf = vim.api.nvim_win_get_buf(w)
 
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+    table_rows[buf] = nil
     deco.clear(buf)
     html.clear(buf)
     vim.b[buf].markdown_visual_wrap = false
@@ -976,6 +1065,9 @@ function M.disable(win)
         vim.wo[w].statuscolumn = saved.statuscolumn
         vim.wo[w].conceallevel = saved.conceallevel
         saved_state[w] = nil
+    end
+    if require('rendermark.image').is_active() then
+        require('rendermark.image').schedule_image_sync()
     end
 end
 
@@ -1010,6 +1102,10 @@ function M.setup(opts)
     vim.g.markdown_visual_wrap_enabled = config.markdown
 
     group = vim.api.nvim_create_augroup('markdown_visual_wrap', { clear = true })
+    vim.api.nvim_create_autocmd('BufWipeout', {
+        group = group,
+        callback = function(a) table_rows[a.buf] = nil end,
+    })
 
     vim.api.nvim_create_user_command('MarkdownWrapToggle', function()
         if vim.g.markdown_visual_wrap_enabled == false then
@@ -1036,6 +1132,17 @@ function M.setup(opts)
     vim.api.nvim_create_autocmd({ 'BufWinEnter', 'WinEnter' }, {
         group = group,
         callback = apply_current_window,
+    })
+
+    -- Table dimensions depend on image availability and the GUI's cell metrics.
+    vim.api.nvim_create_autocmd('User', {
+        group = group,
+        pattern = { 'NeoppReady', 'NeoppMetrics' },
+        callback = function()
+            for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+                if buffer_enabled(vim.api.nvim_win_get_buf(win)) then schedule_refresh(win) end
+            end
+        end,
     })
 
     -- Opening/closing a fold fires no autocmd, yet it changes which lines are

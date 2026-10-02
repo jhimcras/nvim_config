@@ -1899,6 +1899,36 @@ function M._send_images_impl()
     local stack_bottom_grid_row = nil
     local by_row = {}
     for _, image in ipairs(buf_images[info.buf] or {}) do
+      if image.table_layout then
+        local sp = M.safe_screenpos(info.win, image.row + 1, 1)
+        local anchor = sp.row > 0 and (sp.row - 1)
+          or M.offscreen_anchor_grid_row(info.win, info.w, image.row)
+        if anchor then
+          local w, layout = info.w, image.table_layout
+          local grid_row = anchor + layout.row
+          local grid_col = w.wincol - 1 + w.textoff + layout.col
+          payload[#payload + 1] = {
+            id = 'buf:' .. info.buf .. ':win:' .. info.win .. ':' .. image.row .. ':' .. image.col .. ':' .. stable_hash(image.path),
+            buf = info.buf, row = image.row, col = image.col, path = image.path,
+            source_width = image.source_width, source_height = image.source_height,
+            grid_row = grid_row, grid_col = grid_col, text_grid_row = grid_row,
+            -- The table already replaced the link with blank cells. Virtual-link
+            -- occlusion would hide the rest of the row, including its borders.
+            text_col = -1, text_end_col = -1,
+            virtual = false, win_left = w.wincol - 1, win_width = w.width,
+            win_top = w.winrow - 1, win_height = w.height, text_offset = w.textoff,
+            dest_x_px = grid_col * cell_w, dest_y_px = grid_row * cell_h,
+            display_width_px = layout.width, display_height_px = layout.height,
+            clip_x_px = (w.wincol - 1 + w.textoff) * cell_w,
+            clip_y_px = (w.winrow - 1) * cell_h,
+            clip_width_px = math.max(1, (w.width - w.textoff) * cell_w),
+            clip_height_px = w.height * cell_h,
+            virt_height = math.ceil(layout.height / cell_h), zindex = 50,
+            above_floats = info.above_floats == true,
+          }
+        end
+        goto continue_image
+      end
       if image.error then
         M.set_image_error_extmark(info.buf, image)
         has_error_extmarks = true

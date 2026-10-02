@@ -132,7 +132,12 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
 
   for i, line in ipairs(lines) do
     local row0 = start_row + i - 1
-    M.scan_markdown_image_text(deps, buf, row0, line, result, { base_col = 0 })
+    local table_images = require('rendermark.wrap').table_row(buf, row0)
+    if table_images then
+      for _, image in ipairs(table_images) do result[#result + 1] = vim.deepcopy(image) end
+    else
+      M.scan_markdown_image_text(deps, buf, row0, line, result, { base_col = 0 })
+    end
   end
 
   local ok_marks, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, -1, { start_row, 0 }, { end_row, 0 }, { details = true })
@@ -141,6 +146,7 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
       local row0 = mark[2]
       local col0 = mark[3]
       local details = mark[4] or {}
+      if require('rendermark.wrap').table_row(buf, row0) then goto continue_mark end
       if row0 and details.ns_id ~= deps.image_ns() and details.virt_text ~= nil then
         local text = M.virt_text_to_plain(details.virt_text)
         if text ~= '' then
@@ -164,6 +170,7 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
           end
         end
       end
+      ::continue_mark::
     end
   end
 
