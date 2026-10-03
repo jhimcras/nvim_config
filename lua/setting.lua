@@ -39,7 +39,7 @@ local function BasicSettings()
     vim.o.updatetime = 500
     vim.o.signcolumn = 'yes:1'
     vim.o.timeoutlen = 1000
-    vim.o.ttimeoutlen = 0       -- This solves the problem on linux terminal esc dealy
+    vim.o.ttimeoutlen = 0       -- No Esc delay in Linux terminals
     vim.o.breakindent = true
     vim.g.original_path = vim.env.PATH
     vim.o.fileencodings = 'ucs-bom,utf-8,euckr' --,latin1'
@@ -79,11 +79,8 @@ local function FoldSetting()
     vim.o.foldtext = "v:lua.FoldText()"
 end
 
--- The treesitter highlighter prepares states over the window's topline..botline
--- BUFFER range, which closed folds stretch across most of the file for one
--- screenful of rows (measured: 123ms per scroll step on a 37k-line cpp diff, vs
--- 3ms unfolded). diff mode is the only place this config folds by default, so big
--- diff buffers fall back to legacy syntax and get treesitter back on diff end.
+-- Treesitter highlighting cost follows the buffer span under closed folds (123ms
+-- vs 3ms per scroll on a 37k-line diff), so big diff buffers use legacy syntax.
 local function DiffSetting()
     local big_buffer_lines = 2000
 
@@ -108,7 +105,7 @@ local function DiffSetting()
                 and vim.wo[win].diff
                 and api.nvim_buf_line_count(buf) > big_buffer_lines then
                 vim.treesitter.stop(buf)
-                -- nvim-treesitter clears 'syntax' when it enables the highlighter.
+                -- nvim-treesitter clears 'syntax' when enabled.
                 if vim.bo[buf].syntax == '' or vim.bo[buf].syntax == 'off' then
                     vim.bo[buf].syntax = vim.bo[buf].filetype
                 end

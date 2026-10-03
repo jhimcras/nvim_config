@@ -8,11 +8,8 @@ vim.api.nvim_create_autocmd({"QuitPre", "ExitPre", "VimLeavePre"}, {
     end
 })
 
--- We'll use schedule to run commands and then quit to see the results
 vim.schedule(function()
-    -- Test :q on a buffer
-    -- We need to run this in a way that we can capture the output.
-    -- Maybe just print to a file.
+    -- Placeholder: test :q on a buffer.
 end)
 
 function _G.dump_results()

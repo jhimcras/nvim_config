@@ -27,9 +27,7 @@ end
 -- Mock nvim_list_bufs to return empty
 vim.api.nvim_list_bufs = function() return {} end
 
--- We need to trigger the QuitPre autocmd.
--- Since we can't easily trigger a real quit and catch it in this script without exiting,
--- we'll manually call the callback if we can find it, or just simulate the quit.
+-- Call the QuitPre callback directly; a real quit would exit the script.
 
 local quit_pre_cb = nil
 local autocmds = vim.api.nvim_get_autocmds({ event = "QuitPre" })

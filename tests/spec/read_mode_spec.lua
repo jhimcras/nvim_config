@@ -182,14 +182,8 @@ describe('read_mode', function()
     end)
 
     it('n includes a foreign hl_group extmark scheduled around the same time as the jump, on the wrapped rows', function()
-        -- Regression test: a foreign decorator (e.g. render-markdown's checkbox
-        -- scope_highlight) recomputes its extmarks via its own vim.schedule in
-        -- reaction to the same cursor jump. If n's own wrap refresh runs
-        -- synchronously (the bug), it snapshots the buffer's extmarks before
-        -- that scheduled update has run and the highlight is dropped from the
-        -- wrapped rows. Simulate that by enqueueing our own vim.schedule call
-        -- right before the n keypress -- ordering must still put it ahead of
-        -- read_mode's own (now-deferred) wrap refresh.
+        -- Regression: n's wrap refresh must run after a foreign decorator's own
+        -- vim.schedule, or it snapshots extmarks before the highlight exists.
         local wrap = require('rendermark.wrap')
         pcall(vim.api.nvim_del_augroup_by_name, 'markdown_visual_wrap')
         wrap.setup({ left_pad = 0, right_pad = 0 })
@@ -199,10 +193,7 @@ describe('read_mode', function()
         local buf = vim.api.nvim_get_current_buf()
 
         local width = vim.api.nvim_win_get_width(win)
-        -- MARK sits well past the first visible row (in a continuation row)
-        -- and clear of the search match's own IncSearch span, so its Comment
-        -- highlight can be checked in isolation instead of being merged into
-        -- a stacked hl with the match highlight.
+        -- MARK lies in a continuation row, clear of the match's IncSearch span.
         local filler = string.rep('word ', width)
         local long = filler .. 'MARK ' .. filler .. 'target'
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, { long })
@@ -249,13 +240,8 @@ describe('read_mode', function()
     end)
 
     it('falls through to a pre-existing global <Esc> mapping once READ mode is inactive again', function()
-        -- Regression test: read_mode installs a buffer-local <Esc> map the
-        -- first time a buffer ever enters READ mode, and never removes it
-        -- (by design, see ensure_keymaps). If its inactive-fallback path fed
-        -- <Esc> non-recursively instead of delegating to whatever <Esc>
-        -- mapping existed before (e.g. a global :nohlsearch binding), that
-        -- other mapping would silently stop firing on this buffer forever,
-        -- even after read_mode.exit.
+        -- Regression: read_mode's permanent buffer-local <Esc> must delegate to
+        -- the previous <Esc> mapping when inactive.
         local fired = false
         vim.keymap.set('n', '<esc>', function() fired = true end)
 

@@ -192,16 +192,13 @@ function M.NewScratchBuffer(position)
 
     local buf = vim.api.nvim_get_current_buf()
     vim.bo.buftype = 'nofile'
-    --vim.bo.filetype = 'scratch'
-    --vim.bo.modifiable = false
     return buf
 end
 
 
 function M.AsyncProcess(cmd, args, cwd, ev_or_opts, read_func, end_func)
     local ev
-    -- 4th arg may be an opts table { env, onread, onexit }, told apart from the
-    -- old env list by having no integer index.
+    -- 4th arg: opts { env, onread, onexit }, or a legacy env list (integer-indexed).
     if type(ev_or_opts) == 'table' and ev_or_opts[1] == nil then
         ev = ev_or_opts.env
         read_func = ev_or_opts.onread
@@ -254,7 +251,6 @@ function M.AsyncProcess(cmd, args, cwd, ev_or_opts, read_func, end_func)
         signal = signal or "sigterm"
         if handle and not handle:is_closing() then
             handle:kill(signal)
-            -- print("kill success")
         end
         status = 'terminated'
     end
@@ -326,7 +322,6 @@ command! DeleteHiddenBuffers call DeleteHiddenBuffers()
 ]]--
 end
 
--- Erase trailing whitespace function and keyboard binding.
 function M.StripTrailingWhitespace()
     local prevPosition = vim.fn.getpos('.')
     local prevSearch = vim.fn.getreg('/')
@@ -358,11 +353,7 @@ function M.AutoResetPlugin()
         local path_from_lua = folder:sub(#lua_plugin_folder+1)
         local prefix = path_from_lua:gsub('/', '.')
         if prefix ~= '' then prefix = prefix .. '.' end
-        --print('Reset plugin: ' .. prefix .. file_name)
         M.ResetPlugin(prefix .. file_name)
-        --local s = buf_name:find([[
-        --local current_plugin_name = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ':p:t:r')
-        --ResetPlugin(current_plugin_name)
     end
 end
 
@@ -387,13 +378,12 @@ function M.CreateMarkdownNote()
 end
 
 
--- show difference of current file and saved file
+-- Diff the buffer against the saved file.
 function M.DiffOrig()
     vim.cmd('vert new | set bt=nofile | r ++edit # | 0d_ | diffthis | wincmd p | diffthis')
 end
 
--- Show the stack of syntax highlighting classes affecting whatever is under the cursor.
--- Notes: Not working on treesitter
+-- Syntax highlight stack under the cursor (not treesitter).
 function M.SynStack()
     local syn_stack = ''
     local syn = vim.fn.synstack(vim.fn.line('.'), vim.fn.col('.'))
@@ -403,9 +393,7 @@ function M.SynStack()
     vim.notify(syn_stack, vim.log.levels.INFO)
 end
 
--- Shift a color toward white (pct > 0) or black (pct < 0) by pct% of the remaining
--- distance, as '#RRGGBB'. `rgb` is an '#RRGGBB' string or nvim_get_hl()'s packed
--- number. Used to derive the code block background from 'Normal'.
+-- Shift `rgb` ('#RRGGBB' or packed number) toward white (pct > 0) or black (pct < 0).
 function M.shade(rgb, pct)
     if type(rgb) == 'string' then
         rgb = tonumber(rgb:gsub('^#', ''), 16)
@@ -508,39 +496,18 @@ function M.ttl_caching_result(func, expired_ms)
     return util_cache.ttl_caching_result(func, expired_ms)
 end
 
---- Memoize a function with TTL and automatic cleanup of expired entries.
----
---- @param func      function                  The function to memoize.
---- @param opts?     table                     Options:
----   - ttl_ms       number (required)         TTL in milliseconds (> 0 enables caching)
----   - key_fn       function(...) -> string   Optional custom key function (default uses identity)
----   - cleanup_ms   number                    Sweep interval in ms; if nil/<=0, no background timer is used.
----   - opportunistic_every number             If no timer: sweep every N calls (default 100).
---- @return function                           A wrapper function with per-argument TTL caching.
+--- Memoize with per-key TTL.
+--- opts: ttl_ms (required), key_fn, cleanup_ms (sweep timer), opportunistic_every (default 100).
 function M.memoize_ttl(func, opts)
     return util_cache.memoize_ttl(func, opts)
 end
 
---- Debounce a function: coalesce rapid calls into a single trailing invocation.
---- Each call (re)arms a timer for `ms`; the wrapped `fn` runs once, `ms` after the
---- last call, with that last call's arguments. The timer callback is scheduled on
---- the main loop, so `fn` may safely touch the Neovim API.
----
---- @param fn function   The function to debounce.
---- @param ms number     Trailing-edge delay in milliseconds.
---- @return function      The debounced wrapper.
+--- Trailing-edge debounce: `fn` runs once, `ms` after the last call, on the main loop.
 function M.debounce(fn, ms)
     return util_cache.debounce(fn, ms)
 end
 
---- Throttle a function: run it at most once per `ms`, firing immediately on
---- the leading edge and once more on the trailing edge if calls kept arriving
---- during the cooldown. Unlike `debounce`, this keeps firing at a steady
---- cadence during a sustained burst instead of waiting for it to go quiet.
----
---- @param fn function   The function to throttle.
---- @param ms number     Minimum milliseconds between invocations.
---- @return function      The throttled wrapper.
+--- Throttle: at most once per `ms`, leading edge plus a trailing call if needed.
 function M.throttle(fn, ms)
     return util_cache.throttle(fn, ms)
 end

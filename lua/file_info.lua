@@ -96,8 +96,7 @@ function M.show()
     local row = math.floor(win_pos[1] + (win_height - height) / 2)
     local col = math.floor(win_pos[2] + (win_width - width) / 2)
 
-    -- Keep the window (plus its 1-cell border) inside the editor:
-    -- 1 <= row <= vim.o.lines - height - 1
+    -- Keep the window and its border inside the editor.
     row = math.max(1, math.min(row, vim.o.lines - height - 1))
     col = math.max(1, math.min(col, vim.o.columns - width - 1))
 

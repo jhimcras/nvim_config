@@ -37,7 +37,7 @@ local function resolve_git_dir(dir)
         if line and line:match("^gitdir:") then
             local gitdir = line:gsub("^gitdir:%s*", "")
 
-            -- if relative path, resolve against repo root
+            -- relative path: resolve against repo root
             if not gitdir:match("^/") and not gitdir:match("^%a:[/\\]") then
                 gitdir = vim.fs.joinpath(dir, gitdir)
             end
@@ -83,7 +83,6 @@ local function read_branch_commit(gitdir)
     end
 end
 
--- public function
 function M.git_branch_commit(dir)
     dir = dir or vim.uv.cwd()
     dir = normpath(dir)

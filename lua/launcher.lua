@@ -252,10 +252,8 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                                     local s, e, c1, c2, c3, c4, c5, c6, c7, c8, c9 = line:find(pcfg.pattern)
                                     local captures = { [0] = {s, e}, c1, c2, c3, c4, c5, c6, c7, c8, c9 }
 
-                                    -- find returns capture strings, not positions, and
-                                    -- the user's pattern can't be rewritten with () to
-                                    -- get them -- so each capture is searched for
-                                    -- inside the matched span below.
+                                    -- find returns capture strings, not positions;
+                                    -- locate each inside the matched span.
 
                                     for hl_idx, hl_group_or_color in pairs(pcfg.highlight) do
                                         local hl_group = hl_group_or_color
@@ -272,7 +270,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
                                             -- Locate the capture inside the match
                                             local cap_str = m[hl_idx]
                                             local search_area = line:sub(s, e)
-                                            local cap_s, cap_e = search_area:find(cap_str, 1, true) -- plain search
+                                            local cap_s, cap_e = search_area:find(cap_str, 1, true)
                                             if cap_s then
                                                 AddHighlight(buf, hl_group, lnum, s + cap_s - 2, s + cap_e - 1)
                                             end
@@ -607,8 +605,7 @@ function M.LaunchObject(obj)
                     M.running_processes[existing_buf] = nil
                 end
 
-                -- A terminal buffer can't be converted back, and termopen() needs an
-                -- empty unmodified buffer.
+                -- termopen() needs an empty unmodified non-terminal buffer.
                 local old_buftype = vim.api.nvim_get_option_value('buftype', { buf = existing_buf })
                 if old_buftype == 'terminal' or mode == 'terminal' then
                     vim.api.nvim_buf_delete(existing_buf, { force = true })
@@ -735,9 +732,7 @@ local function SearchLauncherFileCandidates(prjroot, filename)
     return candidates
 end
 
--- Never target a window showing the launcher output buffer -- lc_parent_win can
--- point at it when the launch key is pressed from inside it. Same protection
--- native quickfix has against opening a file into the list window.
+-- Never target a window showing the launcher buffer (lc_parent_win may point at it).
 local function FindSafeJumpWindow(exclude_buf)
     local candidates = { vim.b.lc_parent_win, vim.fn.win_getid(vim.fn.winnr('#')) }
     for _, w in ipairs(candidates) do
@@ -836,8 +831,7 @@ function M.Jump()
             end
         end
 
-        -- Switch windows only once something is actually being opened, and never
-        -- into the window showing this launcher buffer.
+        -- Switch windows only when opening something, never into the launcher.
         local target_win = FindSafeJumpWindow(launcher_buf)
         if target_win then
             api.nvim_set_current_win(target_win)
@@ -901,8 +895,7 @@ end
 function M.setup()
     api.nvim_create_autocmd({'BufRead', 'BufNew'}, {callback = BufMapping})
 
-    -- Route typed buffer-deletion commands through the launcher guard, even
-    -- when their target is a hidden launcher buffer.
+    -- Route typed buffer-deletion commands through the launcher guard.
     local abbrevs = { 'bd', 'bw', 'bdelete', 'bwipe', 'bwipeout' }
     for _, abr in ipairs(abbrevs) do
         local command_name = 'Launcher' .. abr:sub(1, 1):upper() .. abr:sub(2)

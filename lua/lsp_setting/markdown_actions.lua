@@ -52,7 +52,7 @@ local function create_file(client, cmd)
         vim.notify(tostring(err), vim.log.levels.ERROR)
         return
     end
-    -- Recheck atomically: the file may have appeared while the menu was open.
+    -- The file may have appeared while the menu was open.
     local fd, open_err = vim.uv.fs_open(path, 'wx', 420)
     if not fd then
         vim.notify(open_err, vim.log.levels.ERROR)
@@ -68,7 +68,7 @@ local function create_file(client, cmd)
 end
 
 function M.attach(client)
-    -- on_attach runs for every buffer, but the request wrapper belongs to the client.
+    -- Wrap the client's request once, not per buffer.
     if client.commands[command] then return end
     client.commands[command] = function(cmd) create_file(client, cmd) end
     local request = client.request
@@ -90,7 +90,7 @@ function M.attach(client)
                     end
                 end
                 if not duplicate then
-                    -- A Command uses native execution without asking the server to resolve it.
+                    -- A Command executes natively, without server resolve.
                     result[#result + 1] = {
                         title = 'Create File: "' .. vim.fs.basename(path) .. '"',
                         kind = 'quickfix', command = command, arguments = { path },

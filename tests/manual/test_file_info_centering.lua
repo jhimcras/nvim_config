@@ -20,9 +20,7 @@ local function calculate_pos(params)
     local col = math.floor(win_pos[2] + (win_width - float_width) / 2)
 
     -- 3. Clipping logic
-    -- To keep the border (1 cell) within boundaries (0 to screen_lines - 1):
-    -- row - 1 >= 0 => row >= 1
-    -- row + height + 1 <= screen_lines => row <= screen_lines - height - 1
+    -- Keep the border on screen: 1 <= row <= screen_lines - height - 1
     row = math.max(1, math.min(row, screen_lines - float_height - 1))
     col = math.max(1, math.min(col, screen_cols - float_width - 1))
 

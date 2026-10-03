@@ -1,7 +1,5 @@
--- rendermark checkbox toggle: cycle `[ ]`/`[x]` on the cursor line (or every
--- selected line in Visual mode). Obsidian-compatible syntax — a list marker
--- with no checkbox gets `[ ]` inserted; anything checked (`[x]`, `[X]`, ...)
--- normalizes back to `[ ]`. Lines without a list marker are left untouched.
+-- Toggle `[ ]`/`[x]` on the cursor line or Visual selection (Obsidian syntax).
+-- A list item without a checkbox gets `[ ]`; non-list lines are untouched.
 
 local ut = require 'util'
 

@@ -7,7 +7,7 @@ output=$(nvim --headless -u tests/minimal_init.lua \
 
 echo "$output"
 
-# Count failures and errors (strip ANSI color codes first, or awk grabs the reset code instead of the number)
+# Count failures and errors (strip ANSI codes first so awk gets the number)
 failures=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep "Failed :" | awk '{print $3}' | awk '{s+=$1} END {print s}')
 errors=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep "Errors :" | awk '{print $3}' | awk '{s+=$1} END {print s}')
 

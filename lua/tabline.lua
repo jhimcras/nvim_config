@@ -7,8 +7,7 @@ local auto_scroll_next = false
 local current_tabpage = nil -- tab active as of the last TabEnter
 local prev_tabpage = nil    -- tab active immediately before that
 
--- Cached render state; each piece is rebuilt only by the event that changes it,
--- so a frequent event (IME toggle) reuses the rest.
+-- Cached render state; each piece is rebuilt only by the event that changes it.
 local titles = {}        -- per-tab display title, index 1..tabcount
 local widths = {}        -- per-tab cell width incl. separators
 local session_text = ''
@@ -16,8 +15,7 @@ local session_width = 0
 local ime_text = ''
 local ime_width = 0
 
--- Rectangular tabs: no edge glyphs (slanted Nerd Font edges overflow the line
--- in some fonts). The right edge is a TabLineFill-bg space that separates tabs.
+-- Rectangular tabs separated by a TabLineFill space (slanted glyphs overflow in some fonts).
 local EDGE_L = ''
 local EDGE_R = ' '
 local EDGE_W = vim.fn.strdisplaywidth(EDGE_L .. EDGE_R)
@@ -28,8 +26,7 @@ local function is_tabline_ignored_buf(bufnum)
     return false
 end
 
--- IME state from neopp (vim.g.neopp_ime), refreshed on 'User NeoppImeChanged'.
--- Empty outside neopp.
+-- IME state from neopp (vim.g.neopp_ime); empty outside neopp.
 local function neopp_ime()
     local s = vim.g.neopp_ime
     if s == 'korean_hangul' then return '한'
@@ -99,7 +96,6 @@ function M.tab_update()
     return ''
 end
 
--- Single pass; the caller pre-computes the available space.
 local function tabline_vis_end(offset, widths, total, avail)
     local vend = offset - 1
     local used = 0
@@ -114,8 +110,7 @@ local function tabline_vis_end(offset, widths, total, avail)
     return vend
 end
 
--- Largest offset that still shows the last tab; scrolling further would only
--- leave blank space on the left.
+-- Largest offset that still shows the last tab.
 local function max_tab_offset(total)
     local used = 0
     local offset = total + 1
@@ -128,8 +123,7 @@ local function max_tab_offset(total)
     return math.min(offset, total)
 end
 
--- Rebuild the per-tab title/width cache. Expensive (M.tabtitle walks every tab's
--- buffers and resolves project roots), so only tab-content events call it.
+-- Rebuild the per-tab title/width cache (expensive; tab-content events only).
 local function rebuild_titles()
     local total = vim.fn.tabpagenr('$')
     titles = {}
@@ -150,16 +144,15 @@ local function rebuild_ime()
     ime_width = (ime_text ~= '') and vim.fn.strdisplaywidth(' ' .. ime_text .. ' ') or 0
 end
 
--- Assemble the tabline from the cache alone: no title recompute, no highlight
--- commands. The scroll math runs every call so overflow tracks the live width.
+-- Assemble the tabline from the cache; scroll math runs every call.
 local function render()
     local total = vim.fn.tabpagenr('$')
     local cur = vim.fn.tabpagenr()
-    -- Resync with the live tab count in case a caller skipped the title rebuild.
+    -- Resync with the live tab count.
     if #widths ~= total then rebuild_titles() end
     tab_offset = math.max(1, math.min(total, tab_offset))
 
-    -- Auto-scroll on gt/gT so the current tab stays visible
+    -- Keep the current tab visible.
     if auto_scroll_next then
         auto_scroll_next = false
         if cur < tab_offset then
@@ -173,7 +166,7 @@ local function render()
         end
     end
 
-    -- Never leave room unused: pull the offset back so the tail fills the line
+    -- Pull the offset back so the tail fills the line.
     tab_offset = math.min(tab_offset, max_tab_offset(total))
 
     -- known before visible_end is computed
@@ -245,7 +238,7 @@ function M.tab_scroll(delta)
     vim.go.tabline = render()
 end
 
--- Full refresh, for callers repainting outside the autocmds (lua/session.lua).
+-- Full refresh, for callers outside the autocmds (session.lua).
 function M.TabLine()
     rebuild_titles()
     rebuild_session()
@@ -255,8 +248,7 @@ function M.TabLine()
 end
 
 function M.setup()
-    -- Content changed inside tabs: titles only. Count and selection didn't move,
-    -- so the highlights stand.
+    -- Content changed inside tabs: titles only.
     local function paint_content()
         rebuild_titles()
         vim.go.tabline = render()
@@ -279,23 +271,19 @@ function M.setup()
         rebuild_ime()
         vim.go.tabline = render()
     end
-    -- Window resize (incl. GUI fullscreen toggle): titles/highlights are
-    -- unchanged, but render()'s scroll math depends on vim.o.columns.
+    -- Resize: only render()'s scroll math depends on vim.o.columns.
     local function paint_resize()
         vim.go.tabline = render()
     end
 
-    -- Set before paint_tabs so auto-scroll applies. prev_tabpage is derived here
-    -- rather than from TabLeave, which also fires for the tab :tabclose is closing
-    -- and would clobber it with that handle right before TabClosed.
+    -- prev_tabpage is tracked here, not in TabLeave, which also fires for the tab
+    -- being closed.
     vim.api.nvim_create_autocmd('TabEnter', { callback = function()
         auto_scroll_next = true
         prev_tabpage = current_tabpage
         current_tabpage = vim.api.nvim_get_current_tabpage()
     end })
-    -- Neovim focuses the next tab after a close; go back to the previously active
-    -- one instead. Guarded by current_tabpage, since closing a background tab
-    -- doesn't move focus at all.
+    -- After closing the current tab, return to the previous one instead of the next.
     vim.api.nvim_create_autocmd('TabClosed', {
         callback = function()
             local now = vim.api.nvim_get_current_tabpage()
@@ -306,8 +294,7 @@ function M.setup()
         end,
     })
     vim.api.nvim_create_autocmd({'TabEnter', 'TabLeave', 'TabClosed'}, { callback = paint_tabs })
-    -- :tabmove reorders tabs without firing any tab autocmd, so catch it from the
-    -- typed command line and repaint afterwards.
+    -- :tabmove fires no tab autocmd; catch it from the command line.
     vim.api.nvim_create_autocmd('CmdlineLeave', {
         pattern = ':',
         callback = function()
@@ -319,7 +306,7 @@ function M.setup()
     })
     vim.api.nvim_create_autocmd({'WinEnter', 'WinLeave', 'BufNew', 'BufEnter', 'BufLeave'}, { callback = paint_content })
     vim.api.nvim_create_autocmd('SessionLoadPost', { callback = paint_session })
-    -- neopp fires this on every toggle; refresh just the indicator.
+    -- Refresh just the IME indicator.
     vim.api.nvim_create_autocmd('User', { pattern = 'NeoppImeChanged', callback = paint_ime })
     vim.api.nvim_create_autocmd('VimResized', { callback = paint_resize })
 

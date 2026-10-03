@@ -34,17 +34,11 @@ function M.setup()
         },
     }
 
-    -- Neovim 0.12's Query:iter_matches() always maps a capture to a TSNode[]
-    -- array, never a single TSNode. The pinned nvim-treesitter/-textobjects
-    -- masters were not updated, so they stash those arrays in `prepared_match`
-    -- and then call TSNode methods on them, crashing [m/]m, af/if and swap with
-    -- "attempt to call method 'start'/'range' (a nil value)".
-    --
-    -- These are additive wrappers, not reimplementations, so they survive master
-    -- commits, and they unwrap only actual TSNode[] arrays -- harmless on <0.12.
+    -- Neovim 0.12's iter_matches() yields TSNode[] per capture, which the pinned
+    -- nvim-treesitter/-textobjects masters treat as a TSNode and crash on.
+    -- These wrappers unwrap only real TSNode[] arrays, so they're harmless on <0.12.
     do
-        -- A raw capture array is a plain table whose [1] is a TSNode (userdata).
-        -- TSNodes are userdata and TSRanges have a numeric [1], so neither matches.
+        -- A capture array is a plain table whose [1] is a TSNode (userdata).
         local function unwrap(v)
             if type(v) == 'table' and type(v[1]) == 'userdata' then
                 return v[#v] -- last match, matching the old all=false semantics
@@ -52,8 +46,7 @@ function M.setup()
             return v
         end
 
-        -- 1) make-range!: keep upstream's iter_prepared_matches, just stop
-        --    from_nodes crashing on TSNode[] arrays.
+        -- 1) make-range!: let from_nodes accept TSNode[] arrays.
         local tsrange = require'nvim-treesitter.tsrange'
         local TSRange = tsrange.TSRange
         local orig_from_nodes = TSRange.from_nodes
@@ -65,8 +58,7 @@ function M.setup()
             return orig_from_nodes(buf, start_node, end_node)
         end
 
-        -- 2) regular captures: unwrap every `.node` array it yields, so downstream
-        --    code always sees a single TSNode.
+        -- 2) regular captures: unwrap every yielded `.node` array.
         local nt_query = require'nvim-treesitter.query'
         local orig_iter = nt_query.iter_prepared_matches
         local function unwrap_nodes(t)
@@ -91,8 +83,7 @@ function M.setup()
         end
     end
 
-    -- nvim-treesitter registers a few directives as if captures were single
-    -- TSNodes; 0.12's TSNode[] breaks markdown injection parsing.
+    -- nvim-treesitter directives assume single TSNodes; 0.12 breaks markdown injections.
     if vim.fn.has('nvim-0.12') == 1 then
         require'nvim-treesitter.query_predicates'
         local query = require'vim.treesitter.query'

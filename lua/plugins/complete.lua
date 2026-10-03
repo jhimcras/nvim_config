@@ -78,9 +78,6 @@ function M.setup()
         },
     }
 
-    -- require 'lspconfig'.clangd.setup {
-    --     capabilities = capabilities,
-    -- }
 end
 
 return M

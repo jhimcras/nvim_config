@@ -202,7 +202,7 @@ end
 
 
 local function clear_session_lists(abs_path, session_prefix)
-    -- Only our quickfix/loclist/launcher files; keep the session script
+    -- Only our list/launcher files; keep the session script
     local qf_pat = string.format("%s/%s%s", abs_path, session_prefix, LIST_EXT_QF)
     local loc_pat = string.format("%s/%s%s.*.lua", abs_path, session_prefix, LIST_EXT_LOC)
     local lc_pat = string.format("%s/%s%s.*.lua", abs_path, session_prefix, LIST_EXT_LAUNCHER)
@@ -220,7 +220,7 @@ end
 
 local function find_target_window(origin)
     if not origin then return nil end
-    -- Find the window matching the saved origin context, ignoring quickfix windows.
+    -- Window matching the saved origin, ignoring quickfix windows.
     local tab_matches = {}
     
     -- 1. by buffer name
@@ -258,7 +258,7 @@ local function find_target_window(origin)
     return nil
 end
 
--- Close empty quickfix/loclist windows, which mksession may have created.
+-- Close empty quickfix/loclist windows left by mksession.
 local function close_empty_qf_loc_windows()
     for _, winid in ipairs(vim.api.nvim_list_wins()) do
         local bufnr = vim.api.nvim_win_get_buf(winid)
@@ -269,7 +269,7 @@ local function close_empty_qf_loc_windows()
 end
 
 
--- Load and set the list data without opening a window.
+-- Load list data without opening a window.
 -- Returns { kind, [target], filter_chain, matches, cursor }, or nil on error.
 local function load_qflist_no_open(path)
     local ok, data = pcall(dofile, path)
@@ -467,8 +467,7 @@ function M.OpenSession(session)
     vim.cmd('%bwipeout!')
     local sess_path = string.format('%s/sessions/%s', vim.fn.stdpath('data'), session)
     vim.cmd.source(sess_path)
-    -- Two passes: set every list first, so the winidx values stay stable, then
-    -- open the windows.
+    -- Set every list first so winidx values stay stable, then open windows.
     local prefix = vim.fn.fnamemodify(sess_path, ':t')
     local dir = vim.fn.fnamemodify(sess_path, ':h')
     local patterns = {
@@ -510,9 +509,7 @@ function M.OpenSession(session)
         end
     end
     close_empty_qf_loc_windows()
-    -- mksession records no cmdheight and restores window sizes as fractions of
-    -- whatever room is left, so an inflated cmdheight would survive the load.
-    -- Assigning it hands those rows back to the windows.
+    -- mksession doesn't restore cmdheight; reset it so windows get the rows back.
     vim.o.cmdheight = 1
 end
 
@@ -631,8 +628,7 @@ function M.setup()
         callback = auto_save,
     })
 
-    -- 'nvim -S <session>' sources the file during startup, bypassing
-    -- M.OpenSession() and its cmdheight fix above.
+    -- 'nvim -S' bypasses M.OpenSession() and its cmdheight fix.
     local cmdheight_fix_group = vim.api.nvim_create_augroup("SessionCmdheightFix", { clear = true })
     vim.api.nvim_create_autocmd("VimEnter", {
         group = cmdheight_fix_group,
@@ -643,9 +639,7 @@ function M.setup()
         end,
     })
 
-    -- A resize reflows windows against the new &lines/&columns, and rows that
-    -- don't tile evenly get absorbed into cmdheight, as in mksession's restore.
-    -- Entering a tab whose layout was sized for another screen does the same.
+    -- Resizes and tab switches can leak leftover rows into cmdheight.
     vim.api.nvim_create_autocmd({ "VimResized", "TabEnter" }, {
         group = cmdheight_fix_group,
         callback = function()
@@ -667,7 +661,7 @@ function M.setup()
         if not ok then error(err) end
     end
 
-    -- Programmatic vim.cmd('qa') does not expand command-line abbreviations.
+    -- vim.cmd('qa') doesn't expand abbreviations.
     vim.cmd = setmetatable({}, {
         __index = original_cmd,
         __call = function(_, command)
@@ -703,7 +697,7 @@ function M.setup()
         pcall(vim.api.nvim_buf_set_name, abort_buf, "[CANCELLED EXIT " .. unique_id .. "]")
         vim.api.nvim_set_option_value('modified', true, { buf = abort_buf })
         
-        -- Cleaned up on a timer, so it lives long enough for Neovim to see it
+        -- Cleaned up on a timer, after Neovim sees it
         local timer = vim.uv.new_timer()
         timer:start(50, 0, vim.schedule_wrap(function()
             if vim.api.nvim_buf_is_valid(abort_buf) then
@@ -726,7 +720,7 @@ function M.setup()
         local processes = M.get_running_processes()
         local modified_buffers = get_modified_buffers()
         
-        -- Individual buffer closure
+        -- Single buffer close
         local current_proc = nil
         for _, p in ipairs(processes) do
             local p_buf = p.buf or (type(p.key) == 'number' and p.key)
@@ -740,17 +734,16 @@ function M.setup()
             or (vim.bo[buf].filetype == 'terminal' and vim.b[buf].lc_object ~= nil)
         local is_unsaved_nofile = (vim.bo[buf].buftype == 'nofile' and vim.bo[buf].modified and not is_launcher_buffer)
 
-        -- Neither the last window nor a special buffer: stay silent
+        -- Not the last window nor a special buffer: stay silent
         if not is_last_win and not is_unsaved_nofile then
             if not current_proc or is_launcher_buffer or vim.bo[buf].filetype == 'qf' then
                 return true
             end
         end
 
-        -- Warning message
         local msg = ""
         
-        -- Current buffer's warnings, always shown when closing
+        -- Current buffer's warnings, always shown
         if is_unsaved_nofile then
             msg = msg .. "Unsaved changes in scratch buffer: " .. 
                        (vim.api.nvim_buf_get_name(buf) ~= "" and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ':t') or "[No Name]") .. "\n"
@@ -790,7 +783,6 @@ function M.setup()
             return false
         end
 
-        -- Confirmed.
         if is_last_win then
             exit_warned = true
             terminate_all_processes(processes)
@@ -837,7 +829,7 @@ function M.setup()
     vim.cmd([[cnoreabbrev <expr> xa (getcmdtype() == ':' && getcmdline() ==# 'xa' ? 'SessionWriteQuitAll' : 'xa')]])
     vim.cmd([[cnoreabbrev <expr> xall (getcmdtype() == ':' && getcmdline() ==# 'xall' ? 'SessionWriteQuitAll' : 'xall')]])
 
-    -- Buffer closure and global exit
+    -- Buffer close and global exit
     vim.api.nvim_create_autocmd("QuitPre", {
         group = exit_guard_group,
         callback = function()

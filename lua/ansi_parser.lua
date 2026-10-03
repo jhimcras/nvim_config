@@ -19,7 +19,7 @@ function M.parse_ansi(text)
         -- Matches [1m, [1;31m, [0m
         local start, finish, code = text:find("^\27%[([%d;]+)m", pos)
         if start then
-            -- With several codes (1;31), take the last recognized one
+            -- Several codes (1;31): take the last recognized one
             local codes = vim.split(code, ';')
             local last_code = codes[#codes]
             

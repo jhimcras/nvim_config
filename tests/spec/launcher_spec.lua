@@ -441,10 +441,8 @@ describe('launcher.Jump filename resolution', function()
         local target = root .. '/src/LauncherTestFixtureF.cpp'
         vim.fn.writefile({ 'content' }, target)
 
-        -- A second window exists (e.g. the user's original source window);
-        -- lc_parent_win nonetheless points back at the launcher's own window,
-        -- as happens when the launch key is pressed again from inside the
-        -- output buffer itself (BufMapping's keymap is global, not buffer-local).
+        -- lc_parent_win points at the launcher's own window, as when the launch
+        -- key is pressed from inside the output buffer.
         vim.cmd('vsplit')
         local other_win = vim.api.nvim_get_current_win()
         vim.cmd('wincmd p')

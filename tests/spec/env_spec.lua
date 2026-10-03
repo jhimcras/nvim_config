@@ -10,9 +10,6 @@ describe('env', function()
             return 0
         end
         
-        -- Since env.lua is loaded on require, we need to reload it or verify behavior 
-        -- but for simple test, let's just assert on the module contents
-        -- Note: this might require re-loading the module in a real scenario
         assert.is_boolean(env.os.unix)
         assert.is_boolean(env.os.win)
         

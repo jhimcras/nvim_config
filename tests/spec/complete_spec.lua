@@ -61,13 +61,10 @@ describe('complete', function()
             }
         }
         
-        -- Reload complete module to use mock
+        -- Reload to pick up the mock
         package.loaded['plugins.complete'] = nil
         local complete = require('plugins.complete')
         
-        -- Since setup calls cmp.setup, this will trigger our mock
-        -- Note: this requires nvim-cmp to be available or mocked properly in the environment
-        -- For now, just test if it runs without error if mocked
         assert.has_no.errors(function() complete.setup() end)
 
         assert.is_table(captured_opts.window)

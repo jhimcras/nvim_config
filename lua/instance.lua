@@ -1,11 +1,9 @@
--- Spawn a new instance of whatever is hosting this one. GUI clients (neopp,
--- neovide, nvim-qt) launch `nvim --embed` as a child, so our parent IS the GUI;
--- for a TUI the parent is the nvim TUI wrapper.
+-- Spawn a new instance of the host: a GUI (our parent, via --embed) or a TUI.
 local env = require 'env'
 
 local M = {}
 
--- Parents that are not a UI host: one of these means a plain TUI.
+-- Parents that mean a plain TUI.
 local NOT_UI = {
     nvim = true, bash = true, zsh = true, fish = true, sh = true, dash = true,
     cmd = true, powershell = true, pwsh = true, tmux = true, systemd = true,
@@ -23,12 +21,10 @@ local function basename(path)
     return (base:lower():gsub('%.exe$', ''))
 end
 
--- Our parent's executable, plus a detail table :NewInstance! can show on failure.
+-- Parent executable, plus details for :NewInstance!.
 function M.parent_exe()
     if env.os.win then
-        -- One shot: uv.os_getppid() is unreliable on Windows, and Win32_Process
-        -- finds our parent from our own pid. PowerShell can start cold, hence the
-        -- long wait.
+        -- uv.os_getppid() is unreliable on Windows; long wait for a cold PowerShell.
         local script = string.format(
             '$p = Get-CimInstance Win32_Process -Filter "ProcessId=%d"; '
             .. 'if ($p) { (Get-Process -Id $p.ParentProcessId).Path }',
@@ -80,7 +76,7 @@ local function terminal_from_ancestry()
         local line = stat:read('*l')
         stat:close()
         if not line then return nil end
-        -- comm is parenthesised and may contain spaces; ppid follows the state.
+        -- comm is parenthesised and may contain spaces.
         local comm, ppid = line:match('%((.*)%)%s+%S+%s+(%d+)')
         if not comm then return nil end
         if TERMINALS[comm:lower()] then
@@ -183,7 +179,7 @@ function M.context(detected)
     return ctx
 end
 
--- Echo with history, so the message survives a GUI that swallows vim.notify.
+-- Echo with history (some GUIs swallow vim.notify).
 local function report(msg)
     vim.api.nvim_echo({ { 'NewInstance: ' .. msg, 'ErrorMsg' } }, true, {})
 end
@@ -198,8 +194,7 @@ function M.new(file)
         return false
     end
 
-    -- jobstart throws on a non-executable command and returns <= 0 on bad args;
-    -- both must be reported or the command fails silently.
+    -- jobstart throws or returns <= 0 on failure; report both.
     local ok, job = pcall(vim.fn.jobstart, args, { detach = true })
     if not ok then
         report(string.format('실행 실패: %s  --  %s  (자세한 내용은 :NewInstance!)',
@@ -213,7 +208,7 @@ function M.new(file)
     return true
 end
 
--- :NewInstance! — dump what the detection relied on to :messages.
+-- :NewInstance! dumps detection details to :messages.
 function M.diagnose()
     local detected = M.detect()
     local ctx = M.context(detected)

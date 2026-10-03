@@ -33,12 +33,11 @@ local function test_status_column()
 
     -- Now test the actual statusline components from lua/status.lua
     local status = require('status')
-    -- We need to mock some things or just test if we can find %v in the generated statusline
     
     -- Set up statusline to use the entry function
     vim.o.statusline = "%!v:lua.require'status'.statusline_entry()"
     
-    -- Wait a bit for statusline to update or force redraw
+    -- Force a redraw
     vim.cmd('redrawstatus')
     
     local full_statusline = vim.api.nvim_eval_statusline(vim.o.statusline, { winid = 0 })

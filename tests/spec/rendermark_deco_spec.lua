@@ -72,9 +72,7 @@ describe('deco.metrics', function()
     end)
 
     it('counts the inline pad of a wider glyph into the checkbox prefix', function()
-        -- A glyph string wider than one character is drawn as conceal + inline pad,
-        -- so the rendered prefix grows with it (a double-width nerd glyph needs the
-        -- extra column to keep the item text off it).
+        -- A multi-char glyph widens the rendered prefix (conceal + inline pad).
         deco.setup({ checkbox = { unchecked = 'x ', checked = 'v ' } })
         assert.equals(3, deco.metrics().checkbox)
     end)
@@ -123,8 +121,7 @@ describe('deco rendering', function()
     local wrap = require('rendermark.wrap')
     local ns = vim.api.nvim_create_namespace('rendermark_deco')
 
-    -- Decorations are drawn by wrap.refresh, which calls deco.render_range for
-    -- every visible segment before it wraps the same rows.
+    -- wrap.refresh draws decorations via deco.render_range.
     local function render(lines, cursor_lnum)
         pcall(vim.api.nvim_del_augroup_by_name, 'markdown_visual_wrap')
         pcall(vim.api.nvim_del_user_command, 'MarkdownWrapToggle')
@@ -142,8 +139,7 @@ describe('deco rendering', function()
             { details = true })
     end
 
-    -- Total background width drawn on a code row: the inline pads plus the
-    -- highlighted stretch of real text. Must equal the block width on every row.
+    -- Background width on a code row (pads + highlighted text).
     local function code_row_width(lnum)
         local line = vim.api.nvim_buf_get_lines(0, lnum, lnum + 1, false)[1] or ''
         local lead, fill, text, text_col = 0, 0, nil, 0
@@ -161,9 +157,7 @@ describe('deco rendering', function()
                 text_col = vim.fn.strdisplaywidth(line:sub(1, col))
             end
         end
-        -- The real text is drawn after the row's own indent and the inline lead, so
-        -- that is the column its tabs expand from -- the indent itself is outside
-        -- the block and does not count towards the width.
+        -- Tabs expand from after the indent and lead; the indent isn't counted.
         return lead + (text and vim.fn.strdisplaywidth(text, text_col + lead) or 0) + fill
     end
 
@@ -231,8 +225,7 @@ describe('deco rendering', function()
     end)
 
     it('draws the rest of the checkbox glyph inline, not into the conceal', function()
-        -- The conceal holds one character, so a glyph configured with a trailing
-        -- space keeps that space as an inline pad after the box.
+        -- A glyph's trailing space becomes an inline pad after the box.
         render({ '- [ ] todo', 'tail' })
         local pad = find(0, function(d, col) return col == 5 and d.virt_text end)
         assert.is_truthy(pad)
@@ -247,9 +240,7 @@ describe('deco rendering', function()
     end)
 
     it('replaces the marker character of a deeply indented nested item', function()
-        -- The grammar folds the extra indent into the marker node ('  - ') when a
-        -- nested list is indented past its parent's continuation column; the
-        -- conceal has to land on the '-', not on the space in front of it.
+        -- Nested markers include their indent ('  - '); conceal must hit the '-'.
         render({ '- [ ] task', '    - sub of task', 'tail' })
         local d, col = find(1, function(x) return x.conceal ~= nil end)
         assert.is_truthy(d)
@@ -302,8 +293,7 @@ describe('deco rendering', function()
         assert.equals(1, #bottom.virt_text) -- blank bar, no label
 
         assert.is_truthy(find(1, function(d) return d.hl_group == 'RendermarkCode' end))
-        -- Left pad and right fill are both inline: an 'eol' fill would sit one
-        -- unhighlighted column past the text and break the rectangle.
+        -- Both pads are inline; 'eol' would leave a gap column.
         local inlines = vim.tbl_filter(function(m)
             return m[4].virt_text_pos == 'inline'
         end, marks_on(1))
@@ -326,8 +316,7 @@ describe('deco rendering', function()
     end)
 
     it('repaints the fence row inside CursorMoved, not on the deferred refresh', function()
-        -- The deferred refresh runs a frame after the redraw, which is the flicker:
-        -- crossing a fence has to land in the same event as the cursor move.
+        -- Crossing a fence must repaint synchronously (no flicker).
         render({ '```lua', 'local x = 1', '```', 'tail' })
         vim.api.nvim_win_set_cursor(0, { 1, 0 })
         vim.api.nvim_exec_autocmds('CursorMoved', {})
@@ -376,9 +365,7 @@ describe('deco rendering', function()
     end)
 
     it('measures a tab in a code line from the column it is drawn at', function()
-        -- The code text starts one pad in from the block's left edge, so its tabs
-        -- expand from there. Measuring them from column 0 makes the block one
-        -- column too wide and the fill one column too long.
+        -- Tabs expand from one pad in, not column 0.
         local saved = vim.o.tabstop
         vim.o.tabstop = 4
         local ok, err = pcall(function()
@@ -459,8 +446,7 @@ describe('deco rendering', function()
     end)
 
     it('renders a setext underline as a rule too, not just a standalone ---', function()
-        -- 'prose' + '---' parses as a setext heading, so the dashes are a
-        -- setext_h2_underline rather than a thematic_break; both must draw a rule.
+        -- A setext underline must draw a rule too.
         render({ 'prose', '---', 'tail', '', '---', '', 'end' })
         for _, lnum in ipairs({ 1, 4 }) do
             local d = find(lnum, function(x) return x.virt_text_pos == 'overlay' end)

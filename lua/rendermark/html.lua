@@ -1,5 +1,4 @@
--- Small HTML subset used in Markdown. Details visibility is kept in extmarks so
--- an opened block stays opened when lines are inserted above it.
+-- HTML subset in Markdown. <details> state lives in extmarks so it survives edits above.
 local M = {}
 
 local ns = vim.api.nvim_create_namespace('rendermark_html')
@@ -41,8 +40,7 @@ local function source_rows(buf)
             end
         end
     end
-    -- The Markdown grammar treats a fenced block inside <details> as raw HTML,
-    -- so its code node is absent. Recognize those fences from their source lines.
+    -- Fences inside <details> parse as raw HTML; detect them from source lines.
     local fence
     for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
         local run = line:match('^%s*([`~]+)')
@@ -127,7 +125,7 @@ local function draw_inline(buf, row, line, in_table)
         end
         tag = tag:lower()
         if literal then
-            -- Inline code is source text, even when it contains a supported tag.
+            -- Tags inside inline code are literal.
         elseif styles[tag] then
             put(buf, row, s - 1, { end_col = e, conceal = '' })
             if slash == '' then
@@ -146,7 +144,7 @@ local function draw_inline(buf, row, line, in_table)
                 put(buf, row, s - 1, { end_col = e, conceal = '' })
                 table_breaks[s - 1] = true
             elseif not first_br then
-                -- The cursor line remains raw for editing.
+                -- Cursor line stays raw.
                 first_br, last_br = s, e
             end
         elseif in_table and (tag == 'details' or tag == 'summary') then
@@ -283,8 +281,7 @@ function M.is_hidden(buf, row)
     return cache and cache.hidden and cache.hidden[row] or false
 end
 
--- conceal_lines hides rows visually but normal motions can still enter them.
--- Keep navigation on the visible opener or the line after the block.
+-- Motions can enter conceal_lines rows; keep the cursor on visible lines.
 function M.skip_hidden(win, previous)
     local buf = vim.api.nvim_win_get_buf(win)
     local cache = buffers[buf]

@@ -42,7 +42,7 @@ function M.setup()
     ut.nnoremap('<LeftDrag>', '<NOP>')
     ut.nnoremap('<LeftRelease>', '<NOP>')
 
-    -- Easy to switch between windows
+    -- Window navigation
     ut.nnoremap('<c-h>', '<c-w><c-h>')
     ut.nnoremap('<c-j>', '<c-w><c-j>')
     ut.nnoremap('<c-k>', '<c-w><c-k>')
@@ -52,46 +52,37 @@ function M.setup()
     ut.nnoremap('[<space>', 'O<c-[>')
     ut.nnoremap(']<space>', 'o<c-[>')
 
-    -- Start a new Undo group before making changes in INSERT mode.
+    -- New undo group before <C-W>/<C-R> in Insert mode
     ut.inoremap('<C-W>', '<C-G>u<C-W>')
     ut.inoremap('<C-R>', '<C-G>u<C-R>')
 
-    -- For convinient
+    -- Misc
     ut.noremap('H', '^')
     ut.noremap('L', 'g_')
-    -- ut.inoremap('<C-k>', '<Up>')
-    -- ut.inoremap('<C-j>', '<Down>')
-    -- ut.inoremap('<C-h>', '<Left>')
-    -- ut.inoremap('<C-l>', '<Right>')
     ut.vnoremap('>', '>gv')
     ut.vnoremap('<', '<gv')
-    -- ut.nnoremap('<ESC>', '<CMD>nohlsearch<CR>')
 
-    -- Mapping to insert today and current time
+    -- Abbreviations: date, time, file name
     cmd.inoreabbrev 'todayy <C-R>=strftime("%F")<CR>'
     cmd.inoreabbrev 'noww <C-R>=strftime("%T")<CR>'
     cmd.inoreabbrev 'thisfilee <C-R>=expand("%:t")<CR>'
     cmd.inoreabbrev '--> →'
 
-    -- Escaping Windows folder seperators
-    -- TODO: Make it works on visual mode
+    -- Escape Windows path separators
+    -- TODO: Visual mode
     ut.nnoremap('<leader>s/', [[<cmd>s/\\/\\\\/g<cr>]])
 
-    -- Quicker <Esc> in insert mode
-    --inoremap('jk', '<Esc>')
-
-    -- Paste non-linewise text above or below current cursor,
-    -- see https://stackoverflow.com/a/1346777/6064933
+    -- Paste charwise text on a new line (https://stackoverflow.com/a/1346777/6064933)
     ut.nnoremap('<leader>p', 'm`o<ESC>p``')
     ut.nnoremap('<leader>P', 'm`O<ESC>p``')
 
-    -- Move the cursor based on physical lines, not the actual lines.
+    -- Move by display lines
     ut.nnoremap('j', 'v:count == 0 ? "gj" : "j"', { 'expr' })
     ut.nnoremap('k', 'v:count == 0 ? "gk" : "k"', { 'expr' })
     ut.vnoremap('j', 'v:count == 0 ? "gj" : "j"', { 'expr' })
     ut.vnoremap('k', 'v:count == 0 ? "gk" : "k"', { 'expr' })
 
-    -- Resize and change position windows
+    -- Resize and move windows
     ut.nnoremap('<M-h>', '<C-w><')
     ut.nnoremap('<M-l>', '<C-w>>')
     ut.nnoremap('<M-j>', '<C-W>-')
@@ -101,18 +92,18 @@ function M.setup()
     ut.nnoremap('<M-up>', '<C-w>K')
     ut.nnoremap('<M-down>', '<C-w>J')
 
-    -- Use Esc to quit builtin terminal
+    -- Esc leaves terminal mode
     ut.tnoremap('<ESC>', [[<C-\><C-n>]])
 
-    -- Reselect the text that has just been pasted
+    -- Reselect pasted text
     ut.nnoremap('<leader>v', '`[v`]')
     ut.nnoremap('<leader>V', '`[V`]')
 
-    -- Move lines up and down
+    -- Move lines
     ut.vnoremap('K', ":m '<-2<CR>gv=gv")
     ut.vnoremap('J', ":m '>+1<CR>gv=gv")
 
-    -- Convinients
+    -- Misc
     ut.nnoremap('<m-cr>', '<cmd>buffer #<cr><cmd>vertical sbuffer #<cr>')
     cmd.cnoreabbrev 'W w'
     cmd.cnoreabbrev 'Wa wa'
@@ -163,13 +154,12 @@ function M.setup()
         ut.nnoremap('<s-cr>', function() vim.g.neovide_fullscreen = not vim.g.neovide_fullscreen end)
     end
 
-    -- nvim-treesitter-textobjects keymaps (select/move/swap) are declared in
-    -- TreesitterConfig via require'nvim-treesitter.configs'.setup{ textobjects = ... }.
+    -- Textobject keymaps live in plugins/treesitter.lua.
 
     -- Loupe (search)
     ut.nnoremap('n', '<cmd>let v:searchforward=1<cr><Plug>(Loupen)')
     ut.nnoremap('N', '<cmd>let v:searchforward=1<cr><Plug>(LoupeN)')
-    -- Apply mapping on VimEnter so it's never overridden by plugin files
+    -- On VimEnter so plugin files can't override it
     vim.api.nvim_create_autocmd('VimEnter', { once = true, callback = function()
         ut.nnoremap('*', function()
             local view = vim.fn.winsaveview()

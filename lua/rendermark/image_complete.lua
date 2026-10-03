@@ -1,5 +1,4 @@
--- nvim-cmp source: typing "![" offers image files under the buffer's directory
--- and completes to "![stem](rel/path.ext)" with the cursor after ")".
+-- nvim-cmp source: "![" completes image files to "![stem](rel/path.ext)".
 local M = {}
 
 local IMAGE_EXTS = { png = true, jpg = true, jpeg = true, gif = true, webp = true, svg = true, bmp = true }
@@ -23,7 +22,7 @@ function M:get_keyword_pattern()
   return [==[[^[\]()]*]==]
 end
 
--- relative paths ("img/cat.png") of image files under dir, hidden entries skipped
+-- Relative paths of image files under dir, hidden entries skipped.
 function M.list_images(dir)
   local paths = {}
   for name, type in vim.fs.dir(dir, {

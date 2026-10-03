@@ -12,7 +12,6 @@ function M.get_current_mode(buftype)
 end
 
 function M.status_update()
-    -- M.start_active_time = vim.uv.hrtime()
     local color = GetModeColor(M.get_current_mode(vim.bo.buftype))
     ut.set_highlight('StatusLineMode', {guibg = color.bg[1], guifg = color.fg[1]})
     ut.set_highlight('StatusLineNormal', {guibg = color.bg[2], guifg = color.fg[2]})
@@ -229,7 +228,6 @@ function M.leftside()
     local fi = {}
     if pr then
         if pr ~= '' then
-            -- gb = vim.fn.exists'*FugitiveHead' == 1 and vim.fn.FugitiveHead() or ''
             gb = branch_or_commit(pr)
             if gb and gb ~= '' then
                 extends(fi, { ' ', gb, ' │ ' })
@@ -309,28 +307,19 @@ else
 end
 
 function M.search_result()
-    -- M.duration_active = vim.uv.hrtime() - M.start_active_time
     if vim.v.hlsearch == 0 then
         return ''
     end
 
-    -- M.duration_active = vim.uv.hrtime() - M.start_active_time
     local ok, searchcount = pcall(vim.fn.searchcount, { maxcount = 99999, timeout = 100 })
     if not ok or not searchcount.total or searchcount.total == 0 then
         return ''
     end
 
-    -- M.duration_active = vim.uv.hrtime() - M.start_active_time
     return string.format('  %d/%d', searchcount.current, searchcount.total)
 end
 
--- function M.dur()
---     return string.format("%d", M.duration_active)
--- end
-
 function M.ActiveWin()
-    -- return "%!v:lua.require'status'.LeftTest()"
-
     local sl = {
         "%{v:lua.require'status'.status_update()}",
         "%(%#StatusLineNormal# %{v:lua.require'status'.leftside()} %)",
@@ -338,7 +327,6 @@ function M.ActiveWin()
         "%{v:lua.require'status'.lsp()}",
         "%(%#StatusLineMode# %{v:lua.require'status'.search_result()}%)",
         "%(%#StatusLineMode# %p%% %v %)",
-        -- "%{v:lua.require'status'.dur()}",
     }
     return table.concat(sl)
 end
@@ -370,8 +358,6 @@ end
 local function encoding(bufnr, winid)
     local fe = vim.bo[bufnr].fileencoding
     local bom = vim.bo[bufnr].bomb and ' bom' or ''
-    -- local bom = vim.bo[bufnr].bomb and 'ﮏ' or ''
-    -- return (fe ~= '' and fe ~= 'utf-8') and (fe .. bom) or (bom ~= '' and bom or nil)
     return fe .. bom
 end
 
@@ -460,59 +446,8 @@ local function search_count(bufnr, winid)
 end
 
 
--- local cache = {}
--- local function search_count(bufnr, winid)
---     if vim.v.hlsearch == 0 then return end
---
---     local winids = vim.fn.win_findbuf(bufnr)
---     if #winids == 0 then return end
---
---     local function run_scan(timeout, maxcount, pos)
---         return vim.api.nvim_win_call(winids[1], function()
---             return { pcall(vim.fn.searchcount, {
---                 timeout = timeout or 20,
---                 maxcount = maxcount or 500,
---                 pos = pos,
---             }) }
---         end)
---     end
---
---     -- first quick scan
---     local sc = run_scan(20, 500)
---     if not sc[1] or sc[2].total == 0 then return end
---
---     cache[bufnr] = sc[2]
---
---     if sc[2].incomplete ~= 0 then
---         local function recompute(prev_pos)
---             local sc2 = run_scan(50, 5000, prev_pos)
---             if sc2[1] and sc2[2].total > 0 then
---                 cache[bufnr] = sc2[2]
---                 if sc2[2].incomplete ~= 0 then
---                     -- resume from last scanned position
---                     local next_pos = { 0, sc2[2].last_line or 1, sc2[2].last_column or 1, 0 }
---                     vim.defer_fn(function()
---                         recompute(next_pos)
---                     end, 50)
---                 end
---                 vim.cmd("redrawstatus") -- final refresh
---             end
---         end
---
---         vim.defer_fn(function() recompute(nil) end, 50)
---     end
---
---     local result = cache[bufnr]
---     if not result then return end
---
---     local total = result.incomplete ~= 0 and "??" or tostring(result.total)
---     local current = result.current or 0
---     return ('  %d/%s'):format(current, total)
--- end
-
 --- Mark a component as shrinkable.
---- priority: 1=first to shrink (most expendable), 10=last to shrink (most critical)
---- compact: optional function(bufnr,winid)->string for compact rendering; nil=remove
+--- priority: 1 shrinks first, 10 last. compact: fn(bufnr, winid) -> string, nil = remove.
 local function sh(fn, priority, compact)
     return { __sh = true, fn = fn, priority = priority, compact = compact }
 end
@@ -569,8 +504,7 @@ local function fugitive_info_compact(bufnr, winid)
 end
 
 local function quickfix_search_query(bufnr, winid)
-    -- Read the title from the loclist data, not w:quickfix_title, which Neovim sets
-    -- too late when lopen splits an existing loclist window.
+    -- From loclist data: w:quickfix_title is set too late on lopen splits.
     local title
     local filewinid = vim.fn.getloclist(winid, { filewinid = 0 }).filewinid
     if filewinid and filewinid ~= 0 then
@@ -763,9 +697,6 @@ local function fugitive_statusline(activation)
 end
 
 local function terminal_statusline(activation, mode)
-    -- local active_only = function(st) return activation and st or '' end
-    -- local buf_name = ut.GetCurrentBufferDir()
-    -- local term_cmd = string.sub(buf_name, vim.fn.match(buf_name, [[\v\:\zs[^:]+$]])+1)
     local hl = function()
         return 'StatuslineTerm' .. (activation and ('Active_1_%s'):format(mode) or 'Inactive')
     end
@@ -807,8 +738,7 @@ local function launcher_statusline(activation, mode, winid)
     }
 end
 
--- The statusline option holds no function calls: the components' events update the
--- status and tab line (some asynchronously) and a redraw follows.
+-- No function calls in 'statusline': component events update it, then redraw.
 local statusline_setup = {
     components = {
         general = general_statusline,
@@ -820,7 +750,6 @@ local statusline_setup = {
         checkhealth = checkhealth_statusline,
         health      = checkhealth_statusline,
         man         = man_statusline,
-        -- oil = oil_statusline,
     },
 }
 
@@ -876,7 +805,7 @@ function M.statusline_entry()
 end
 
 function M.setup()
-    -- Skip in tests: headless UI errors
+    -- Skip in tests (headless UI errors).
     if vim.g.is_testing then return end
 
     vim.o.laststatus = 2

@@ -100,8 +100,7 @@ end
 local function test_quit_pre_warning()
     print("Testing QuitPre warning...")
     
-    -- We need to find the QuitPre callback. It's registered in M.setup().
-    -- Since it's an anonymous function in M.setup(), we might need to trigger it via doautocmd.
+    -- The QuitPre callback is anonymous; trigger it via the autocmd.
     
     -- Mock running process
     local old_grp = session.get_running_processes
@@ -118,17 +117,13 @@ local function test_quit_pre_warning()
         return 2 -- Cancel
     end
 
-    -- Trigger QuitPre
-    -- Note: QuitPre callback might throw an error "Exit cancelled" when confirm returns not 1.
-    -- In some Neovim versions/contexts, nvim_exec_autocmds might not propagate the error to pcall.
+    -- May throw "Exit cancelled"; propagation to pcall varies by version.
     local status, err = pcall(function()
         vim.api.nvim_exec_autocmds("QuitPre", { group = "ExitGuard" })
     end)
     
     assert_eq(confirm_choices, "&Stop and Quit\n&Cancel", "QuitPre choices mismatch")
     assert_eq(confirm_default, 2, "QuitPre default mismatch")
-    -- If status is true, it means error didn't propagate, but we can see it in output if it failed.
-    -- We already verified confirm was called with correct choices.
     
     vim.fn.confirm = old_confirm
     session.get_running_processes = old_grp

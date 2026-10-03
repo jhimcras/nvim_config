@@ -28,7 +28,6 @@ function M.setup()
     -- vim.cmd.colorscheme 'catppuccin'
 
     vim.o.pumblend = 10
-    -- ut.set_highlight('Pmenu', { ctermbg=238 })
     vim.cmd.let '$TERM="xterm-256color"'
     if not env.os.win then
         vim.o.termguicolors = true

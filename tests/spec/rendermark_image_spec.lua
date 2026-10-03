@@ -1,16 +1,10 @@
--- Tests for the rendermark.image performance optimizations:
---   * parse_image_size (pure header decode) + read_image_size stat-gated cache
---   * cursor-move render gate (cursor_block_id / cursor_active_block_sig /
---     handle_cursor_moved)
---   * util.debounce (used to coalesce TextChanged renders)
--- plus regression coverage for adjacent pure helpers reachable from these paths.
+-- rendermark.image: image size parsing/cache, cursor render gate, layout helpers.
 
 local image = require('rendermark.image')
 local image_backend = require('rendermark.image.backend')
 local util = require('util')
 
--- Reload the module so module-local state (cursor_block_sig, image_size_cache)
--- starts fresh for state-sensitive tests.
+-- Reload the module for fresh module-local state.
 local function fresh_image()
   package.loaded['rendermark.image'] = nil
   return require('rendermark.image')
@@ -382,8 +376,7 @@ describe('layout_image_line fit', function()
   }
 
   it('keeps the band within text_right_px when wide gaps are reserved', function()
-    -- Pre-fix this overflowed to 1150 against a 1000px (100-col) window because the
-    -- scale-down divided by images+gaps but only shrank the images.
+    -- Used to overflow (1150px in 1000px) when only images were shrunk.
     local layouts = layout(two, { text_left_px = 0, text_right_px = 1000,
       row_start_x_override = 300, gaps_px = { 310 } })
     assert.is_true(right_edge(layouts) <= 1000)
@@ -407,8 +400,7 @@ describe('layout_image_line fit', function()
   end)
 
   it('reserves a trailing slot so prose after the last image keeps room', function()
-    -- Without trailing_px the images packed to the right edge and the trailing
-    -- text slot collapsed to < 1 cell (the line-18 bug).
+    -- Without trailing_px the trailing text slot collapsed to < 1 cell.
     local layouts = layout(two, { text_left_px = 0, text_right_px = 1000,
       row_start_x_override = 0, gaps_px = { 260 }, trailing_px = 70 })
     local last = layouts[#layouts]
@@ -740,9 +732,7 @@ describe('resolve_image_path', function()
     assert.is_truthy(p:find('foo.png', 1, true))
   end)
 
-  -- Windows regression: expand('~/x') returns a backslash home with a
-  -- forward-slash tail, so the old ':p'-equality check judged every absolute
-  -- Windows path relative and joined it onto the buffer's directory.
+  -- Windows regression: mixed-slash absolute paths were treated as relative.
   it('classifies Windows absolute paths as absolute', function()
     local scan = require('rendermark.image.scan')
     assert.is_true(scan.is_absolute_path('C:\\Users\\me/work_data/1787.jpg', true))
@@ -985,9 +975,7 @@ describe('partially visible plantuml block rendering', function()
   local FENCE_END = 16   -- 0-based row of closing '```'
   local CELL_W, CELL_H = 10, 18
 
-  -- 100x600 PNG header: taller than the source block, like a real diagram, so
-  -- the reservation emits actual virt_lines (reserve_h = virt_h - span + 1 > 1)
-  -- and topfill scrolling through them is possible.
+  -- 100x600 PNG header: taller than the block, so virt_lines are reserved.
   local TALL_PNG = bytes({
     137, 80, 78, 71, 13, 10, 26, 10,  -- signature
     0, 0, 0, 13,                      -- IHDR length
@@ -1015,8 +1003,7 @@ describe('partially visible plantuml block rendering', function()
     return buf
   end
 
-  -- 1200x100 PNG header: a wide diagram that has to be shrunk to the text width,
-  -- leaving it far shorter (in rows) than the 7-line source block.
+  -- 1200x100 PNG header: shrunk to text width, shorter than the 7-line block.
   local WIDE_PNG = bytes({
     137, 80, 78, 71, 13, 10, 26, 10,  -- signature
     0, 0, 0, 13,                      -- IHDR length
@@ -1025,9 +1012,7 @@ describe('partially visible plantuml block rendering', function()
     0, 0, 0, 100,                     -- height = 100
   })
 
-  -- Fresh module + backend store + fake vim.ui.img capturing set/del calls.
-  -- Stubs collect_plantuml_images with a ready PNG record for `buf` (100x600 by
-  -- default; `dim` overrides it with { data, w, h }).
+  -- Fresh module with a fake vim.ui.img and a stubbed PlantUML PNG (`dim` overrides).
   local function setup_e2e(outro, height, dim)
     local old_ui = vim.ui
     local old_store = rawget(_G, '__rendermark_image_backend')
@@ -1157,8 +1142,7 @@ describe('partially visible plantuml block rendering', function()
     assert.equals(expected_row * CELL_H, entry.opts.dest_y_px)
     assert.equals((w.winrow - 1) * CELL_H, entry.opts.clip_y_px)
     assert.equals(w.height * CELL_H, entry.opts.clip_height_px)
-    -- The owning window's band travels with the payload so the GUI can crop
-    -- at the window top instead of guessing the owner from the (offscreen) row.
+    -- The window band is sent so the GUI can crop at the window top.
     assert.equals(w.winrow - 1, entry.opts.win_top)
     assert.equals(w.height, entry.opts.win_height)
 
@@ -1268,9 +1252,7 @@ describe('partially visible inline image link rendering', function()
   local IMG = 5          -- 0-based row of the image link line
   local CELL_H = 18
 
-  -- 100x600 PNG header: taller than one text row so the reservation emits
-  -- virt_lines (virt_h = max_rows = 30 -> 29 reserved virt_lines) and topfill
-  -- scrolling through them is possible.
+  -- 100x600 PNG header: 29 reserved virt_lines, so topfill scrolling is possible.
   local TALL_PNG = bytes({
     137, 80, 78, 71, 13, 10, 26, 10,  -- signature
     0, 0, 0, 13,                      -- IHDR length
@@ -1279,8 +1261,7 @@ describe('partially visible inline image link rendering', function()
     0, 0, 2, 88,                      -- height = 600
   })
 
-  -- Fresh module + backend store + fake vim.ui.img. Buffer: IMG intro lines,
-  -- one image link, `outro` trailing lines; shown in a `height`-row split.
+  -- Fresh module with a fake vim.ui.img; one image link in a `height`-row split.
   local function setup_e2e(outro, height)
     local old_ui = vim.ui
     local old_store = rawget(_G, '__rendermark_image_backend')
@@ -1350,9 +1331,7 @@ describe('partially visible inline image link rendering', function()
     assert.equals((w.winrow - 1) * CELL_H, entry.opts.clip_y_px)
     assert.equals(w.height * CELL_H, entry.opts.clip_height_px)
 
-    -- The virt_lines reservation on the link row survives: this is what keeps
-    -- the window's topfill valid so C-e/C-y scroll row-by-row through the image
-    -- instead of snapping back when the anchor leaves the viewport.
+    -- The reservation survives, keeping topfill valid for C-e/C-y.
     assert.is_truthy(reservation_mark(img, buf))
     teardown()
   end)
@@ -1474,9 +1453,7 @@ describe('same buffer in multiple windows', function()
     img.send_images()  -- first send reserves virt_lines, skips apply
     img.send_images()  -- second send applies the payload
 
-    -- One inline-image placement must survive per window. Keying the id on the
-    -- buffer alone collapses both windows' placements into one, so the image
-    -- draws in only a single window.
+    -- One placement per window, not per buffer.
     local ids = {}
     for id in pairs(store) do
       if id:sub(1, 4) == 'buf:' then ids[#ids + 1] = id end

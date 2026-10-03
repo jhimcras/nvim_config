@@ -1,8 +1,6 @@
 local M = {}
 
--- Test by prefix, not equality with ':p': on Windows expand('~/x.jpg') keeps the
--- forward-slash tail while ':p' normalizes to backslashes, so the two never match
--- and every absolute path was treated as relative.
+-- Prefix test, not equality with ':p': on Windows ':p' normalizes slashes.
 function M.is_absolute_path(path, is_windows)
   if is_windows then
     return path:match('^%a:[/\\]') ~= nil or path:match('^[/\\]') ~= nil

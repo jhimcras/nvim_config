@@ -45,10 +45,8 @@ local function destination_prefix(cursor_before_line)
   return cursor_before_line:match('%[.-%]%(([^%)]*)$')
 end
 
--- split "dir/partial" (or "dir\partial") at the last separator. bare "."
--- or ".." (no separator yet) resolve as the dir itself, with
--- needs_slash=true so insertText can reconstruct the full replaced range
--- (cmp's keyword pattern doesn't stop at "." like it does at "/"/"\\").
+-- Split "dir/partial" at the last separator. Bare "." / ".." resolve as the dir
+-- with needs_slash=true, since cmp's keyword range doesn't stop at ".".
 local function split_path(prefix)
   local last = nil
   for i = #prefix, 1, -1 do

@@ -61,7 +61,7 @@ end
 
 print("\n--- Testing :bw abbreviation expansion ---")
 vim.api.nvim_set_current_buf(buf)
--- We check if the abbreviation expands correctly using feedkeys or just checking the expr
+-- Check the abbreviation definition
 local expanded = vim.fn.execute('verbose cnoreabbrev bw')
 print("Abbreviation for bw:", expanded)
 

@@ -1,22 +1,13 @@
--- Reopen the most recently closed window or tab with its original layout.
--- Windows and tabs share one chronological stack, so <leader>u walks back through
--- whatever was closed last.
---
--- Capture hangs off a single WinClosed autocmd:
---   * it fires while the window is still valid, so buffer/cursor/size are readable
---   * a tab close fires it once per window, and winlayout() degrades as the burst
---     progresses, so the whole-tab snapshot is taken on the FIRST event for a
---     tabpage and keyed by its handle
--- Reconciliation is deferred to vim.schedule, when a closed tab's handle is already
--- invalid -- which is why no TabClosed autocmd is needed.
+-- Reopen the last closed window or tab with its layout (<leader>u).
+-- Captured on WinClosed; a tab is snapshotted on its first WinClosed, since
+-- winlayout() degrades as the burst proceeds. Reconciled in vim.schedule.
 
 local api = vim.api
 
 local M = {}
 
 local MAX_DEPTH = 10
--- Beyond this, a burst is programmatic teardown (%bwipeout!, tabonly!, ...), not a
--- user close, and would evict the real history -- so the whole burst is dropped.
+-- Larger bursts are programmatic teardown (%bwipeout!, tabonly!) and are dropped.
 local BURST_LIMIT = 8
 
 local stack = {}      -- oldest .. newest
@@ -45,8 +36,7 @@ local function win_state(win)
         name    = api.nvim_buf_get_name(buf),
         buftype = vim.bo[buf].buftype,
         cursor  = api.nvim_win_get_cursor(win),
-        -- Reads the topline without switching windows; nvim_win_call(winsaveview)
-        -- costs ~5x more for the same information.
+        -- Cheaper than nvim_win_call(winsaveview).
         topline = vim.fn.line('w0', win),
         width   = api.nvim_win_get_width(win),
         height  = api.nvim_win_get_height(win),
@@ -59,7 +49,7 @@ local function win_state(win)
     return state
 end
 
--- Keep the leaves `keep` accepts, collapsing single-child containers. nil if none.
+-- Filter leaves by `keep`, collapsing single-child containers. nil if none.
 local function filter_tree(node, keep)
     if node[1] == 'leaf' then
         return keep(node[2]) and node or nil
@@ -99,10 +89,7 @@ local function snapshot(tab)
     }
 end
 
--- Strip quickfix/loclist windows from a tab snapshot: a loclist dies with the
--- origin window the tab close took, and a global quickfix drifts out from under the
--- tab, so both come back empty or stale. Only tab entries need this -- a lone
--- quickfix window closing leaves its origin alive and restores fine.
+-- Strip quickfix/loclist windows from a tab snapshot; they'd come back stale.
 local function without_lists(snap)
     local tree = filter_tree(snap.tree, function(win)
         local state = snap.states[win]
@@ -121,8 +108,7 @@ local function without_lists(snap)
     }
 end
 
--- Locate `target`'s container: kind ('row'/'col'), its index among the siblings,
--- the sibling list, and whether the container is the tree root.
+-- `target`'s container: kind, index, siblings, and whether it's the root.
 local function find_container(node, target, is_root)
     if node[1] == 'leaf' then return nil end
     local kids = node[2]
@@ -148,17 +134,14 @@ local function placement(tree, target)
     if not sibling then return nil end
 
     local before = idx < sib_idx
-    -- Anchor on the nearest sibling leaf, so a nested container re-splits on the
-    -- correct side.
+    -- Anchor on the nearest sibling leaf so nested containers split on the right side.
     local leaves = collect_leaves(sibling, {})
     if not before then
         local reversed = {}
         for i = #leaves, 1, -1 do reversed[#reversed + 1] = leaves[i] end
         leaves = reversed
     end
-    -- Splitting against the tab edge only works when the sibling is everything
-    -- else; with three or more root children it would fling the window to the far
-    -- edge instead of back between its neighbours.
+    -- Split against the tab edge only when the sibling is everything else.
     local spans_tab = is_root and #siblings == 2
     return { dir = kind, before = before, root = spans_tab, anchors = leaves }
 end
@@ -187,7 +170,7 @@ local function reconcile()
         end
     end
 
-    -- One tab close is one WinClosed per window, not a runaway burst.
+    -- A tab close is one WinClosed per window, not a runaway burst.
     local added = #stack - base
     local single_tab_close = dead_count == 1
     if single_tab_close then
@@ -208,7 +191,7 @@ local function reconcile()
             for _, entry in ipairs(stack) do
                 if entry.tab ~= tab then kept[#kept + 1] = entry end
             end
-            -- Nothing but quickfix/loclist windows: nothing worth restoring.
+            -- Only quickfix/loclist windows: nothing to restore.
             local restorable = without_lists(snap)
             if restorable then
                 kept[#kept + 1] = { kind = 'tab', tab = tab, snap = restorable }
@@ -222,7 +205,7 @@ local function reconcile()
 end
 
 local function on_win_closed(ev)
-    -- mksession files set this while rebuilding the layout; not a user close.
+    -- Set by mksession files while rebuilding; not a user close.
     if vim.g.SessionLoad == 1 then return end
 
     local win = tonumber(ev.match)
@@ -268,7 +251,7 @@ local function fill_buffer(win, state)
     return false
 end
 
--- True when `win` has a neighbour on that axis to give up rows or columns to.
+-- True when `win` has a neighbour on that axis.
 local function has_neighbour(win, a, b)
     local ok, res = pcall(api.nvim_win_call, win, function()
         local self = vim.fn.winnr()
@@ -278,8 +261,7 @@ local function has_neighbour(win, a, b)
 end
 
 local function apply_view(win, state)
-    -- Resizing a window with no neighbour on that axis leaves rows over, which
-    -- Neovim absorbs into cmdheight. Dropping a quickfix window is how that arises.
+    -- Without a neighbour, leftover rows would go into cmdheight.
     if has_neighbour(win, 'h', 'l') then
         pcall(api.nvim_win_set_width, win, state.width)
     end
@@ -294,8 +276,7 @@ local function apply_view(win, state)
     end)
 end
 
--- A restored loclist keeps its contents but loses filewinid, which grep.lua keys
--- its origin tagging on; :lopen from the origin rebuilds the association.
+-- A restored loclist loses filewinid (used by grep.lua); :lopen from the origin rebuilds it.
 local function restore_loclist(state)
     if not api.nvim_win_is_valid(state.filewinid) then return false end
     api.nvim_set_current_win(state.filewinid)
@@ -317,7 +298,7 @@ local function pick_anchor(place, tab)
 end
 
 local function restore_win(entry)
-    -- Without its original tab there is no layout to slot the window into.
+    -- No original tab, no layout to restore into.
     if not api.nvim_tabpage_is_valid(entry.tab) then return false end
     api.nvim_set_current_tabpage(entry.tab)
 
@@ -390,7 +371,7 @@ local function restore_tab(entry)
         return false
     end
 
-    -- Sizes only settle once every window exists, hence the second pass.
+    -- Sizes settle only once every window exists.
     for old, win in pairs(mapping) do
         local state = snap.states[old]
         if state then apply_view(win, state) end

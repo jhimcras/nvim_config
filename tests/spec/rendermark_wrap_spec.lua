@@ -10,9 +10,7 @@ describe('wrap.compute_indent', function()
         assert.are.equal(3, wrap.compute_indent('1. item'))
         assert.are.equal(4, wrap.compute_indent('12) item'))
         assert.are.equal(4, wrap.compute_indent('  - nested'))
-        -- rendermark.deco collapses '- [ ] ' to a glyph plus its inline pad plus
-        -- the surviving source space, and wrap.compute_indent hangs continuation
-        -- rows under that RENDERED prefix.
+        -- Continuation rows hang under deco's rendered checkbox prefix.
         assert.are.equal(3, wrap.compute_indent('- [ ] task'))
         assert.are.equal(3, wrap.compute_indent('- [x] task'))
         assert.are.equal(2, wrap.compute_indent('> quote'))
@@ -133,8 +131,7 @@ describe('wrap.wrap_line', function()
     end)
 
     it('combines conceal and insert like a rendered link', function()
-        -- '[' and '](url)' concealed to nothing, a 2-col icon added at the start:
-        -- visible is icon + 't' + ' more' = 2 + 1 + 5 = 8, which fits width 8.
+        -- Visible: 2-col icon + 't' + ' more' = 8, fits width 8.
         local text = '[t](url) more'
         local runs = {
             { s = 0, e = 1, conceal = '', conceal_anchor = 0 },
@@ -397,9 +394,7 @@ describe('wrap behavior', function()
     end)
 
     it('skips lines hidden inside a closed fold', function()
-        -- A closed fold keeps the drawn row count at a screenful while the window's
-        -- topline..botline range covers the whole fold, so refresh must decorate the
-        -- visible segments only -- otherwise its cost tracks the file, not the screen.
+        -- Under a closed fold, refresh must decorate visible segments only.
         wrap.setup()
         local width = vim.api.nvim_win_get_width(0)
         local long = string.rep('word ', math.ceil(width / 5) + 20)
@@ -584,9 +579,7 @@ describe('wrap behavior', function()
         local rows = continuation_rows(0)
         assert.is_true(#rows > 0)
         for _, row in ipairs(rows) do
-            -- deco collapses '- [x] ' to a glyph, its inline pad and the surviving
-            -- source space, so the hang is 3, and the continuation rows are plain
-            -- spaces -- never a repeated marker.
+            -- Hang is 3 (rendered checkbox); continuation rows are plain spaces.
             assert.is_truthy(row:find('^   %S'))
             assert.is_falsy(row:find('●', 1, true))
             assert.is_falsy(row:find('○', 1, true))
@@ -629,8 +622,7 @@ describe('wrap behavior', function()
                                      -- leak read mode into the next test
         assert.is_true(#rows > 0)
         for _, row in ipairs(rows) do
-            -- deco conceals the '#'s and the blank after them, so the title starts
-            -- at column 0 and its continuation rows hang there too.
+            -- '#'s are concealed, so the title and its continuation start at column 0.
             assert.is_truthy(row:find('^%S'))
             assert.is_falsy(row:find('#', 1, true))
             assert.is_falsy(row:find('●', 1, true))
@@ -756,8 +748,7 @@ describe('wrap behavior', function()
         assert.is_true( -- wraps at its raw length
             #vim.api.nvim_buf_get_extmarks(0, ns, { 0, 0 }, { 0, -1 }, {}) > 0)
 
-        -- Conceal the entire 'b' tail via a foreign extmark: the visible line is
-        -- just the 10 'a's, which fits, so it must no longer wrap.
+        -- Foreign conceal of the 'b' tail leaves 10 visible cols: no wrap.
         local foreign = vim.api.nvim_create_namespace('test_foreign_deco2')
         vim.api.nvim_buf_set_extmark(0, foreign, 0, #head, {
             end_col = #line, conceal = '',
@@ -768,18 +759,8 @@ describe('wrap behavior', function()
     end)
 
     it('picks up a foreign hl_group extmark from a same-event CursorMoved reaction, even when its own autocmd fires first (large-jump race)', function()
-        -- Regression test: schedule_refresh (CursorMoved/WinScrolled/etc-driven)
-        -- used to defer via a single vim.schedule. A jump onto never-before-seen
-        -- lines (e.g. gg/G) can trigger a foreign plugin's own CursorMoved
-        -- reaction that recomputes its decorations via ITS OWN vim.schedule
-        -- (e.g. render-markdown's checkbox highlight). Whichever autocmd's
-        -- vim.schedule callback got enqueued first won the race; on a small
-        -- move this never showed since the lines were already decorated, but
-        -- on a large jump into fresh lines it could run wrap's own refresh
-        -- before the foreign highlight extmark existed -- and nothing else
-        -- re-triggered a refresh afterward. Register the foreign autocmd AFTER
-        -- wrap's own (so wrap's fires first -- the worst case) and confirm the
-        -- highlight still lands on the wrapped row.
+        -- Regression: wrap's refresh must run after a foreign plugin's scheduled
+        -- CursorMoved highlight, even when wrap's autocmd fires first.
         wrap.setup({ left_pad = 0, right_pad = 0 })
         local width = vim.api.nvim_win_get_width(0)
         local filler = string.rep('word ', width)
@@ -789,10 +770,7 @@ describe('wrap behavior', function()
         vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
         local buf = vim.api.nvim_get_current_buf()
 
-        -- Flush any refresh already scheduled by the FileType handler above
-        -- (and any leftover from a prior test) before setting up the race, so
-        -- schedule_refresh's pending-dedup doesn't swallow the CursorMoved
-        -- call below.
+        -- Flush pending refreshes so dedup doesn't swallow the CursorMoved below.
         vim.wait(50, function() return false end)
 
         local foreign_ns = vim.api.nvim_create_namespace('test_foreign_large_jump_deco')

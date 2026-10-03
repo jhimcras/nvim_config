@@ -6,7 +6,6 @@ local M = {}
 -- https://clangd.llvm.org/extensions.html#switch-between-sourceheader
 local function switch_source_header(bufnr)
     local method_name = 'textDocument/switchSourceHeader'
-    -- bufnr = util.validate_bufnr(bufnr)
     local client = vim.lsp.get_clients({ bufnr = bufnr, name = 'clangd' })[1]
     if not client then
         return vim.notify(('method %s is not supported by any servers active on the current buffer'):format(method_name))
@@ -31,12 +30,8 @@ local on_attach_clangd = lsp_setting.make_on_attach(function(client, bufnr)
     vim.bo.formatexpr = 'v:lua.vim.lsp.formatexpr()'
 end)
 
--- clangd runs one async worker per core and indexes from that same pool, so a large
--- project saturates the machine. Halve the workers and drop the index threads to
--- `background` (the default is `low`), which on Windows also lowers disk I/O
--- priority -- where the stall hurts most.
--- `extra` comes from a project's `.prjroot`; clangd honours the last occurrence of a
--- flag, so appending overrides any default below.
+-- Halve the workers and use `background` index priority so large projects don't
+-- saturate the machine. `extra` (from `.prjroot`) is appended, so it wins.
 function M.cmd(extra)
     local cmd = {
         'clangd',
@@ -62,7 +57,6 @@ function M.setup()
                 -- 'compile_flags.txt',
             },
             filetypes = { 'c', 'cpp' },
-            -- capabilities = capabilities(),
             handlers = {
             },
         }

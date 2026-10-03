@@ -25,9 +25,7 @@ local function TerminalSetting()
 end
 
 local function SetAutoChangedFileReloading()
-    -- Reload files changed outside Nvim. `checktime` does not work from the
-    -- command line, hence the mode check.
-    -- https://unix.stackexchange.com/a/383044/221410
+    -- Reload files changed outside Nvim (`checktime` fails in the command line).
     api.nvim_create_autocmd({ 'FocusGained','BufEnter','CursorHold','CursorHoldI' }, { callback = function()
         if vim.fn.mode() == 'n' and vim.fn.getcmdwintype() == '' then
             cmd.checktime()
@@ -74,13 +72,12 @@ require'rendermark'.setup{
     max_width = 120,
     plantuml = {
         preview = {
-            mode = 'split',            -- 'float' (default, unchanged) | 'split'
-            auto = true,               -- auto-open when cursor enters a block
+            mode = 'split',            -- 'float' | 'split'
+            auto = true,               -- open when the cursor enters a block
             split = {
-                -- position is auto-selected from the source window's aspect:
-                -- landscape ⇒ right (vertical), portrait ⇒ bottom (horizontal).
-                size      = 0.20,         -- 'half' | 0<n<1 fraction of editor | n≥1 absolute cols/rows
-                lifecycle = 'cursor',    -- 'cursor' (open/close with block) | 'persistent' (pane stays, keeps last)
+                -- position follows the window aspect: landscape -> right, portrait -> bottom
+                size      = 0.20,         -- 'half' | fraction (<1) | absolute cells (>=1)
+                lifecycle = 'cursor',    -- 'cursor' | 'persistent'
             },
         },
     },
