@@ -4,7 +4,7 @@ Personal Neovim configuration.
 
 ## Requirements
 
-- Neovim >= 0.10
+- Neovim >= 0.11 (uses `vim.lsp.config` / `vim.lsp.enable`)
 - [pckr.nvim](https://github.com/lewis6991/pckr.nvim) (plugin manager)
 - [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) (for tests)
 - ripgrep (for grep integration)
@@ -29,19 +29,21 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 | `lua/session.lua` | Session management per project root |
 | `lua/status.lua` | Custom statusline with LSP, git branch/commit, diagnostics (`lua/status/mode.lua`: mode indicator) |
 | `lua/tabline.lua` | Custom tabline |
-| `lua/instance_move.lua` | Move a file buffer or tab to a new or running Nvim instance (`:MoveBufferToInstance`, `:MoveTabToInstance`) |
+| `lua/instance.lua` | Spawn a new instance of the host — the GUI parent (via `--embed`) or a TUI (`:NewInstance [file]`, `:NewInstance!` to diagnose host detection) |
+| `lua/instance_move.lua` | Move a file/Oil buffer or tab to a new or running Nvim instance (`:MoveBufferToInstance`, `:MoveTabToInstance`) |
+| `lua/reopen.lua` | Reopen the last closed window or tab with its layout (`<leader>u`, `:Reopen`) |
 | `lua/highlight.lua` | Statusline/UI highlight group definitions |
 | `lua/git.lua` | Git branch and commit info with TTL caching |
 | `lua/grep.lua` | RipGrep integration |
 | `lua/msbuild.lua` | MSBuild integration |
-| `lua/lsp_setting.lua` | LSP client configuration (`lua/lsp_setting/`: per-server tweaks — clangd, lua_ls, python, markdown) |
+| `lua/lsp_setting.lua` | LSP client configuration (`lua/lsp_setting/`: per-server tweaks — clangd, lua_ls, python, markdown; Markdown code action to create missing link targets) — see [docs/clangd.md](docs/clangd.md) for clangd indexing load |
 | `lua/read_mode.lua` | Distraction-free READ mode, per window, any filetype |
 | `lua/smart_cursorline.lua` | Cursorline shown only where useful (active window, normal mode) |
 | `lua/file_info.lua` | File size/info display (`<C-g>`, `:FileInfo`) |
 | `lua/ansi_parser.lua` | ANSI SGR color codes → Neovim highlight groups |
 | `lua/json.lua` | jq-backed JSON pretty-print/minify (`:JsonPretty`, `:JsonOneline`) |
 | `lua/util.lua` | Shared utilities (memoize, keymaps, … `lua/util/cache.lua`, `lua/util/serialize.lua`) |
-| `lua/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables, inline image previews, link navigation/completion (`<C-]>`/`<C-}>`, creates missing link/wikilink targets), Obsidian-style checkbox toggle (`<C-Space>`) |
+| `lua/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables (images allowed in cells), HTML subset (e.g. `<details>`), inline image and PlantUML previews (neopp GUI), link navigation/completion (`<C-]>`/`<C-}>`, creates missing link/wikilink targets), image file completion for `![`, Obsidian-style checkbox toggle (`<C-Space>`) |
 
 ## Plugins
 
@@ -49,7 +51,7 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 - `tpope/vim-surround` — surround text objects
 - `numToStr/Comment.nvim` — commenting
 - `kana/vim-textobj-user` + `vim-textobj-entire`, `vim-indent-object` — extra text objects
-- `nvim-treesitter/nvim-treesitter` + textobjects — syntax-aware motions and highlights
+- `nvim-treesitter/nvim-treesitter` + textobjects (`master` branch) — syntax-aware motions and highlights
 - `monkoose/matchparen.nvim` — faster bracket matching
 - `wincent/loupe` — improved search highlighting
 
