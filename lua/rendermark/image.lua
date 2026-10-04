@@ -8,6 +8,8 @@ local image_backend = require('rendermark.image.backend')
 local image_scan = require('rendermark.image.scan')
 local image_size = require('rendermark.image.size')
 
+local decorations = require('rendermark.image.extmarks').new()
+
 local image_ns
 local layout_sig = ''
 local image_reservation_sig = ''
@@ -118,7 +120,7 @@ local function install_terminal_stub()
   backend.install_terminal_stub()
 end
 
--- Set every entry (position/size may have changed) and del ids no longer present.
+-- Update changed entries and delete ids no longer present.
 local function apply_payload(payload)
   backend.apply_payload(payload)
 end
@@ -634,7 +636,7 @@ local function emit_band_rows(buf, ns, row, reserve_h, source_span, virt_h, rows
   local function overlay(brow, chunks)
     if cursor_rows and cursor_rows[brow] then return end
     if not chunks or #chunks == 0 then return end
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns, brow, 0, {
+    pcall(decorations.set, buf, ns, brow, 0, {
       virt_text = chunks, virt_text_pos = 'overlay', priority = 260,
     })
   end
@@ -651,7 +653,7 @@ local function emit_band_rows(buf, ns, row, reserve_h, source_span, virt_h, rows
     end
   end
   if #virt_lines > 0 then
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0,
+    pcall(decorations.set, buf, ns, row, 0,
       { virt_lines = virt_lines, virt_lines_above = false })
   end
 end
@@ -949,13 +951,14 @@ function M.set_image_error_extmark(buf, image)
     virt_lines = { { { M.image_error_text(image), 'WarningMsg' } } },
     virt_lines_above = false,
   }
-  if pcall(vim.api.nvim_buf_set_extmark, buf, nsid, image.row, image.end_col or image.col or 0, opts) then
+  if pcall(decorations.set, buf, nsid, image.row, image.end_col or image.col or 0, opts) then
     return
   end
-  pcall(vim.api.nvim_buf_set_extmark, buf, nsid, image.row, 0, opts)
+  pcall(decorations.set, buf, nsid, image.row, 0, opts)
 end
 
 function M.clear_image_extmarks()
+  if decorations.reset() then backend.mark_changed() end
   local nsid = image_ns
   if not nsid then return end
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
@@ -966,6 +969,7 @@ function M.clear_image_extmarks()
 end
 
 function M.clear_images_for_buf(buf)
+  if decorations.reset(buf) then backend.mark_changed() end
   local nsid = image_ns
   if nsid and vim.api.nvim_buf_is_valid(buf) then
     pcall(vim.api.nvim_buf_clear_namespace, buf, nsid, 0, -1)
@@ -1703,7 +1707,7 @@ function M.send_images()
   M._send_images_active = true
   local ok, err = pcall(M._send_images_impl)
   M._send_images_active = false
-  if not ok then error(err) end
+  if not ok then decorations.cancel(); error(err) end
 end
 
 function M._send_images_impl()
@@ -1714,9 +1718,11 @@ function M._send_images_impl()
     M.clear_image_extmarks()
     image_reservation_sig = ''
     clear_all_images()
+    notify_redraw()
     return
   end
 
+  decorations.begin()
   local payload = {}
   local cell_w = tonumber(vim.g.neopp_cell_width_px) or 10
   local cell_h = tonumber(vim.g.neopp_cell_height_px) or 18
@@ -1774,7 +1780,6 @@ function M._send_images_impl()
     end
   end
 
-  local has_error_extmarks = false
   local image_reservations = {}
   local image_conceals = {}
   local reservation_carry_h = 0
@@ -1872,7 +1877,6 @@ function M._send_images_impl()
       end
       if image.error then
         M.set_image_error_extmark(info.buf, image)
-        has_error_extmarks = true
         goto continue_image
       end
       local measured_image = image
@@ -2167,11 +2171,6 @@ function M._send_images_impl()
   local new_reservation_sig = table.concat(reservation_parts, '|')
   local reservation_changed = new_reservation_sig ~= image_reservation_sig
 
-  for buf, _ in pairs(buf_ranges) do
-    if vim.api.nvim_buf_is_valid(buf) then
-      vim.api.nvim_buf_clear_namespace(buf, M.ensure_image_namespace(), 0, -1)
-    end
-  end
   -- Cursor rows per window: the stub skips them so conceal reveals the link.
   -- READ windows are excluded (concealcursor='nvic').
   local function cursor_rows_for(buf)
@@ -2206,7 +2205,7 @@ function M._send_images_impl()
       else
         local virt_lines = M.make_virt_lines(reservation.reserve_h, label)
         if #virt_lines > 0 then
-          pcall(vim.api.nvim_buf_set_extmark, buf, image_ns, reservation.row, 0,
+          pcall(decorations.set, buf, image_ns, reservation.row, 0,
             { virt_lines = virt_lines, virt_lines_above = reservation.above })
         end
       end
@@ -2215,12 +2214,12 @@ function M._send_images_impl()
   for buf, conceals in pairs(image_conceals) do
     for _, c in ipairs(conceals) do
       if c.hide_line then
-        pcall(vim.api.nvim_buf_set_extmark, buf, image_ns, c.row, 0, {
+        pcall(decorations.set, buf, image_ns, c.row, 0, {
           conceal_lines = '',
           priority = 250,
         })
       else
-        pcall(vim.api.nvim_buf_set_extmark, buf, image_ns, c.row, c.col, {
+        pcall(decorations.set, buf, image_ns, c.row, c.col, {
           end_col = c.end_col,
           conceal = '',
           priority = 250,
@@ -2230,13 +2229,14 @@ function M._send_images_impl()
   end
   for _, e in ipairs(plantuml_errors) do
     if vim.api.nvim_buf_is_valid(e.buf) then
-      pcall(vim.api.nvim_buf_set_extmark, e.buf, image_ns, e.row, 0, {
+      pcall(decorations.set, e.buf, image_ns, e.row, 0, {
         virt_lines = { { { ' [plantuml: ' .. e.msg .. ']', 'WarningMsg' } } },
         virt_lines_above = false,
       })
-      has_error_extmarks = true
     end
   end
+
+  if decorations.apply(M.ensure_image_namespace()) then backend.mark_changed() end
 
   if reservation_changed then
     -- virt_lines changes shift rows: drop images and resync once layout settles.
@@ -2256,7 +2256,7 @@ function M._send_images_impl()
       end
       notify_redraw()
     end)
-  elseif has_error_extmarks or #payload > 0 then
+  else
     notify_redraw()
   end
 end

@@ -7,7 +7,11 @@ function Backend.new(host)
     rawset(_G, '__rendermark_image_backend', state)
   end
 
+  state.entries = state.entries or {}
   local self = {}
+  local dirty = false
+
+  function self.mark_changed() dirty = true end
 
   function self.img_available()
     return vim.ui and vim.ui.img and type(vim.ui.img.set) == 'function'
@@ -38,15 +42,23 @@ function Backend.new(host)
     local next_ids = {}
     for _, entry in ipairs(payload) do
       local id, path = entry.id, entry.path
-      local opts = {}
-      for k, v in pairs(entry) do
-        if k ~= 'id' and k ~= 'path' then opts[k] = v end
-      end
       next_ids[id] = true
-      vim.ui.img.set(id, path, opts)
+      if not vim.deep_equal(state.entries[id], entry) then
+        local opts = {}
+        for k, v in pairs(entry) do
+          if k ~= 'id' and k ~= 'path' then opts[k] = v end
+        end
+        vim.ui.img.set(id, path, opts)
+        state.entries[id] = vim.deepcopy(entry)
+        dirty = true
+      end
     end
     for id in pairs(state.live_ids) do
-      if not next_ids[id] then vim.ui.img.del(id) end
+      if not next_ids[id] then
+        vim.ui.img.del(id)
+        state.entries[id] = nil
+        dirty = true
+      end
     end
     state.live_ids = next_ids
   end
@@ -54,16 +66,21 @@ function Backend.new(host)
   function self.delete_image(id)
     if not id then return end
     state.live_ids[id] = nil
+    state.entries[id] = nil
+    dirty = true
     if self.img_available() then vim.ui.img.del(id) end
   end
 
   function self.clear_all_images()
-    if not self.img_available() then state.live_ids = {}; return end
-    for id in pairs(state.live_ids) do vim.ui.img.del(id) end
+    if not self.img_available() then state.live_ids = {}; state.entries = {}; return end
+    for id in pairs(state.live_ids) do vim.ui.img.del(id); dirty = true end
     state.live_ids = {}
+    state.entries = {}
   end
 
   function self.notify_redraw()
+    if not dirty then return end
+    dirty = false
     local ch = vim.g.neopp_channel
     if ch then pcall(vim.rpcnotify, ch, 'force_redraw') end
   end
