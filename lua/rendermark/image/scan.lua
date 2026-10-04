@@ -89,7 +89,9 @@ function M.scan_markdown_image_text(deps, buf, row0, text, result, opts)
 end
 
 function M.line_has_image_link(text)
-  return type(text) == 'string' and text:find('!%[[^%]]*%]%(([^%)%s]+)%)') ~= nil
+  -- Plain '![' prefilter: the pattern alone tries a match at every byte.
+  return type(text) == 'string' and text:find('![', 1, true) ~= nil
+    and text:find('!%[[^%]]*%]%(([^%)%s]+)%)') ~= nil
 end
 
 function M.virt_text_to_plain(virt_text)

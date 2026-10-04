@@ -2332,37 +2332,48 @@ function M.get_layout_sig()
   return table.concat(s, '|')
 end
 
+local ANCHOR_FILETYPES = { markdown = true, rmd = true, quarto = true, vimwiki = true }
+
+local function tab_has_image_win()
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if ANCHOR_FILETYPES[vim.bo[buf].filetype] then return true end
+    local name = vim.api.nvim_buf_get_name(buf):lower()
+    if name:find('%.md$') or name:find('%.markdown$') then return true end
+  end
+  return false
+end
+
+-- Only image-link rows: a layout change already shows in get_layout_sig, and
+-- wrap/deco repaints resync through schedule_image_sync.
 local function get_image_anchor_sig()
-  local ranges = {}
+  local seen, parts = {}, {}
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     local wi = vim.fn.getwininfo(win)
-    if wi and wi[1] then
-      local w = wi[1]
-      local buf = vim.api.nvim_win_get_buf(win)
-      local ft = vim.bo[buf].filetype or ''
-      if ft == 'markdown' or ft == 'rmd' or ft == 'quarto' or ft == 'vimwiki' then
-        local start_row = math.max(0, w.topline - 2)
-        local end_row = math.max(start_row, w.botline)
-        local range = ranges[buf]
-        if range then
-          range.start_row = math.min(range.start_row, start_row)
-          range.end_row = math.max(range.end_row, end_row)
-        else
-          ranges[buf] = { start_row = start_row, end_row = end_row }
+    local buf = vim.api.nvim_win_get_buf(win)
+    if wi and wi[1] and ANCHOR_FILETYPES[vim.bo[buf].filetype] then
+      -- Per window, not merged per buffer: two far-apart splits would span the gap.
+      local start_row = math.max(0, wi[1].topline - 2)
+      local end_row = math.max(start_row, wi[1].botline)
+      local ok, lines = pcall(vim.api.nvim_buf_get_lines, buf, start_row, end_row, false)
+      if ok then
+        for i, line in ipairs(lines) do
+          local row = start_row + i - 1
+          local key = tostring(buf) .. ':' .. tostring(row)
+          if not seen[key] and image_scan.line_has_image_link(line) then
+            seen[key] = true
+            parts[#parts + 1] = key .. '=' .. M.image_anchor_extmark_sig(buf, row, row + 1)
+          end
         end
       end
     end
-  end
-
-  local parts = {}
-  for buf, range in pairs(ranges) do
-    parts[#parts + 1] = tostring(buf) .. '=' .. M.image_anchor_extmark_sig(buf, range.start_row, range.end_row)
   end
   table.sort(parts)
   return table.concat(parts, '#')
 end
 
 function M.get_layout_sync_sig()
+  if not tab_has_image_win() then return '' end
   return M.get_layout_sig() .. '#' .. get_image_anchor_sig()
 end
 

@@ -1387,6 +1387,34 @@ describe('get_layout_sig topfill', function()
   end)
 end)
 
+describe('get_layout_sync_sig', function()
+  it('is empty without a markdown window in the tab', function()
+    local img = fresh_image()
+    vim.cmd('tabnew')
+    vim.bo.filetype = 'lua'
+    assert.equals('', img.get_layout_sync_sig())
+    vim.cmd('tabclose!')
+  end)
+
+  it('tracks foreign extmarks on image-link rows only', function()
+    local img = fresh_image()
+    vim.cmd('tabnew')
+    local buf = vim.api.nvim_get_current_buf()
+    vim.bo[buf].filetype = 'markdown'
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'prose', '![a](a.png)', 'more prose' })
+    local ns = vim.api.nvim_create_namespace('rendermark_sync_sig_test')
+    local base = img.get_layout_sync_sig()
+
+    vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, { end_col = 2, conceal = '' })
+    assert.equals(base, img.get_layout_sync_sig())
+
+    vim.api.nvim_buf_set_extmark(buf, ns, 1, 0, { end_col = 2, conceal = '' })
+    assert.are_not.equals(base, img.get_layout_sync_sig())
+    vim.cmd('tabclose!')
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  end)
+end)
+
 describe('same buffer in multiple windows', function()
   local FENCE = 10
   local FENCE_END = 16
