@@ -2,6 +2,7 @@ local ut = require 'util'
 local api = vim.api
 local env = require 'env'
 local M = {}
+local spinner = require('status.spinner')
 
 local tag_counter = 0
 local filter_chains = {}   -- keyed by loclist window ID
@@ -128,11 +129,8 @@ function M.asyncGrep(term, word, wndidforll)
     local onexit = function(code, signal)
         local final_status = (killed or signal ~= 0) and 'killed' or 'done'
         killed = true
-        if redraw_timer then
-            redraw_timer:stop()
-            redraw_timer:close()
-            redraw_timer = nil
-        end
+        spinner.stop(redraw_timer)
+        redraw_timer = nil
         if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
             vim.w[qfwinid].grep_status = final_status
             M.update_loclist_sl(qfwinid)
@@ -182,19 +180,8 @@ function M.asyncGrep(term, word, wndidforll)
     vim.w[qfwinid].grep_status = 'searching'
     filter_chains[qfwinid] = nil
     
-    redraw_timer = vim.uv.new_timer()
-    redraw_timer:start(0, 120, vim.schedule_wrap(function()
-        if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
-            vim.cmd('redrawstatus!')
-        else
-            if redraw_timer then
-                redraw_timer:stop()
-                redraw_timer:close()
-                redraw_timer = nil
-            end
-        end
-    end))
-    
+    redraw_timer = spinner.start({ win = qfwinid })
+
     M.update_loclist_sl(qfwinid)
     -- Close the loclist on QuitPre so quitting the last window exits cleanly.
     local quit_handled = false
@@ -285,12 +272,6 @@ function M.asyncGrep(term, word, wndidforll)
     end
     args[#args+1] = term
     args[#args+1] = prjroot
-    redraw_timer = vim.uv.new_timer()
-    redraw_timer:start(0, 120, vim.schedule_wrap(function()
-        if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
-            M.update_loclist_sl(qfwinid)
-        end
-    end))
     local wrapped_onexit = function(code, signal)
         onexit(code, signal)
     end

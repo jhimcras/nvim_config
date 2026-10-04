@@ -7,6 +7,7 @@ local registry = require('launcher.registry')
 local api = vim.api
 local buffers_handles = {}
 local launcher_timers = {}
+local spinner = require('status.spinner')
 local launcher_highlight_ns = api.nvim_create_namespace('launcher_highlights')
 M.running_processes = registry.processes
 
@@ -34,14 +35,8 @@ function M.GetHighlights(buf)
 end
 
 local function SafeCloseTimer(buf)
-    local timer = launcher_timers[buf]
-    if timer then
-        if not timer:is_closing() then
-            timer:stop()
-            timer:close()
-        end
-        launcher_timers[buf] = nil
-    end
+    spinner.stop(launcher_timers[buf])
+    launcher_timers[buf] = nil
 end
 
 function M.CloseLauncherBuffer(buf)
@@ -330,19 +325,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     -- Start the spinner
     api.nvim_buf_set_var(buf, 'launcher_status', 'running')
     api.nvim_set_option_value('modified', true, { buf = buf })
-    local timer = vim.uv.new_timer()
-    timer:start(0, 120, vim.schedule_wrap(function()
-        if api.nvim_buf_is_valid(buf) then
-            vim.cmd('redrawstatus!')
-        else
-            if not timer:is_closing() then
-                timer:stop()
-                timer:close()
-            end
-            launcher_timers[buf] = nil
-        end
-    end))
-    launcher_timers[buf] = timer
+    launcher_timers[buf] = spinner.start({ buf = buf })
 
     local win = api.nvim_get_current_win()
     -- Start at the bottom
