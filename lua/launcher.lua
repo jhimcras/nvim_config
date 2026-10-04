@@ -34,6 +34,14 @@ function M.GetHighlights(buf)
     return highlights
 end
 
+function M.GetMatches(buf)
+    buf = buf == 0 and api.nvim_get_current_buf() or buf
+    local proc = M.running_processes[buf]
+    if proc and proc.matches then return proc.matches end
+    local ok, matches = pcall(api.nvim_buf_get_var, buf, 'launcher_matches')
+    return ok and matches or {}
+end
+
 local function SafeCloseTimer(buf)
     spinner.stop(launcher_timers[buf])
     launcher_timers[buf] = nil
@@ -133,6 +141,12 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     end
     api.nvim_buf_set_var(buf, 'lc_command', full_cmd_str)
 
+    local matches = {}
+    local pattern_highlight_groups = {}
+    local pending = {}
+    local flush_scheduled = false
+    local flush
+
     local onread = function(err, data)
         if not M.running_processes[buf] or M.running_processes[buf].session_token ~= session_token then return end
         if err then
@@ -167,131 +181,141 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
             if encoding and encoding ~= 'utf-8' and type(data) == 'string' then
                 data = vim.iconv(data, encoding, 'utf-8')
             end
-            local results = vim.split(tostring(data), env.new_line_char)
-            local append_result = vim.schedule_wrap(function()
-                if not api.nvim_buf_is_valid(buf) then return end
-                if not M.running_processes[buf] or M.running_processes[buf].session_token ~= session_token then return end
+            pending[#pending + 1] = tostring(data)
+            if not flush_scheduled then
+                flush_scheduled = true
+                vim.defer_fn(function() flush() end, 40)
+            end
+        end
+    end
+    flush = function()
+        flush_scheduled = false
+        if not api.nvim_buf_is_valid(buf) then return end
+        if not M.running_processes[buf] or M.running_processes[buf].session_token ~= session_token then return end
+        if #pending == 0 then return end
+        local results = vim.split(table.concat(pending), env.new_line_char, { plain = true })
+        pending = {}
 
-                local line_count = api.nvim_buf_line_count(buf)
-                local wins = vim.fn.win_findbuf(buf)
-                local scroll_wins = {}
-                for _, w in ipairs(wins) do
-                    if api.nvim_win_get_cursor(w)[1] == line_count then
-                        table.insert(scroll_wins, w)
-                    end
-                end
+        local line_count = api.nvim_buf_line_count(buf)
+        local wins = vim.fn.win_findbuf(buf)
+        local scroll_wins = {}
+        for _, w in ipairs(wins) do
+            if api.nvim_win_get_cursor(w)[1] == line_count then
+                table.insert(scroll_wins, w)
+            end
+        end
 
-                local processed_lines = results
-                local highlight_data = {}
+        local processed_lines = results
+        local highlight_data = {}
 
-                if color_mode == 'use' or color_mode == 'mono' then
-                    local ansi = require('ansi_parser')
-                    processed_lines = {}
-                    for i, line in ipairs(results) do
-                        local cleaned, highlights = ansi.parse_ansi(line)
-                        processed_lines[i] = cleaned
-                        if color_mode == 'use' then
-                            highlight_data[i] = highlights
-                        end
-                    end
-                end
-
-                local start_line = api.nvim_buf_line_count(buf) - 1
-                local last_line = api.nvim_buf_get_lines(buf, -2, -1, false)
-                processed_lines[1] = (last_line[1] or '') .. processed_lines[1]
-
-                -- Shift the first line's highlights when prepending to it
-                if color_mode == 'use' and last_line[1] and #last_line[1] > 0 and highlight_data[1] then
-                    for _, hl in ipairs(highlight_data[1]) do
-                        hl[1] = hl[1] + #last_line[1]
-                        hl[2] = hl[2] + #last_line[1]
-                    end
-                end
-
-                SetBufLines(buf, -2, -1, false, processed_lines)
-
-                -- Apply ANSI highlights
+        if color_mode == 'use' or color_mode == 'mono' then
+            local ansi = require('ansi_parser')
+            processed_lines = {}
+            for i, line in ipairs(results) do
+                local cleaned, highlights = ansi.parse_ansi(line)
+                processed_lines[i] = cleaned
                 if color_mode == 'use' then
-                    for i, line_highlights in ipairs(highlight_data) do
-                        local lnum = start_line + i - 1
-                        for _, hl in ipairs(line_highlights) do
-                            AddHighlight(buf, hl[3], lnum, hl[1], hl[2])
-                        end
-                    end
+                    highlight_data[i] = highlights
                 end
+            end
+        end
 
-                -- Apply custom patterns
-                if patterns then
-                    local matches = api.nvim_buf_get_var(buf, 'launcher_matches')
-                    for i, line in ipairs(processed_lines) do
-                        local lnum = start_line + i - 1
-                        for _, pcfg in pairs(patterns) do
-                            local m = { line:match(pcfg.pattern) }
-                            if #m > 0 then
-                                -- Metadata
-                                local match_info = { lnum = lnum + 1 }
-                                if pcfg.extract then
-                                    for idx, field in ipairs(pcfg.extract) do
-                                        if field ~= '' and m[idx] then
-                                            match_info[field] = m[idx]
-                                        end
+        local start_line = api.nvim_buf_line_count(buf) - 1
+        local last_line = api.nvim_buf_get_lines(buf, -2, -1, false)
+        processed_lines[1] = (last_line[1] or '') .. processed_lines[1]
+
+        -- Shift the first line's highlights when prepending to it
+        if color_mode == 'use' and last_line[1] and #last_line[1] > 0 and highlight_data[1] then
+            for _, hl in ipairs(highlight_data[1]) do
+                hl[1] = hl[1] + #last_line[1]
+                hl[2] = hl[2] + #last_line[1]
+            end
+        end
+
+        SetBufLines(buf, -2, -1, false, processed_lines)
+
+        -- Apply ANSI highlights
+        if color_mode == 'use' then
+            for i, line_highlights in ipairs(highlight_data) do
+                local lnum = start_line + i - 1
+                for _, hl in ipairs(line_highlights) do
+                    AddHighlight(buf, hl[3], lnum, hl[1], hl[2])
+                end
+            end
+        end
+
+        -- Apply custom patterns
+        if patterns then
+            for i, line in ipairs(processed_lines) do
+                local lnum = start_line + i - 1
+                for _, pcfg in pairs(patterns) do
+                    local m = { line:match(pcfg.pattern) }
+                    if #m > 0 then
+                        -- Metadata
+                        local match_info = { lnum = lnum + 1 }
+                        if pcfg.extract then
+                            for idx, field in ipairs(pcfg.extract) do
+                                if field ~= '' and m[idx] then
+                                    match_info[field] = m[idx]
+                                end
+                            end
+                        end
+                        if pcfg.base_dir then
+                            match_info.base_dir = pcfg.base_dir(match_info, line)
+                        end
+                        table.insert(matches, match_info)
+
+                        -- Apply highlights
+                        if pcfg.highlight then
+                            local s, e, c1, c2, c3, c4, c5, c6, c7, c8, c9 = line:find(pcfg.pattern)
+                            local captures = { [0] = {s, e}, c1, c2, c3, c4, c5, c6, c7, c8, c9 }
+
+                            -- find returns capture strings, not positions;
+                            -- locate each inside the matched span.
+
+                            for hl_idx, hl_group_or_color in pairs(pcfg.highlight) do
+                                local hl_group = hl_group_or_color
+                                if hl_group_or_color:match('^#') then
+                                    hl_group = 'LauncherHL_' .. hl_group_or_color:sub(2)
+                                    if not pattern_highlight_groups[hl_group] then
+                                        api.nvim_set_hl(0, hl_group, { fg = hl_group_or_color })
+                                        pattern_highlight_groups[hl_group] = true
                                     end
                                 end
-                                if pcfg.base_dir then
-                                    match_info.base_dir = pcfg.base_dir(match_info, line)
-                                end
-                                table.insert(matches, match_info)
 
-                                -- Apply highlights
-                                if pcfg.highlight then
-                                    local s, e, c1, c2, c3, c4, c5, c6, c7, c8, c9 = line:find(pcfg.pattern)
-                                    local captures = { [0] = {s, e}, c1, c2, c3, c4, c5, c6, c7, c8, c9 }
-
-                                    -- find returns capture strings, not positions;
-                                    -- locate each inside the matched span.
-
-                                    for hl_idx, hl_group_or_color in pairs(pcfg.highlight) do
-                                        local hl_group = hl_group_or_color
-                                        if hl_group_or_color:match('^#') then
-                                            hl_group = 'LauncherHL_' .. hl_group_or_color:sub(2)
-                                            api.nvim_set_hl(0, hl_group, { fg = hl_group_or_color })
-                                        end
-
-                                        if hl_idx == 0 then
-                                            if s and e then
-                                                AddHighlight(buf, hl_group, lnum, s - 1, e)
-                                            end
-                                        elseif m[hl_idx] then
-                                            -- Locate the capture inside the match
-                                            local cap_str = m[hl_idx]
-                                            local search_area = line:sub(s, e)
-                                            local cap_s, cap_e = search_area:find(cap_str, 1, true)
-                                            if cap_s then
-                                                AddHighlight(buf, hl_group, lnum, s + cap_s - 2, s + cap_e - 1)
-                                            end
-                                        end
+                                if hl_idx == 0 then
+                                    if s and e then
+                                        AddHighlight(buf, hl_group, lnum, s - 1, e)
+                                    end
+                                elseif m[hl_idx] then
+                                    -- Locate the capture inside the match
+                                    local cap_str = m[hl_idx]
+                                    local search_area = line:sub(s, e)
+                                    local cap_s, cap_e = search_area:find(cap_str, 1, true)
+                                    if cap_s then
+                                        AddHighlight(buf, hl_group, lnum, s + cap_s - 2, s + cap_e - 1)
                                     end
                                 end
                             end
                         end
                     end
-                    api.nvim_buf_set_var(buf, 'launcher_matches', matches)
                 end
+            end
+        end
 
-                local new_line_count = api.nvim_buf_line_count(buf)
-                for _, w in ipairs(scroll_wins) do
-                    if api.nvim_win_is_valid(w) then
-                        api.nvim_win_set_cursor(w, {new_line_count, 0})
-                    end
-                end
-            end)
-            append_result()
+        local new_line_count = api.nvim_buf_line_count(buf)
+        for _, w in ipairs(scroll_wins) do
+            if api.nvim_win_is_valid(w) then
+                api.nvim_win_set_cursor(w, {new_line_count, 0})
+            end
         end
     end
     local on_exit = function(code, signal)
         if not M.running_processes[buf] or M.running_processes[buf].session_token ~= session_token then return end
         if not api.nvim_buf_is_valid(buf) then return end
 
+        flush()
+        api.nvim_buf_set_var(buf, 'launcher_matches', matches)
         M.running_processes[buf] = nil
         local line_count = api.nvim_buf_line_count(buf)
         local wins = vim.fn.win_findbuf(buf)
@@ -349,7 +373,8 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
             obj = obj,
             cmd = cmd,
             args = args,
-            session_token = session_token
+            session_token = session_token,
+            matches = matches
         }
     else
         local err_msg = 'Failed to start process: ' .. tostring(err or pid or 'unknown')
@@ -655,8 +680,7 @@ local function BufMapping()
 end
 
 function M.NextMatch()
-    local success, matches = pcall(api.nvim_buf_get_var, 0, 'launcher_matches')
-    if not success or not matches then return end
+    local matches = M.GetMatches(0)
     local cur_line = api.nvim_win_get_cursor(0)[1]
     for _, m in ipairs(matches) do
         if m.lnum > cur_line then
@@ -671,8 +695,7 @@ function M.NextMatch()
 end
 
 function M.PrevMatch()
-    local success, matches = pcall(api.nvim_buf_get_var, 0, 'launcher_matches')
-    if not success or not matches then return end
+    local matches = M.GetMatches(0)
     local cur_line = api.nvim_win_get_cursor(0)[1]
     for i = #matches, 1, -1 do
         local m = matches[i]
@@ -749,10 +772,10 @@ local function OpenLauncherCandidateQuickfix(candidates, match)
 end
 
 function M.Jump()
-    local success, matches = pcall(api.nvim_buf_get_var, 0, 'launcher_matches')
+    local matches = M.GetMatches(0)
     local cur_line = api.nvim_win_get_cursor(0)[1]
     local match = nil
-    if success and matches then
+    if matches then
         for _, m in ipairs(matches) do
             if m.lnum == cur_line then
                 match = m

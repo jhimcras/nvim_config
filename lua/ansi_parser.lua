@@ -9,7 +9,8 @@ M.ansi_highlight_groups = {
 
 -- Returns cleaned_text, { {col_start, col_end, group}, ... }
 function M.parse_ansi(text)
-    local cleaned = ""
+    local parts = {}
+    local length = 0
     local highlights = {}
     local current_hl = 'Normal'
     local hl_start = 0
@@ -17,7 +18,12 @@ function M.parse_ansi(text)
     local pos = 1
     while pos <= #text do
         -- Matches [1m, [1;31m, [0m
-        local start, finish, code = text:find("^\27%[([%d;]+)m", pos)
+        local start, finish, code = text:find("\27%[([%d;]+)m", pos)
+        local plain_end = start and start - 1 or #text
+        if plain_end >= pos then
+            parts[#parts + 1] = text:sub(pos, plain_end)
+            length = length + plain_end - pos + 1
+        end
         if start then
             -- Several codes (1;31): take the last recognized one
             local codes = vim.split(code, ';')
@@ -25,23 +31,22 @@ function M.parse_ansi(text)
             
             local new_hl = M.ansi_highlight_groups[last_code] or 'Normal'
             if new_hl ~= current_hl then
-                if #cleaned > hl_start then
-                    table.insert(highlights, {hl_start, #cleaned, current_hl})
+                if length > hl_start then
+                    table.insert(highlights, {hl_start, length, current_hl})
                 end
                 current_hl = new_hl
-                hl_start = #cleaned
+                hl_start = length
             end
             pos = finish + 1
         else
-            cleaned = cleaned .. text:sub(pos, pos)
-            pos = pos + 1
+            break
         end
     end
     -- Final segment
-    if #cleaned > hl_start then
-        table.insert(highlights, {hl_start, #cleaned, current_hl})
+    if length > hl_start then
+        table.insert(highlights, {hl_start, length, current_hl})
     end
-    return cleaned, highlights
+    return table.concat(parts), highlights
 end
 
 return M

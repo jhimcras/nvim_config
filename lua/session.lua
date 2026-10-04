@@ -117,7 +117,7 @@ local function save_launcher(winid, path)
         cmd      = vim.b[bufnr].lc_command,
         prjroot  = vim.b[bufnr].prjroot_folder,
         status   = vim.b[bufnr].launcher_status,
-        matches  = vim.b[bufnr].launcher_matches,
+        matches  = require('launcher').GetMatches(bufnr),
         filetype = vim.bo[bufnr].filetype,
     }
 
