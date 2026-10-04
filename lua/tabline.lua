@@ -14,6 +14,8 @@ local session_text = ''
 local session_width = 0
 local ime_text = ''
 local ime_width = 0
+local tab_cache = {} -- keyed by stable tabpage handles
+local root_cache = {}
 
 -- Rectangular tabs separated by a TabLineFill space (slanted glyphs overflow in some fonts).
 local EDGE_L = ''
@@ -47,7 +49,12 @@ function M.tabtitle(n)
     end
     local is_equal = function(a, b) return a == b end
     local prjroot_of = function(bufname)
-        local pr = require'prjroot'.GetProjectRoot(vim.fn.fnamemodify(bufname, ':p'))
+        local path = vim.fn.fnamemodify(bufname, ':p')
+        local dir = vim.fn.fnamemodify(path, ':h')
+        if root_cache[dir] == nil then
+            root_cache[dir] = require'prjroot'.GetProjectRoot(path) or false
+        end
+        local pr = root_cache[dir]
         if not pr then return end
         return vim.fn.fnamemodify(pr, ':p:h:t')
     end
@@ -124,14 +131,27 @@ local function max_tab_offset(total)
 end
 
 -- Rebuild the per-tab title/width cache (expensive; tab-content events only).
-local function rebuild_titles()
-    local total = vim.fn.tabpagenr('$')
+local function rebuild_titles(force)
+    local live = {}
     titles = {}
     widths = {}
-    for i = 1, total do
-        titles[i] = M.tabtitle(i)
+    for i, tab in ipairs(vim.api.nvim_list_tabpages()) do
+        local content = {}
+        for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+            if vim.api.nvim_win_get_config(win).relative == '' then
+                local buf = vim.api.nvim_win_get_buf(win)
+                content[#content+1] = { buf, vim.api.nvim_buf_get_name(buf), vim.bo[buf].buftype }
+            end
+        end
+        local cached = tab_cache[tab]
+        if force or not cached or not vim.deep_equal(cached.content, content) then
+            cached = { content = content, title = M.tabtitle(i) }
+        end
+        live[tab] = cached
+        titles[i] = cached.title
         widths[i] = vim.fn.strdisplaywidth(string.format('%s %d %s %s', EDGE_L, i, titles[i], EDGE_R))
     end
+    tab_cache = live
 end
 
 local function rebuild_session()
@@ -240,7 +260,8 @@ end
 
 -- Full refresh, for callers outside the autocmds (session.lua).
 function M.TabLine()
-    rebuild_titles()
+    root_cache = {}
+    rebuild_titles(true)
     rebuild_session()
     rebuild_ime()
     M.tab_update()
@@ -248,23 +269,32 @@ function M.TabLine()
 end
 
 function M.setup()
-    -- Content changed inside tabs: titles only.
-    local function paint_content()
-        rebuild_titles()
-        vim.go.tabline = render()
+    local pending = false
+    local tabs_changed = false
+    local function paint_content(after_session)
+        if (vim.g.SessionLoad == 1 and after_session ~= true) or pending then return end
+        pending = true
+        vim.schedule(function()
+            pending = false
+            if vim.g.SessionLoad == 1 then return end
+            rebuild_titles()
+            if tabs_changed then
+                M.tab_update()
+                tabs_changed = false
+            end
+            vim.go.tabline = render()
+        end)
     end
-    -- Structure/selection changed: titles + highlights.
     local function paint_tabs()
-        rebuild_titles()
-        M.tab_update()
-        vim.go.tabline = render()
+        tabs_changed = true
+        paint_content()
     end
-    -- Session loaded: everything may have changed.
     local function paint_session()
+        root_cache = {}
+        tab_cache = {}
         rebuild_session()
-        rebuild_titles()
-        M.tab_update()
-        vim.go.tabline = render()
+        tabs_changed = true
+        paint_content(true)
     end
     -- IME toggle: only the rightmost segment changes.
     local function paint_ime()
@@ -300,11 +330,16 @@ function M.setup()
         callback = function()
             if vim.v.event.abort then return end
             if vim.fn.getcmdline():match('^%s*tabm') then
-                vim.schedule(paint_tabs)
+                paint_tabs()
             end
         end,
     })
-    vim.api.nvim_create_autocmd({'WinEnter', 'WinLeave', 'BufNew', 'BufEnter', 'BufLeave'}, { callback = paint_content })
+    vim.api.nvim_create_autocmd({'WinEnter', 'BufEnter', 'WinNew', 'WinClosed', 'BufFilePost'}, { callback = paint_content })
+    vim.api.nvim_create_autocmd('DirChanged', { callback = function()
+        root_cache = {}
+        tab_cache = {}
+        paint_content()
+    end })
     vim.api.nvim_create_autocmd('SessionLoadPost', { callback = paint_session })
     -- Refresh just the IME indicator.
     vim.api.nvim_create_autocmd('User', { pattern = 'NeoppImeChanged', callback = paint_ime })

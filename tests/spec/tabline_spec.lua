@@ -92,3 +92,101 @@ describe('tabline', function()
         assert.is_true(visible_tabs(vim.o.tabline) > 4)
     end)
 end)
+
+
+describe('tabline content cache', function()
+    local original_title
+    local calls
+
+    local function flush()
+        vim.wait(20, function() return false end)
+    end
+
+    before_each(function()
+        vim.cmd('tabonly')
+        vim.cmd('only')
+        vim.o.columns = 1000
+        flush()
+        tabline.TabLine()
+        calls = 0
+        original_title = tabline.tabtitle
+        tabline.tabtitle = function(n)
+            calls = calls + 1
+            return original_title(n)
+        end
+    end)
+
+    after_each(function()
+        vim.g.SessionLoad = nil
+        tabline.tabtitle = original_title
+        vim.cmd('tabonly')
+        vim.cmd('only')
+        flush()
+    end)
+
+    it('does not rebuild titles when moving between existing windows', function()
+        vim.cmd('split')
+        flush()
+        calls = 0
+        vim.cmd('wincmd w')
+        flush()
+        assert.are.equal(0, calls)
+    end)
+
+    it('coalesces buffer events and rebuilds only the changed tab', function()
+        vim.cmd('tabnew')
+        flush()
+        calls = 0
+        vim.cmd('enew')
+        vim.cmd('file tabline_cache_changed')
+        vim.api.nvim_exec_autocmds('BufEnter', {})
+        assert.are.equal(0, calls)
+        flush()
+        assert.are.equal(1, calls)
+        assert.is_truthy(vim.o.tabline:find('tabline_cache_changed', 1, true))
+    end)
+
+    it('updates titles after a window closes', function()
+        vim.cmd('vnew tabline_cache_closed')
+        flush()
+        calls = 0
+        vim.cmd('close')
+        flush()
+        assert.are.equal(1, calls)
+        assert.is_nil(vim.o.tabline:find('tabline_cache_closed', 1, true))
+    end)
+
+    it('defers content updates until SessionLoadPost', function()
+        vim.g.SessionLoad = 1
+        vim.cmd('file tabline_cache_session')
+        flush()
+        assert.are.equal(0, calls)
+        vim.api.nvim_exec_autocmds('SessionLoadPost', {})
+        vim.g.SessionLoad = nil
+        flush()
+        assert.are.equal(1, calls)
+        assert.is_truthy(vim.o.tabline:find('tabline_cache_session', 1, true))
+    end)
+
+    it('shares project root lookups between buffers in the same directory', function()
+        local prjroot = require('prjroot')
+        local original_root = prjroot.GetProjectRoot
+        local lookups = 0
+        prjroot.GetProjectRoot = function(...)
+            lookups = lookups + 1
+            return original_root(...)
+        end
+        local ok, err = pcall(function()
+            vim.cmd('file tabline_cache_root_a')
+            vim.cmd('vnew tabline_cache_root_b')
+            lookups = 0
+            tabline.TabLine()
+            assert.are.equal(1, lookups)
+            lookups = 0
+            tabline.tabtitle(vim.fn.tabpagenr())
+            assert.are.equal(0, lookups)
+        end)
+        prjroot.GetProjectRoot = original_root
+        if not ok then error(err) end
+    end)
+end)
