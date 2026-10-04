@@ -3,12 +3,17 @@ local pr = require 'prjroot'
 local ut = require 'util'
 
 -- Reference: https://github.com/nvim-telescope/telescope.nvim/blob/master/developers.md
-local pickers = require 'telescope.pickers'
-local finders = require 'telescope.finders'
-local conf = require 'telescope.config'.values
-local actions = require 'telescope.actions'
-local action_state = require 'telescope.actions.state'
-local make_entry = require 'telescope.make_entry'
+local pickers, finders, conf, actions, action_state, make_entry
+
+local function load_dependencies()
+    require('plugins').load_telescope()
+    pickers = require 'telescope.pickers'
+    finders = require 'telescope.finders'
+    conf = require 'telescope.config'.values
+    actions = require 'telescope.actions'
+    action_state = require 'telescope.actions.state'
+    make_entry = require 'telescope.make_entry'
+end
 
 local function open_in_new_instance()
     local entry = action_state.get_selected_entry()
@@ -19,6 +24,7 @@ local function open_in_new_instance()
 end
 
 function M.InstanceTargets(on_select)
+    load_dependencies()
     pickers.new({}, {
         prompt_title = 'Move to Nvim instance',
         finder = finders.new_table {
@@ -42,6 +48,7 @@ function M.InstanceTargets(on_select)
 end
 
 function M.Files()
+    load_dependencies()
     local cwd = pr.GetCurrentProjectRoot() or ut.GetCurrentBufferDir()
     require 'telescope.builtin'.find_files {
         cwd = cwd,
@@ -54,6 +61,7 @@ end
 
 -- TODO: cannot swipe current diplayed buffer
 function M.Buffers()
+    load_dependencies()
     local default_selection_idx = 1
     local buffer_list = function(opts)
         opts = opts or {}
@@ -145,6 +153,7 @@ end
 
 
 function M.Sessions()
+    load_dependencies()
     local session = require 'session'
     pickers.new({}, {
         prompt_title = 'Sessions',
@@ -173,6 +182,7 @@ function M.Sessions()
 end
 
 function M.RunLauncher()
+    load_dependencies()
     local opts = {}
     pickers.new(opts, {
         prompt_title = 'Launch',
@@ -190,6 +200,7 @@ function M.RunLauncher()
 end
 
 function M.Notes()
+    load_dependencies()
     require 'telescope.builtin'.find_files {
         cwd = '~/notes/',
         attach_mappings = function(_, map)
@@ -200,6 +211,7 @@ function M.Notes()
 end
 
 function M.Tabs()
+    load_dependencies()
     local total = vim.fn.tabpagenr('$')
     local cur = vim.fn.tabpagenr()
     local entries = {}
@@ -263,6 +275,7 @@ function M.Tabs()
 end
 
 function M.ConfigFiles(query)
+    load_dependencies()
     require'telescope.builtin'.find_files {
         cwd = vim.fn.stdpath('config'),
         default_text = query or '',
@@ -274,6 +287,7 @@ function M.ConfigFiles(query)
 end
 
 function M.LSPWorkspaceSymbols()
+    load_dependencies()
    require'telescope.builtin'.lsp_dynamic_workspace_symbols {
        fname_width = 120,
    }
