@@ -558,27 +558,38 @@ local function make_statusline_text(bufnr, winid, components, sep, ctx)
     elseif type(components) == 'number' then
         return tostring(components)
     elseif type(components) == 'function' then
+        if ctx then
+            local cached = ctx.cache[components]
+            if not cached then
+                cached = { value = components(bufnr, winid), text = {} }
+                ctx.cache[components] = cached
+            end
+            if cached.text[sep] == nil then
+                cached.text[sep] = make_statusline_text(bufnr, winid, cached.value, sep, ctx)
+            end
+            return cached.text[sep]
+        end
         local res = components(bufnr, winid)
         if res == nil then return '' end
         return make_statusline_text(bufnr, winid, res, sep, ctx)
     elseif type(components) == 'table' and components.__sh then
         if ctx then
-            ctx.order = ctx.order + 1
-            ctx.candidates[#ctx.candidates + 1] = {
-                fn       = components.fn,
-                priority = components.priority,
-                compact  = components.compact,
-                order    = ctx.order,
-            }
+            local cached = ctx.cache[components]
+            if not cached then
+                ctx.candidates[#ctx.candidates + 1] = {
+                    fn       = components.fn,
+                    priority = components.priority,
+                    order    = #ctx.candidates + 1,
+                }
+                cached = {
+                    full = make_statusline_text(bufnr, winid, components.fn, sep, ctx),
+                    compact = make_statusline_text(bufnr, winid, components.compact, sep, ctx),
+                }
+                ctx.cache[components] = cached
+            end
+            return ctx.excluded[components.fn] and cached.compact or cached.full
         end
-        local active
-        if ctx and ctx.excluded[components.fn] then
-            active = components.compact
-        else
-            active = components.fn
-        end
-        if active == nil then return '' end
-        return make_statusline_text(bufnr, winid, active, sep, ctx)
+        return make_statusline_text(bufnr, winid, components.fn, sep, ctx)
     elseif type(components) == 'table' then
         sep = components.sep or sep
         local pad = components.pad or ''
@@ -651,7 +662,7 @@ local function quickfix_statusline(activation, mode, winid)
     return {
         { 'ﴴ ', sh(quickfix_search_query, 1, quickfix_search_query_compact), hl = hl1, sep = ' ', pad = ' ' },
         gap,
-        { grep_status_icon, sh(search_count, 2), sh('%l/%L', 3, '%l'), hl = hl2, sep = ' ', pad = ' ' },
+        { grep_status_icon, activation and sh(search_count, 2) or false, sh('%l/%L', 3, '%l'), hl = hl2, sep = ' ', pad = ' ' },
         loclist_tag,
     }
 end
@@ -779,27 +790,22 @@ function M.statusline_entry()
     local tree = entryfunc(activation, mode, winid)
 
     local excluded = {}
-    local result
-
-    repeat
-        local ctx = { excluded = excluded, candidates = {}, order = 0 }
-        result = make_statusline_text(bufnr, winid, tree, '', ctx)
-
-        if measure_sl_text(result) <= w then break end
-
+    -- Cache full/compact text for this render only, including empty results.
+    local ctx = { excluded = excluded, candidates = {}, cache = {} }
+    local result = make_statusline_text(bufnr, winid, tree, '', ctx)
+    if measure_sl_text(result) > w then
         table.sort(ctx.candidates, function(a, b)
             if a.priority ~= b.priority then return a.priority < b.priority end
             return a.order < b.order
         end)
-
-        local next_c
         for _, c in ipairs(ctx.candidates) do
-            if not excluded[c.fn] then next_c = c; break end
+            if not excluded[c.fn] then
+                excluded[c.fn] = true
+                result = make_statusline_text(bufnr, winid, tree, '', ctx)
+                if measure_sl_text(result) <= w then break end
+            end
         end
-        if not next_c then break end
-
-        excluded[next_c.fn] = true
-    until false
+    end
 
     return result
 end
