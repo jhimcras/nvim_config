@@ -881,10 +881,10 @@ function M.refresh(win)
     -- read_mode wraps the cursor line too: -1 matches no line.
     local cursor_row = vim.w[win].read_mode_active and -1
         or vim.api.nvim_win_get_cursor(win)[1]
-    html.refresh(buf, cursor_row - 1)
     local images_active = require('rendermark.image').is_active()
     -- Keep the line above topline decorated so Ctrl-Y scrolls one row at a time.
     local segs = visible_segments(win, math.max(1, info.topline - 1), info.botline)
+    html.refresh(buf, cursor_row - 1, segs)
     -- Decorations first: collect_deco snapshots them for line widths.
     local rule_width = vim.api.nvim_win_get_width(win) - info.textoff
     paint_deco(buf, segs, rule_width, cursor_row)

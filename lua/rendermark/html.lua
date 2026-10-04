@@ -4,6 +4,7 @@ local M = {}
 local ns = vim.api.nvim_create_namespace('rendermark_html')
 local state_ns = vim.api.nvim_create_namespace('rendermark_html_state')
 local buffers = {}
+local paint_marks
 local styles = {
     mark = 'RendermarkHtmlMark',
     u = 'RendermarkHtmlUnderline',
@@ -12,10 +13,11 @@ local styles = {
 }
 
 local function put(buf, row, col, opts)
-    vim.api.nvim_buf_set_extmark(buf, ns, row, col, opts)
+    local id = vim.api.nvim_buf_set_extmark(buf, ns, row, col, opts)
+    if paint_marks then paint_marks[#paint_marks + 1] = id end
 end
 
-local function source_rows(buf)
+local function source_rows(buf, lines)
     local skip, tables = {}, {}
     local ok, parser = pcall(vim.treesitter.get_parser, buf, 'markdown')
     if ok and parser then
@@ -29,11 +31,10 @@ local function source_rows(buf)
                 if query.captures[id] == 'code' then
                     for row = first, last do skip[row] = true end
                 else
-                    local lines = vim.api.nvim_buf_get_lines(buf, first, last + 1, false)
                     local finish = first + 1
-                    for i = 3, #lines do
+                    for i = first + 3, last + 1 do
                         if not lines[i]:find('|', 1, true) then break end
-                        finish = first + i - 1
+                        finish = i - 1
                     end
                     for row = first, finish do tables[row] = true end
                 end
@@ -42,7 +43,7 @@ local function source_rows(buf)
     end
     -- Fences inside <details> parse as raw HTML; detect them from source lines.
     local fence
-    for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    for i, line in ipairs(lines) do
         local run = line:match('^%s*([`~]+)')
         if fence then
             skip[i - 1] = true
@@ -61,7 +62,12 @@ end
 
 local function scan(buf, old)
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local skip, tables = source_rows(buf)
+    local has_html = false
+    for _, line in ipairs(lines) do
+        if line:find('<', 1, true) then has_html = true; break end
+    end
+    if not has_html then return lines, {}, {}, {} end
+    local skip, tables = source_rows(buf, lines)
     local blocks, stack = {}, {}
     for i, line in ipairs(lines) do
         local row = i - 1
@@ -101,7 +107,10 @@ local function prior_state(buf, records)
     return old
 end
 
-local function draw_inline(buf, row, line, in_table)
+local function draw_inline(buf, row, line, in_table, paint)
+    local function decorate(...)
+        if paint ~= false then put(...) end
+    end
     local active = {}
     local from = 1
     local first_br, last_br
@@ -127,12 +136,12 @@ local function draw_inline(buf, row, line, in_table)
         if literal then
             -- Tags inside inline code are literal.
         elseif styles[tag] then
-            put(buf, row, s - 1, { end_col = e, conceal = '' })
+            decorate(buf, row, s - 1, { end_col = e, conceal = '' })
             if slash == '' then
                 active[tag] = e
             elseif active[tag] then
                 if s - 1 > active[tag] then
-                    put(buf, row, active[tag], {
+                    decorate(buf, row, active[tag], {
                         end_col = s - 1, hl_group = styles[tag],
                         hl_mode = 'combine', priority = 210,
                     })
@@ -141,14 +150,14 @@ local function draw_inline(buf, row, line, in_table)
             end
         elseif tag == 'br' and slash == '' then
             if in_table then
-                put(buf, row, s - 1, { end_col = e, conceal = '' })
+                decorate(buf, row, s - 1, { end_col = e, conceal = '' })
                 table_breaks[s - 1] = true
             elseif not first_br then
                 -- Cursor line stays raw.
                 first_br, last_br = s, e
             end
         elseif in_table and (tag == 'details' or tag == 'summary') then
-            put(buf, row, s - 1, { end_col = e, conceal = '' })
+            decorate(buf, row, s - 1, { end_col = e, conceal = '' })
         end
         from = e + 1
     end
@@ -201,7 +210,7 @@ local function draw_br(buf, row, line, first, finish)
     put(buf, row, 0, { virt_lines = rows })
 end
 
-function M.refresh(buf, cursor_row)
+function M.refresh(buf, cursor_row, segments)
     if buf == 0 then buf = vim.api.nvim_get_current_buf() end
     local cache = buffers[buf]
     local tick = vim.api.nvim_buf_get_changedtick(buf)
@@ -215,53 +224,85 @@ function M.refresh(buf, cursor_row)
         cache = { tick = tick, lines = lines, skip = skip, tables = tables, blocks = blocks }
         buffers[buf] = cache
     end
-    if cache.painted and cursor_row ~= cache.cursor_row
+    if not segments then
+        segments = {}
+        for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+            local info = vim.fn.getwininfo(win)[1]
+            segments[#segments + 1] = { math.max(0, info.topline - 2), info.botline }
+        end
+    end
+    local same_view = vim.deep_equal(segments, cache.segments)
+    if cache.painted and same_view and cursor_row ~= cache.cursor_row
         and not cache.br_rows[cursor_row] and not cache.br_rows[cache.cursor_row] then
         cache.cursor_row = cursor_row
         return
     end
-    if cache.painted and cursor_row == cache.cursor_row then return end
-    vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-    local hidden = {}
-    for _, block in ipairs(cache.blocks) do
-        local title = block.summary or 'Details'
-        local label = block.expanded and '▼' or ('▶ ' .. title)
-        local opener = cache.lines[block.first + 1]
-        local pad = math.max(0, vim.fn.strdisplaywidth(opener) - vim.fn.strdisplaywidth(label))
-        put(buf, block.first, 0, {
-            virt_text = { { label .. string.rep(' ', pad), 'RendermarkHtmlDetails' } },
-            virt_text_pos = 'overlay',
-        })
-        if not block.expanded then
-            for row = block.first + 1, block.last do
-                hidden[row] = true
-                put(buf, row, 0, { conceal_lines = '' })
+    if cache.painted and same_view and cursor_row == cache.cursor_row then return end
+    local hidden = cache.hidden or {}
+    if not cache.painted then
+        vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+        hidden = {}
+        -- Keep collapsed rows concealed globally so scrolling and motions skip the body.
+        for _, block in ipairs(cache.blocks) do
+            if not block.expanded then
+                for row = block.first + 1, block.last do
+                    hidden[row] = true
+                    put(buf, row, 0, { conceal_lines = '' })
+                end
             end
-        else
-            local closing = cache.lines[block.last + 1]
-            put(buf, block.last, 0, { end_col = #closing, conceal = '' })
-            for row = block.first + 1, block.last - 1 do
-                local line = cache.lines[row + 1]
-                local from = 1
-                while true do
-                    local a, b = line:find('</?summary[^>]*>', from)
-                    if not a then break end
-                    put(buf, row, a - 1, { end_col = b, conceal = '' })
-                    from = b + 1
+        end
+    else
+        for _, id in ipairs(cache.paint_marks or {}) do
+            vim.api.nvim_buf_del_extmark(buf, ns, id)
+        end
+    end
+    local visible = {}
+    for _, segment in ipairs(segments) do
+        for row = segment[1], math.min(segment[2], #cache.lines) - 1 do visible[row] = true end
+    end
+    paint_marks = {}
+    for _, block in ipairs(cache.blocks) do
+        if visible[block.first] then
+            local title = block.summary or 'Details'
+            local label = block.expanded and '▼' or ('▶ ' .. title)
+            local opener = cache.lines[block.first + 1]
+            local pad = math.max(0, vim.fn.strdisplaywidth(opener) - vim.fn.strdisplaywidth(label))
+            put(buf, block.first, 0, {
+                virt_text = { { label .. string.rep(' ', pad), 'RendermarkHtmlDetails' } },
+                virt_text_pos = 'overlay',
+            })
+        end
+        if block.expanded then
+            if visible[block.last] then
+                put(buf, block.last, 0, { end_col = #cache.lines[block.last + 1], conceal = '' })
+            end
+            for row in pairs(visible) do
+                if row > block.first and row < block.last then
+                    local line = cache.lines[row + 1]
+                    local from = 1
+                    while true do
+                        local a, b = line:find('</?summary[^>]*>', from)
+                        if not a then break end
+                        put(buf, row, a - 1, { end_col = b, conceal = '' })
+                        from = b + 1
+                    end
                 end
             end
         end
     end
     local br_rows, table_breaks = {}, {}
-    for i, line in ipairs(cache.lines) do
-        local row = i - 1
-        if not hidden[row] and not cache.skip[row] then
+    for row in pairs(visible) do
+        local line = cache.lines[row + 1]
+        if not hidden[row] and not cache.skip[row] and line:find('<', 1, true) then
             local first, finish, breaks = draw_inline(buf, row, line, cache.tables[row])
             if next(breaks) then table_breaks[row] = breaks end
             if first then br_rows[row] = true end
             if first and row ~= cursor_row then draw_br(buf, row, line, first, finish) end
         end
     end
+    cache.paint_marks = paint_marks
+    paint_marks = nil
+    cache.segments = vim.deepcopy(segments)
     cache.hidden = hidden
     cache.br_rows = br_rows
     cache.table_breaks = table_breaks
@@ -272,7 +313,13 @@ end
 function M.table_breaks(buf, row)
     if buf == 0 then buf = vim.api.nvim_get_current_buf() end
     local cache = buffers[buf]
-    return cache and cache.table_breaks and cache.table_breaks[row] or nil
+    if not cache or not cache.tables[row] or cache.skip[row] or cache.hidden[row] then return nil end
+    if cache.table_breaks[row] == nil then
+        -- A visible table can include source rows outside the painted range.
+        local _, _, breaks = draw_inline(buf, row, cache.lines[row + 1], true, false)
+        cache.table_breaks[row] = breaks
+    end
+    return next(cache.table_breaks[row]) and cache.table_breaks[row] or nil
 end
 
 function M.is_hidden(buf, row)

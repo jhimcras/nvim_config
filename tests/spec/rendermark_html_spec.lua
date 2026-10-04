@@ -150,6 +150,68 @@ describe('rendermark HTML', function()
         assert.is_nil(has(2, function(d) return d.conceal_lines == '' end))
     end)
 
+    it('paints only visible segments and refreshes them without an edit', function()
+        render({ '<mark>first</mark>', '<u>second</u>', 'before<br>after', 'tail' }, 4)
+        html.refresh(0, 3, { { 0, 1 } })
+        assert.is_truthy(has(0, function(d) return d.hl_group == 'RendermarkHtmlMark' end))
+        assert.equals(0, #marks(1))
+        assert.equals(0, #marks(2))
+        html.refresh(0, 3, { { 1, 3 } })
+        assert.equals(0, #marks(0))
+        assert.is_truthy(has(1, function(d) return d.hl_group == 'RendermarkHtmlUnderline' end))
+        assert.is_truthy(has(2, function(d) return d.virt_lines ~= nil end))
+        html.refresh(0, 2, { { 1, 3 } })
+        assert.is_nil(has(2, function(d) return d.virt_lines ~= nil end))
+        html.refresh(0, 1, { { 1, 3 } })
+        assert.is_truthy(has(2, function(d) return d.virt_lines ~= nil end))
+    end)
+
+    it('reads the full buffer once and skips the parser for plain text', function()
+        render({ 'plain', 'text' })
+        local get_lines, get_parser = vim.api.nvim_buf_get_lines, vim.treesitter.get_parser
+        local reads, parses = 0, 0
+        vim.api.nvim_buf_get_lines = function(buf, first, last, strict)
+            if first == 0 and last == -1 then reads = reads + 1 end
+            return get_lines(buf, first, last, strict)
+        end
+        vim.treesitter.get_parser = function(...)
+            parses = parses + 1
+            return get_parser(...)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, 1, false, { 'edited' })
+        local ok, err = pcall(html.refresh, 0, 0, { { 0, 2 } })
+        vim.api.nvim_buf_get_lines, vim.treesitter.get_parser = get_lines, get_parser
+        assert.is_true(ok, err)
+        assert.equals(1, reads)
+        assert.equals(0, parses)
+    end)
+
+    it('keeps offscreen table breaks available without painting them', function()
+        render({ '| Kind | Value |', '| --- | --- |',
+            '| text | `literal<br>` real<br>tail |', 'after' })
+        html.refresh(0, 3, { { 0, 1 } })
+        local breaks = html.table_breaks(0, 2)
+        assert.is_truthy(breaks)
+        local count = 0
+        for _ in pairs(breaks) do count = count + 1 end
+        assert.equals(1, count)
+        assert.equals(0, #marks(2))
+    end)
+
+    it('keeps details concealed offscreen while painting its label on demand', function()
+        render({ '<details>', '<summary>Notes</summary>', 'body', '</details>', 'after' })
+        html.refresh(0, 4, { { 4, 5 } })
+        assert.equals(0, #marks(0))
+        assert.is_true(html.is_hidden(0, 2))
+        assert.is_truthy(has(2, function(d) return d.conceal_lines == '' end))
+        html.refresh(0, 4, { { 0, 1 } })
+        assert.is_truthy(has(0, function(d) return d.virt_text_pos == 'overlay' end))
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'plain' })
+        html.refresh(0, 0, { { 0, 1 } })
+        assert.equals(0, #marks(0))
+        assert.is_false(html.is_hidden(0, 0))
+    end)
+
     it('skips concealed rows when moving down and up', function()
         render({ '<details>', '<summary>Notes</summary>', 'body', '</details>', 'after' }, 1)
         local win = vim.api.nvim_get_current_win()
