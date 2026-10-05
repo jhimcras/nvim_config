@@ -309,40 +309,15 @@ local function markdown_fence(line)
   return nil
 end
 
+local plantuml_block_cache = {}
+
 function M.markdown_plantuml_block_height(buf, row)
-  local ok, lines = pcall(vim.api.nvim_buf_get_lines, buf, 0, -1, false)
-  if not ok or not lines then return nil end
-
-  local in_fence = false
-  local fence_char = nil
-  local fence_len = 0
-  local fence_start = 0
-  local fence_info = ''
-  for i, line in ipairs(lines) do
-    local row0 = i - 1
-    local char, len, info = markdown_fence(line)
-    if not in_fence then
-      if char then
-        in_fence = true
-        fence_char = char
-        fence_len = len
-        fence_start = row0
-        fence_info = (info or ''):lower()
-      end
-    elseif char == fence_char and len >= fence_len then
-      if row >= fence_start and row <= row0 and fence_info:find('plantuml', 1, true) then
-        return row0 - fence_start + 1
-      end
-      in_fence = false
-      fence_char = nil
-      fence_len = 0
-      fence_start = 0
-      fence_info = ''
+  M.plantuml_find_blocks(buf)
+  local cached = plantuml_block_cache[buf]
+  for _, span in ipairs(cached and cached.heights or {}) do
+    if row >= span.start_row and row <= span.end_row then
+      return span.end_row - span.start_row + 1
     end
-  end
-
-  if in_fence and row >= fence_start and fence_info:find('plantuml', 1, true) then
-    return #lines - fence_start
   end
   return nil
 end
@@ -1246,37 +1221,41 @@ local function plantuml_lang_of(info)
 end
 
 function M.plantuml_find_blocks(buf)
+  local ok_tick, tick = pcall(vim.api.nvim_buf_get_changedtick, buf)
+  if not ok_tick then return {} end
+  local cached = plantuml_block_cache[buf]
+  if cached and cached.tick == tick then return cached.blocks end
   local ok, lines = pcall(vim.api.nvim_buf_get_lines, buf, 0, -1, false)
   if not ok or not lines then return {} end
-  local blocks = {}
-  local i = 1
-  while i <= #lines do
-    local char, len, info = markdown_fence(lines[i])
-    if char and plantuml_lang_of(info) then
-      local start = i - 1
-      local j = i + 1
-      while j <= #lines do
-        local c2, l2 = markdown_fence(lines[j])
-        if c2 == char and l2 and l2 >= len then break end
-        j = j + 1
+  local blocks, heights = {}, {}
+  local fence
+  for i, line in ipairs(lines) do
+    local char, len, info = markdown_fence(line)
+    if not fence then
+      if char then
+        fence = { char = char, len = len, info = (info or ''):lower(), start_row = i - 1 }
       end
-      if j <= #lines then
+    elseif char == fence.char and len >= fence.len then
+      if fence.info:find('plantuml', 1, true) then
+        heights[#heights + 1] = { start_row = fence.start_row, end_row = i - 1 }
+      end
+      if plantuml_lang_of(fence.info) then
         local body = {}
-        for k = i + 1, j - 1 do body[#body + 1] = lines[k] end
+        for k = fence.start_row + 2, i - 1 do body[#body + 1] = lines[k] end
         blocks[#blocks + 1] = {
-          start_row = start,
-          end_row = j - 1,
-          lang = (info or ''):lower(),
+          start_row = fence.start_row,
+          end_row = i - 1,
+          lang = fence.info,
           text = table.concat(body, '\n') .. '\n',
         }
-        i = j + 1
-      else
-        i = i + 1
       end
-    else
-      i = i + 1
+      fence = nil
     end
   end
+  if fence and fence.info:find('plantuml', 1, true) then
+    heights[#heights + 1] = { start_row = fence.start_row, end_row = #lines - 1 }
+  end
+  plantuml_block_cache[buf] = { tick = tick, blocks = blocks, heights = heights }
   return blocks
 end
 
@@ -1538,6 +1517,7 @@ local function plantuml_open_split(buf, win, block, png)
 end
 
 function M.plantuml_cleanup_buf(buf)
+  plantuml_block_cache[buf] = nil
   local st = plantuml_states[buf]
   if not st then return end
   if st.active_timer then pcall(function() st.active_timer:stop(); st.active_timer:close() end) end

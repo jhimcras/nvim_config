@@ -149,7 +149,7 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
       if require('rendermark.wrap').table_row(buf, row0) then goto continue_mark end
       if row0 and details.ns_id ~= deps.image_ns() and details.virt_text ~= nil then
         local text = M.virt_text_to_plain(details.virt_text)
-        if text ~= '' then
+        if M.line_has_image_link(text) then
           M.scan_markdown_image_text(deps, buf, row0, text, result, {
             base_col = col0,
             virtual = true,
