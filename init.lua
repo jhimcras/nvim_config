@@ -26,9 +26,13 @@ end
 
 local function SetAutoChangedFileReloading()
     -- Reload files changed outside Nvim (`checktime` fails in the command line).
-    api.nvim_create_autocmd({ 'FocusGained','BufEnter','CursorHold','CursorHoldI' }, { callback = function()
+    api.nvim_create_autocmd({ 'FocusGained','BufEnter','CursorHold','CursorHoldI' }, { callback = function(event)
         if vim.fn.mode() == 'n' and vim.fn.getcmdwintype() == '' then
-            cmd.checktime()
+            if event.event == 'FocusGained' then
+                cmd.checktime()
+            else
+                cmd.checktime(event.buf)
+            end
         end
     end })
     api.nvim_create_autocmd('FileChangedShellPost', { callback = function()
