@@ -210,6 +210,8 @@ function M.asyncGrep(term, word, wndidforll)
         pattern = tostring(qfwinid),
         once = true,
         callback = function()
+            spinner.stop(redraw_timer)
+            redraw_timer = nil
             if active_loclist[wndidforll] == qfwinid then
                 active_loclist[wndidforll] = nil
                 if vim.api.nvim_win_is_valid(wndidforll) then
