@@ -31,6 +31,12 @@ function M.table_row(buf, row)
 end
 -- Per-window fold-change detection state (see the decoration provider in M.setup).
 local win_seen, win_settled = {}, {}
+-- Last full render per window, for the incremental cursor path:
+-- { buf, key, foreign, cursor, covered = { [row0] = true } }.
+local rendered = {}
+local owner = {} -- buf -> window whose render its namespaces hold
+local typing = {} -- win -> generation of the pending insert-mode refresh
+local TYPING_DEBOUNCE_MS = 100
 
 local function dw(s)
     return wrap_text.dw(s)
@@ -843,6 +849,69 @@ local function paint_deco(buf, segs, rule_width, cursor_row)
     end
 end
 
+local function text_width(win, info)
+    local width = vim.api.nvim_win_get_width(win) - info.textoff - config.right_pad
+    if config.max_width and config.max_width > 0 then
+        width = math.min(width, config.max_width)
+    end
+    return width
+end
+
+-- Everything besides the cursor row that a render depends on.
+local function view_key(win, buf, info, images_active)
+    local m = deco.metrics()
+    return table.concat({
+        buf, vim.api.nvim_buf_get_changedtick(buf), info.width, info.height,
+        info.textoff, info.topline, info.leftcol, tostring(vim.w[win].read_mode_active),
+        tostring(images_active), m.heading, m.checkbox,
+    }, ':')
+end
+
+-- Other plugins' extmarks feed collect_deco; any change there needs a full render.
+local own_ns
+local function foreign_sig(buf, segs)
+    if not own_ns then
+        own_ns = {}
+        for _, name in ipairs({ 'markdown_visual_wrap', 'rendermark_deco', 'rendermark_html',
+            'rendermark_html_state', 'rendermark_neopp_images' }) do
+            own_ns[vim.api.nvim_create_namespace(name)] = true
+        end
+    end
+    local parts = {}
+    for _, seg in ipairs(segs) do
+        local marks = vim.api.nvim_buf_get_extmarks(buf, -1, { seg[1], 0 }, { seg[2] - 1, -1 },
+            { details = true })
+        for _, m in ipairs(marks) do
+            local d = m[4]
+            if not own_ns[d.ns_id] then
+                local text = {}
+                for _, ch in ipairs(d.virt_text or {}) do
+                    text[#text + 1] = ch[1]
+                end
+                parts[#parts + 1] = table.concat({
+                    d.ns_id, m[2], m[3], d.end_row or '', d.end_col or '',
+                    d.conceal or '', tostring(d.hl_group), d.priority or '',
+                    d.virt_text_pos or '', table.concat(text),
+                }, ':')
+            end
+        end
+    end
+    return table.concat(parts, '|')
+end
+
+local function remember(win, buf, key, segs, cursor_row)
+    local covered = {}
+    for _, seg in ipairs(segs) do
+        for row = seg[1], seg[2] - 1 do covered[row] = true end
+    end
+    rendered[win] = {
+        buf = buf, key = key, foreign = foreign_sig(buf, segs),
+        cursor = cursor_row, covered = covered,
+    }
+    owner[buf] = win
+    typing[win] = nil
+end
+
 function M.refresh(win)
     if not win or win == 0 then
         win = vim.api.nvim_get_current_win()
@@ -859,6 +928,8 @@ function M.refresh(win)
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
     table_rows[buf] = {}
     deco.clear(buf)
+    rendered[win] = nil
+    owner[buf] = nil
 
     -- Can't compensate leftcol per line; clear and bail until it's back to 0.
     local leftcol = vim.api.nvim_win_call(win, function()
@@ -870,10 +941,7 @@ function M.refresh(win)
     end
 
     local info = vim.fn.getwininfo(win)[1]
-    local width = vim.api.nvim_win_get_width(win) - info.textoff - config.right_pad
-    if config.max_width and config.max_width > 0 then
-        width = math.min(width, config.max_width)
-    end
+    local width = text_width(win, info)
     if width < config.min_text_width then
         return
     end
@@ -891,26 +959,165 @@ function M.refresh(win)
     for _, seg in ipairs(segs) do
         render_range(buf, seg[1], seg[2], width, cursor_row, images_active)
     end
+    remember(win, buf, view_key(win, buf, info, images_active), segs, cursor_row)
     win_settled[win] = true
     if images_active then require('rendermark.image').schedule_image_sync() end
 end
 
-local pending = {}
-local function schedule_refresh(win)
+-- Rows [first, last) widened to whole pipe tables, which render_table draws at once.
+local function widen_to_tables(buf, first, last)
+    local tq = config.table and get_table_query() or nil
+    local ok, parser = pcall(vim.treesitter.get_parser, buf, 'markdown')
+    if not tq or not ok or not parser then
+        return first, last
+    end
+    -- The text is unchanged since the last full render parsed it.
+    local tree = parser:trees()[1]
+    if not tree then
+        return first, last
+    end
+    repeat
+        local grown = false
+        for _, node in tq:iter_captures(tree:root(), buf, first, last) do
+            local r1, _, r2, c2 = node:range()
+            if c2 == 0 then r2 = r2 - 1 end
+            if r1 < first then first, grown = r1, true end
+            if r2 + 1 > last then last, grown = r2 + 1, true end
+        end
+    until not grown
+    return first, last
+end
+
+-- Row heights and table image placement, which image positions depend on.
+local function layout_sig(buf, ranges)
+    local parts = {}
+    for _, r in ipairs(ranges) do
+        local marks = vim.api.nvim_buf_get_extmarks(buf, -1, { r[1], 0 }, { r[2] - 1, -1 },
+            { details = true, type = 'virt_lines' })
+        for _, m in ipairs(marks) do
+            parts[#parts + 1] = m[2] .. '=' .. #(m[4].virt_lines or {})
+        end
+        for row = r[1], r[2] - 1 do
+            for _, img in ipairs(M.table_row(buf, row) or {}) do
+                local l = img.table_layout
+                parts[#parts + 1] = table.concat({ row, l.row, l.col, l.width, l.height }, ',')
+            end
+        end
+    end
+    return table.concat(parts, '|')
+end
+
+-- Cursor-only refresh: re-render the old and new cursor rows (and rows that came
+-- into view), else fall back to a full refresh when anything else changed.
+local function refresh_cursor(win)
+    if not vim.api.nvim_win_is_valid(win) then
+        return
+    end
+    local buf = vim.api.nvim_win_get_buf(win)
+    local last = rendered[win]
+    if not last or last.buf ~= buf or owner[buf] ~= win or not buffer_enabled(buf) then
+        return M.refresh(win)
+    end
+    if is_markdown_buffer(buf) then deco.visible_fences(buf, true) end
+    local cursor_row = vim.w[win].read_mode_active and -1
+        or vim.api.nvim_win_get_cursor(win)[1]
+    local info = vim.fn.getwininfo(win)[1]
+    local images_active = require('rendermark.image').is_active()
+    local key = view_key(win, buf, info, images_active)
+    if key ~= last.key then
+        -- Typing on the cursor row: the debounced refresh renders it.
+        if typing[win] and cursor_row == last.cursor then
+            return
+        end
+        return M.refresh(win)
+    end
+    local segs = visible_segments(win, math.max(1, info.topline - 1), info.botline)
+    if foreign_sig(buf, segs) ~= last.foreign then
+        return M.refresh(win)
+    end
+
+    local rows = {}
+    if cursor_row ~= last.cursor then
+        if last.cursor > 0 then rows[#rows + 1] = { last.cursor - 1, last.cursor } end
+        if cursor_row > 0 then rows[#rows + 1] = { cursor_row - 1, cursor_row } end
+    end
+    -- A height change on the last render can pull undecorated rows into view.
+    for _, seg in ipairs(segs) do
+        for row = seg[1], seg[2] - 1 do
+            if not last.covered[row] then rows[#rows + 1] = { row, row + 1 } end
+        end
+    end
+    if #rows == 0 then
+        return
+    end
+    local ranges = {}
+    for _, r in ipairs(rows) do
+        r[1], r[2] = widen_to_tables(buf, r[1], r[2])
+    end
+    table.sort(rows, function(a, b) return a[1] < b[1] end)
+    for _, r in ipairs(rows) do
+        local prev = ranges[#ranges]
+        if prev and r[1] <= prev[2] then
+            prev[2] = math.max(prev[2], r[2])
+        else
+            ranges[#ranges + 1] = { r[1], r[2] }
+        end
+    end
+
+    local before = images_active and layout_sig(buf, ranges)
+    html.refresh(buf, cursor_row - 1, segs)
+    local rule_width = vim.api.nvim_win_get_width(win) - info.textoff
+    for _, r in ipairs(ranges) do
+        vim.api.nvim_buf_clear_namespace(buf, ns, r[1], r[2])
+        deco.clear(buf, r[1], r[2])
+        deco.render_range(buf, r[1], r[2], rule_width, cursor_row)
+    end
+    local width = text_width(win, info)
+    for _, r in ipairs(ranges) do
+        render_range(buf, r[1], r[2], width, cursor_row, images_active)
+        for row = r[1], r[2] - 1 do last.covered[row] = true end
+    end
+    last.cursor = cursor_row
+    win_settled[win] = true
+    if images_active and layout_sig(buf, ranges) ~= before then
+        require('rendermark.image').schedule_image_sync()
+    end
+end
+
+local pending = {} -- win -> 'full' | 'cursor'
+local function schedule_refresh(win, cursor_only)
     if not win or win == 0 then
         win = vim.api.nvim_get_current_win()
     end
     if pending[win] then
+        if not cursor_only then pending[win] = 'full' end
         return
     end
-    pending[win] = true
+    pending[win] = cursor_only and 'cursor' or 'full'
     -- Double-deferred to run after foreign decorators' own scheduled callbacks.
     vim.schedule(function()
         vim.schedule(function()
+            local mode = pending[win]
             pending[win] = nil
-            M.refresh(win)
+            if mode == 'cursor' then
+                refresh_cursor(win)
+            else
+                M.refresh(win)
+            end
         end)
     end)
+end
+
+-- Typing on the cursor row changes nothing else on screen until it pauses.
+local function schedule_typing_refresh(win)
+    local gen = (typing[win] or 0) + 1
+    typing[win] = gen
+    vim.defer_fn(function()
+        if typing[win] == gen then
+            typing[win] = nil
+            schedule_refresh(win)
+        end
+    end, TYPING_DEBOUNCE_MS)
 end
 
 -- Crossing a code fence row repaints synchronously; the deferred refresh would flicker.
@@ -921,7 +1128,8 @@ local function looks_like_fence(buf, lnum)
     return line ~= nil and line:match('^%s*[`~][`~][`~]') ~= nil
 end
 
-local function repaint_deco_now(win, buf)
+-- Only the two rows change: the fence bar yields to the source under the cursor.
+local function repaint_deco_now(win, buf, rows)
     local info = vim.fn.getwininfo(win)[1]
     if not info then
         return
@@ -935,8 +1143,11 @@ local function repaint_deco_now(win, buf)
     end
     local cursor_row = vim.w[win].read_mode_active and -1
         or vim.api.nvim_win_get_cursor(win)[1]
-    paint_deco(buf, visible_segments(win, info.topline, info.botline),
-        vim.api.nvim_win_get_width(win) - info.textoff, cursor_row)
+    local rule_width = vim.api.nvim_win_get_width(win) - info.textoff
+    for _, row in ipairs(rows) do
+        deco.clear(buf, row - 1, row)
+        deco.render_range(buf, row - 1, row, rule_width, cursor_row)
+    end
 end
 
 -- 'statuscolumn': signs + numbers (real lines only) + reading margin.
@@ -984,6 +1195,8 @@ function M.disable(win)
 
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
     table_rows[buf] = nil
+    rendered[w] = nil
+    owner[buf] = nil
     deco.clear(buf)
     html.clear(buf)
     vim.b[buf].markdown_visual_wrap = false
@@ -1099,6 +1312,7 @@ function M.setup(opts)
             local win = tonumber(a.match)
             win_seen[win], win_settled[win] = nil, nil
             last_cursor_row[win] = nil
+            rendered[win], typing[win] = nil, nil
         end,
     })
 
@@ -1114,8 +1328,8 @@ function M.setup(opts)
             if not buffer_enabled(buf) then
                 return
             end
+            local win = vim.api.nvim_get_current_win()
             if a.event == 'CursorMoved' or a.event == 'CursorMovedI' then
-                local win = vim.api.nvim_get_current_win()
                 local row = vim.api.nvim_win_get_cursor(win)[1]
                 local prev = last_cursor_row[win]
                 if html.skip_hidden(win, prev) then
@@ -1124,10 +1338,15 @@ function M.setup(opts)
                 last_cursor_row[win] = row
                 if prev ~= row
                     and (looks_like_fence(buf, row) or (prev and looks_like_fence(buf, prev))) then
-                    repaint_deco_now(win, buf)
+                    repaint_deco_now(win, buf, { row, prev })
                 end
+                schedule_refresh(win, true)
+            elseif a.event == 'TextChangedI' and rendered[win]
+                and rendered[win].cursor == vim.api.nvim_win_get_cursor(win)[1] then
+                schedule_typing_refresh(win)
+            else
+                schedule_refresh(win)
             end
-            schedule_refresh(0)
         end,
     })
 end

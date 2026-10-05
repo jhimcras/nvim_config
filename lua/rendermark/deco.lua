@@ -102,8 +102,12 @@ local function line_at(buf, row)
     return vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1]
 end
 
+-- Rows of the render_range call in progress; marks outside it are dropped so a
+-- partial repaint of [first, last) reproduces exactly what it cleared.
+local clip_first, clip_last = 0, math.huge
+
 local function mark(buf, row, col, opts)
-    if html.is_hidden(buf, row) then return end
+    if row < clip_first or row >= clip_last or html.is_hidden(buf, row) then return end
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, col, opts)
 end
 
@@ -507,6 +511,7 @@ function M.render_range(buf, first, last, rule_width, cursor_row)
 
     local cur = cursor_row and cursor_row - 1
     local verbatim = {}
+    clip_first, clip_last = first, last
     for id, node in q:iter_captures(tree:root(), buf, first, last) do
         local name = q.captures[id]
         if name == 'heading' then
@@ -537,10 +542,12 @@ function M.render_range(buf, first, last, rule_width, cursor_row)
             end
         end
     end
+    clip_first, clip_last = 0, math.huge
 end
 
-function M.clear(buf)
-    vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+-- Rows [first, last), default all.
+function M.clear(buf, first, last)
+    vim.api.nvim_buf_clear_namespace(buf, ns, first or 0, last or -1)
 end
 
 local function define_highlights()
