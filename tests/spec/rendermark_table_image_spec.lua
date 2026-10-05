@@ -106,15 +106,59 @@ describe('images inside rendered tables', function()
         for _, row in ipairs(grid(3)) do assert.is_true(vim.fn.strdisplaywidth(row) <= 35) end
     end)
 
-    it('reveals the cursor row and drops table geometry when disabled', function()
-        refresh({ 'prose', '|a|b|', '|--|--|', '|![](' .. path .. ')|text|' })
+    it('keeps the grid and image on a normal-mode cursor row and covers the raw text', function()
+        local long = string.rep('word ', 30)
+        refresh({ 'prose', '|a|b|', '|--|--|', '|![](' .. path .. ')|' .. long .. '|' })
         vim.api.nvim_win_set_cursor(0, { 4, 0 })
         wrap.refresh(0)
+        assert.are.equal(1, #wrap.table_row(vim.api.nvim_get_current_buf(), 3))
+        assert.are.equal(1, #image.collect_markdown_images(vim.api.nvim_get_current_buf(), 0, 4))
+        local raw = vim.api.nvim_buf_get_lines(0, 3, 4, false)[1]
+        assert.is_true(vim.fn.strdisplaywidth(grid(3)[1]) >= vim.fn.strdisplaywidth(raw))
+    end)
+
+    it('reveals the insert-mode cursor row and drops table geometry when disabled', function()
+        refresh({ 'prose', '|a|b|', '|--|--|', '|![](' .. path .. ')|text|' })
+        vim.api.nvim_win_set_cursor(0, { 4, 0 })
+        local get_mode = vim.api.nvim_get_mode
+        vim.api.nvim_get_mode = function() return { mode = 'i', blocking = false } end
+        local ok, err = pcall(wrap.refresh, 0)
+        vim.api.nvim_get_mode = get_mode
+        assert(ok, err)
         assert.are.same({}, wrap.table_row(vim.api.nvim_get_current_buf(), 3))
         assert.are.equal(0, #image.collect_markdown_images(vim.api.nvim_get_current_buf(), 0, 4))
         wrap.disable(0)
         assert.is_nil(wrap.table_row(vim.api.nvim_get_current_buf(), 3))
         assert.are.equal(1, #image.collect_markdown_images(vim.api.nvim_get_current_buf(), 0, 4))
+    end)
+
+    it('sends the table image on every scroll step while its row is in view', function()
+        local lines = { 'prose', '|a|b|', '|--|--|', '|![](' .. path .. ')|text|', '' }
+        for i = 1, 60 do lines[#lines + 1] = 'line ' .. i end
+        refresh(lines)
+        local buf = vim.api.nvim_get_current_buf()
+        for top = 1, 5 do
+            -- C-e drags the cursor along with topline.
+            vim.fn.winrestview({ topline = top, lnum = top, col = 0 })
+            wrap.refresh(0)
+            assert.are.equal(1, #(wrap.table_row(buf, 3) or {}), 'topline ' .. top)
+            -- Unchanged images are not resent, so count the live set.
+            image.send_images()
+            assert.are.equal(1, vim.tbl_count(payload), 'topline ' .. top)
+        end
+    end)
+
+    it('ignores image links of table rows the wrap has not drawn', function()
+        local lines = { 'prose', '|a|b|', '|--|--|', '|![](' .. path .. ')|text|', '' }
+        for i = 1, 60 do lines[#lines + 1] = 'line ' .. i end
+        refresh(lines)
+        vim.fn.winrestview({ topline = 20, lnum = 20, col = 0 })
+        wrap.refresh(0)
+        local buf = vim.api.nvim_get_current_buf()
+        assert.is_nil(wrap.table_row(buf, 3))
+        assert.are.equal(0, #image.collect_markdown_images(buf, 0, 20))
+        image.send_images()
+        assert.are.equal(0, #vim.api.nvim_buf_get_extmarks(0, image.ensure_image_namespace(), 0, -1, {}))
     end)
 
     it('recomputes image space when GUI cell metrics change and removes edited images', function()

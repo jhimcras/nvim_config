@@ -53,15 +53,49 @@ local function add_markdown_image_link(deps, buf, row0, col0, end_col, raw, resu
   result[#result + 1] = item
 end
 
+-- Byte ranges { first, last } (1-based, inclusive) of inline code spans.
+local function code_spans(text)
+  local spans, opening = {}, nil
+  for pos, ticks in text:gmatch('()(`+)') do
+    if opening and #ticks == opening.len then
+      spans[#spans + 1] = { opening.pos, pos + #ticks - 1 }
+      opening = nil
+    elseif not opening then
+      opening = { pos = pos, len = #ticks }
+    end
+  end
+  return spans
+end
+
+local function in_code_span(spans, pos)
+  for _, span in ipairs(spans) do
+    if pos >= span[1] and pos <= span[2] then return true end
+  end
+  return false
+end
+
+-- Image links outside inline code, as { s, e, raw } (1-based bytes).
+local function find_image_links(text)
+  local links, spans = {}, nil
+  local search_at = 1
+  while search_at <= #text do
+    local s, e, raw = text:find('!%[[^%]]*%]%(([^%)%s]+)%)', search_at)
+    if not s then break end
+    spans = spans or code_spans(text)
+    -- A link inside inline code is literal text.
+    if not in_code_span(spans, s) then links[#links + 1] = { s, e, raw } end
+    search_at = e + 1
+  end
+  return links
+end
+
 function M.scan_markdown_image_text(deps, buf, row0, text, result, opts)
   if type(text) ~= 'string' or text == '' then return end
   opts = opts or {}
   local base_col = math.max(0, tonumber(opts.base_col) or 0)
   local virtual = opts.virtual == true
-  local search_at = 1
-  while search_at <= #text do
-    local s, e, raw = text:find('!%[[^%]]*%]%(([^%)%s]+)%)', search_at)
-    if not s then break end
+  for _, link in ipairs(find_image_links(text)) do
+    local s, e, raw = link[1], link[2], link[3]
 
     local prefix = text:sub(1, s - 1)
     local prefix_width = vim.fn.strdisplaywidth(prefix)
@@ -84,14 +118,13 @@ function M.scan_markdown_image_text(deps, buf, row0, text, result, opts)
       }
     end
     add_markdown_image_link(deps, buf, row0, col0, col0 + math.max(1, match_width), raw, result, extra)
-    search_at = e + 1
   end
 end
 
 function M.line_has_image_link(text)
   -- Plain '![' prefilter: the pattern alone tries a match at every byte.
   return type(text) == 'string' and text:find('![', 1, true) ~= nil
-    and text:find('!%[[^%]]*%]%(([^%)%s]+)%)') ~= nil
+    and #find_image_links(text) > 0
 end
 
 function M.virt_text_to_plain(virt_text)
@@ -130,12 +163,15 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
   local ok, lines = pcall(vim.api.nvim_buf_get_lines, buf, start_row, end_row, false)
   if not ok then return result end
 
+  local wrap = require('rendermark.wrap')
+  -- Table rows the wrap has not drawn (off screen) carry no image at all.
+  local table_rows = wrap.table_source_rows(buf, start_row, end_row)
   for i, line in ipairs(lines) do
     local row0 = start_row + i - 1
-    local table_images = require('rendermark.wrap').table_row(buf, row0)
+    local table_images = wrap.table_row(buf, row0)
     if table_images then
       for _, image in ipairs(table_images) do result[#result + 1] = vim.deepcopy(image) end
-    else
+    elseif not table_rows[row0] then
       M.scan_markdown_image_text(deps, buf, row0, line, result, { base_col = 0 })
     end
   end
@@ -146,7 +182,7 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
       local row0 = mark[2]
       local col0 = mark[3]
       local details = mark[4] or {}
-      if require('rendermark.wrap').table_row(buf, row0) then goto continue_mark end
+      if wrap.table_row(buf, row0) or table_rows[row0] then goto continue_mark end
       if row0 and details.ns_id ~= deps.image_ns() and details.virt_text ~= nil then
         local text = M.virt_text_to_plain(details.virt_text)
         if M.line_has_image_link(text) then

@@ -770,6 +770,17 @@ describe('scan_markdown_image_text', function()
     assert.equals(0, #result)
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
   end)
+
+  it('treats image links inside inline code as literal text', function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    local result = {}
+    image.scan_markdown_image_text(buf, 0, 'see `![a](x.png)` and ``a ![b](y.png)`` then ![c](z.png)', result, {})
+    vim.api.nvim_buf_delete(buf, { force = true })
+    assert.equals(1, #result)
+    assert.equals('z.png', result[1].raw_path)
+    assert.is_false(image.line_has_image_link('see `![a](x.png)` here'))
+    assert.is_true(image.line_has_image_link('see `code` ![a](x.png)'))
+  end)
 end)
 
 -- ---------------------------------------------------------------------------

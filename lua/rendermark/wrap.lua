@@ -490,8 +490,8 @@ local function table_border(left, mid, right, widths)
 end
 
 -- Render a pipe table as a boxed grid: source rows are overlaid, borders and
--- continuations are virt_lines. The cursor row stays raw.
-local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
+-- continuations are virt_lines. Row `raw_lnum` (the insert-mode cursor) stays raw.
+local function render_table(buf, t_start, t_end, avail, raw_lnum, cursor_lnum, inline)
     local lines = vim.api.nvim_buf_get_lines(buf, t_start, t_end + 1, false)
     if #lines < 2 then
         return
@@ -664,6 +664,15 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
         if #raw > 0 then
             vim.api.nvim_buf_set_extmark(buf, ns, lnum0, 0, { end_col = #raw, conceal = '' })
         end
+        -- Conceal yields on the cursor row: blank out raw text past the grid.
+        if lnum0 + 1 == cursor_lnum then
+            local shown = 0
+            for _, ch in ipairs(chunks) do shown = shown + dw(ch[1]) end
+            local extra = dw(raw) - shown
+            if extra > 0 then
+                chunks = vim.list_extend(vim.deepcopy(chunks), { hl_chunk(string.rep(' ', extra)) })
+            end
+        end
         vim.api.nvim_buf_set_extmark(buf, ns, lnum0, 0,
             { virt_text = chunks, virt_text_pos = 'overlay' })
     end
@@ -677,7 +686,7 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
 
     -- Header: top border above, content overlaid, continuations below.
     vlines(t_start, { { hl_chunk(top) } }, true)
-    if t_start + 1 ~= cursor_lnum then
+    if t_start + 1 ~= raw_lnum then
         local block = row_block(header, t_start)
         overlay(t_start, block[1])
         local cont = {}
@@ -689,7 +698,7 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
 
     -- Delimiter row: separator, or bottom border if there is no data.
     local d_lnum = t_start + 1
-    if d_lnum + 1 ~= cursor_lnum then
+    if d_lnum + 1 ~= raw_lnum then
         overlay(d_lnum, { hl_chunk(#data > 0 and sep or bot) })
     end
 
@@ -697,7 +706,7 @@ local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
     for i, cells in ipairs(data) do
         local lnum0 = t_start + 1 + i
         local below = (i == #data) and bot or sep
-        if lnum0 + 1 ~= cursor_lnum then
+        if lnum0 + 1 ~= raw_lnum then
             local block = row_block(cells, lnum0)
             overlay(lnum0, block[1])
             local rest = {}
@@ -743,6 +752,55 @@ local function visible_segments(win, topline, botline)
     end)
 end
 
+-- Pipe tables touching [first, last) as { first_row, last_row } (0-based, inclusive).
+local function find_tables(buf, root, first, last)
+    local tables = {}
+    local tq = config.table and get_table_query() or nil
+    if not tq then
+        return tables
+    end
+    for _, node in tq:iter_captures(root, buf, first, last) do
+        local r1, _, r2, c2 = node:range()
+        if c2 == 0 then r2 = r2 - 1 end
+        -- Trim trailing pipe-less prose the grammar absorbs into the table.
+        local rows = vim.api.nvim_buf_get_lines(buf, r1, r2 + 1, false)
+        local tend = r1 + 1 -- header + delimiter
+        for k = 3, #rows do
+            if rows[k]:find('|', 1, true) then
+                tend = r1 + k - 1
+            else
+                break
+            end
+        end
+        tables[#tables + 1] = { r1, tend }
+    end
+    return tables
+end
+
+-- Rows of [first, last) inside tables this module draws, rendered yet or not.
+-- Their images belong to the table layout, never to the inline image renderer.
+function M.table_source_rows(buf, first, last)
+    local rows = {}
+    if not config.table or not buffer_enabled(buf) then
+        return rows
+    end
+    local ok, parser = pcall(vim.treesitter.get_parser, buf, 'markdown')
+    if not ok or not parser then
+        return rows
+    end
+    local ok_tree, trees = pcall(function() return parser:parse({ first, last }) end)
+    local tree = ok_tree and trees and trees[1]
+    if not tree then
+        return rows
+    end
+    for _, t in ipairs(find_tables(buf, tree:root(), first, last)) do
+        for l = t[1], t[2] do
+            rows[l] = true
+        end
+    end
+    return rows
+end
+
 -- Decorate one visible range [first, last).
 local function render_range(buf, first, last, width, cursor_row, images_active)
     -- Full parse so a partly visible table keeps its node range; captures stay in range.
@@ -768,33 +826,21 @@ local function render_range(buf, first, last, width, cursor_row, images_active)
                     end
                 end
             end
-            local tq = config.table and get_table_query() or nil
-            if tq then
-                for _, node in tq:iter_captures(root, buf, first, last) do
-                    local r1, _, r2, c2 = node:range()
-                    if c2 == 0 then r2 = r2 - 1 end
-                    -- Trim trailing pipe-less prose the grammar absorbs into the table.
-                    local rows = vim.api.nvim_buf_get_lines(buf, r1, r2 + 1, false)
-                    local tend = r1 + 1 -- header + delimiter
-                    for k = 3, #rows do
-                        if rows[k]:find('|', 1, true) then
-                            tend = r1 + k - 1
-                        else
-                            break
-                        end
-                    end
-                    tables[#tables + 1] = { r1, tend }
-                    for l = r1, tend do
-                        in_table[l] = true
-                    end
+            tables = find_tables(buf, root, first, last)
+            for _, t in ipairs(tables) do
+                for l = t[1], t[2] do
+                    in_table[l] = true
                 end
             end
             inline = collect_inline(parser, buf, first, last, ex_conceals)
         end
     end
 
+    -- Tables stay rendered under a normal-mode cursor, so scrolling keeps their images.
+    local mode = vim.api.nvim_get_mode().mode
+    local table_cursor = mode:match('^[iR]') and cursor_row or -1
     for _, t in ipairs(tables) do
-        render_table(buf, t[1], t[2], width, cursor_row, inline)
+        render_table(buf, t[1], t[2], width, table_cursor, cursor_row, inline)
     end
 
     -- rendermark.image lays out image-link lines itself.
@@ -1166,6 +1212,7 @@ function M.apply(win)
             wrap = vim.wo[w].wrap,
             statuscolumn = vim.wo[w].statuscolumn,
             conceallevel = vim.wo[w].conceallevel,
+            scrolloff = vim.wo[w].scrolloff,
         }
     end
 
@@ -1173,6 +1220,9 @@ function M.apply(win)
     vim.wo[w].wrap = false
     vim.wo[w].linebreak = false
     vim.wo[w].breakindent = false
+    -- A cursor row whose virt_lines outgrow the window can't keep a scrolloff
+    -- margin; nvim then snaps topline back and C-e/C-y stall on tall images.
+    vim.wo[w].scrolloff = 0
     if config.left_pad > 0 then
         vim.wo[w].statuscolumn = build_statuscolumn(config.left_pad)
     end
@@ -1207,6 +1257,7 @@ function M.disable(win)
         vim.wo[w].wrap = saved.wrap
         vim.wo[w].statuscolumn = saved.statuscolumn
         vim.wo[w].conceallevel = saved.conceallevel
+        vim.wo[w].scrolloff = saved.scrolloff
         saved_state[w] = nil
     end
     if require('rendermark.image').is_active() then

@@ -331,6 +331,18 @@ describe('wrap behavior', function()
         assert.are.equal(original, vim.wo.statuscolumn) -- restored, numbers return
     end)
 
+    it('drops scrolloff while applied and restores it afterwards', function()
+        wrap.setup()
+        vim.wo.scrolloff = 3
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        assert.are.equal(0, vim.wo.scrolloff)
+
+        vim.bo.filetype = ''
+        vim.api.nvim_exec_autocmds('WinEnter', {})
+        assert.are.equal(3, vim.wo.scrolloff)
+    end)
+
     it('decorates non-cursor long lines and skips the cursor line', function()
         wrap.setup()
         local width = vim.api.nvim_win_get_width(0)
@@ -629,7 +641,7 @@ describe('wrap behavior', function()
         end
     end)
 
-    it('renders a table as a grid and leaves the cursor row raw', function()
+    it('renders a table as a grid and leaves the insert-mode cursor row raw', function()
         wrap.setup({ left_pad = 0, right_pad = 0 })
         vim.api.nvim_buf_set_lines(0, 0, -1, false, {
             'prose',
@@ -650,16 +662,27 @@ describe('wrap behavior', function()
             assert.is_true(#marks > 0)
         end
 
-        -- park the cursor on a data row: that row is left raw (no conceal extmark)
+        local function cursor_row_concealed()
+            local on_cursor = vim.api.nvim_buf_get_extmarks(0, ns, { 3, 0 }, { 3, -1 },
+                { details = true })
+            for _, m in ipairs(on_cursor) do
+                if m[4] and m[4].conceal ~= nil then return true end
+            end
+            return false
+        end
+
+        -- park the cursor on a data row: normal mode keeps the grid
         vim.api.nvim_win_set_cursor(0, { 4, 0 })
         wrap.refresh(0)
-        local on_cursor = vim.api.nvim_buf_get_extmarks(0, ns, { 3, 0 }, { 3, -1 },
-            { details = true })
-        local has_conceal = false
-        for _, m in ipairs(on_cursor) do
-            if m[4] and m[4].conceal ~= nil then has_conceal = true end
-        end
-        assert.is_false(has_conceal)
+        assert.is_true(cursor_row_concealed())
+
+        -- insert mode leaves that row raw (no conceal extmark)
+        local get_mode = vim.api.nvim_get_mode
+        vim.api.nvim_get_mode = function() return { mode = 'i', blocking = false } end
+        local ok, err = pcall(wrap.refresh, 0)
+        vim.api.nvim_get_mode = get_mode
+        assert(ok, err)
+        assert.is_false(cursor_row_concealed())
     end)
 
     it('styles table cells, conceals markers, and keeps the grid aligned', function()
