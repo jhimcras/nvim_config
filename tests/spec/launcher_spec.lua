@@ -1,4 +1,4 @@
-local launcher = require('launcher')
+local launcher = require('nvim_config.launcher')
 
 describe('launcher', function()
     it('should have a setup function', function()
@@ -23,20 +23,87 @@ describe('launcher', function()
 
     it('should set launcher buffer to be non-modifiable in M.Launch', function()
         local mock_buf = vim.api.nvim_create_buf(false, true)
-        local original_new_scratch = require('util').NewScratchBuffer
-        require('util').NewScratchBuffer = function() return mock_buf end
+        local original_new_scratch = require('nvim_config.util').NewScratchBuffer
+        require('nvim_config.util').NewScratchBuffer = function() return mock_buf end
         
         -- Mock AsyncProcess to avoid actual process creation
-        local original_async = require('util').AsyncProcess
-        require('util').AsyncProcess = function() return 123, function() end, function() return "running" end, {} end
+        local original_async = require('nvim_config.util').AsyncProcess
+        require('nvim_config.util').AsyncProcess = function() return 123, function() end, function() return "running" end, {} end
         
         launcher.Launch('ls', {}, '.', nil, nil, nil, 'use', nil, nil, 'test')
         
         local modifiable = vim.api.nvim_get_option_value('modifiable', { buf = mock_buf })
         assert.is_false(modifiable)
         
-        require('util').NewScratchBuffer = original_new_scratch
-        require('util').AsyncProcess = original_async
+        require('nvim_config.util').NewScratchBuffer = original_new_scratch
+        require('nvim_config.util').AsyncProcess = original_async
+    end)
+end)
+
+describe('launcher.lua object reuse and project boundaries', function()
+    local pr = require('nvim_config.prjroot')
+    local util = require('nvim_config.util')
+    local original_root, original_config, original_async, original_confirm
+    local root, starts, stops, buffers
+
+    before_each(function()
+        original_root, original_config = pr.GetCurrentProjectRoot, pr.GetPrjrootConfig
+        original_async, original_confirm = util.AsyncProcess, vim.fn.confirm
+        root, starts, stops, buffers = vim.fn.getcwd(), 0, 0, {}
+        pr.GetCurrentProjectRoot = function() return root end
+        pr.GetPrjrootConfig = function()
+            return { launchers = { regression_build = { cmd = 'build', focus = true } } }
+        end
+        util.AsyncProcess = function()
+            starts = starts + 1
+            return starts, function() stops = stops + 1 end, function() return 'running' end,
+                { is_closing = function() return false end, kill = function() stops = stops + 1 end }
+        end
+        vim.fn.confirm = function() return 1 end
+    end)
+
+    after_each(function()
+        pr.GetCurrentProjectRoot, pr.GetPrjrootConfig = original_root, original_config
+        util.AsyncProcess, vim.fn.confirm = original_async, original_confirm
+        for _, buf in ipairs(buffers) do
+            launcher.UnregisterProcess(buf)
+            if vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_delete(buf, { force = true }) end
+        end
+    end)
+
+    local function launch()
+        local buf = launcher.LaunchObject('regression_build')
+        if not vim.tbl_contains(buffers, buf) then buffers[#buffers + 1] = buf end
+        return buf
+    end
+
+    it('reuses output for the same object and project after stopping the previous job', function()
+        local buf = launch()
+        assert.are.equal(buf, launch())
+        assert.are.equal(2, starts)
+        assert.are.equal(1, stops)
+        assert.are.equal(root, vim.b[buf].prjroot_folder)
+    end)
+
+    it('does not replace output or stop the running job when replacement is cancelled', function()
+        local buf = launch()
+        local before = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        vim.fn.confirm = function() return 2 end
+        launch()
+        assert.are.equal(1, starts)
+        assert.are.equal(0, stops)
+        assert.are.same(before, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+        assert.is_not_nil(launcher.running_processes[buf])
+    end)
+
+    it('keeps identical object names in different projects in separate buffers', function()
+        local first = launch()
+        root = vim.fn.fnamemodify(root, ':h')
+        local second = launch()
+        assert.are_not.equal(first, second)
+        assert.are.equal(2, starts)
+        assert.are.equal(0, stops)
+        assert.are_not.equal(vim.b[first].prjroot_folder, vim.b[second].prjroot_folder)
     end)
 end)
 
@@ -78,7 +145,7 @@ describe('launcher.Restore', function()
 end)
 
 describe('launcher.CloseLauncherBuffer', function()
-    local util = require('util')
+    local util = require('nvim_config.util')
     local original_async, original_confirm
     local buf, killed
 
@@ -246,7 +313,7 @@ describe('launcher.WipeLauncherBuffers', function()
         local running_buf = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_buf_set_var(running_buf, 'prjroot_folder', root_a)
         local terminated = false
-        require('launcher').RegisterProcess(running_buf, {
+        require('nvim_config.launcher').RegisterProcess(running_buf, {
             type = 'general',
             terminate = function() terminated = true end,
         })
@@ -256,9 +323,9 @@ describe('launcher.WipeLauncherBuffers', function()
 
         -- The current buffer must not itself carry prjroot_folder = root_a, or
         -- WipeLauncherBuffers would wipe it out from under the test.
-        local original_get_root = require('prjroot').GetCurrentProjectRoot
+        local original_get_root = require('nvim_config.prjroot').GetCurrentProjectRoot
         local original_confirm = vim.fn.confirm
-        require('prjroot').GetCurrentProjectRoot = function() return root_a end
+        require('nvim_config.prjroot').GetCurrentProjectRoot = function() return root_a end
         vim.fn.confirm = function(_, choices, default)
             assert.are.equal('&Stop\n&Cancel', choices)
             assert.are.equal(2, default)
@@ -267,7 +334,7 @@ describe('launcher.WipeLauncherBuffers', function()
 
         launcher.WipeLauncherBuffers()
 
-        require('prjroot').GetCurrentProjectRoot = original_get_root
+        require('nvim_config.prjroot').GetCurrentProjectRoot = original_get_root
         vim.fn.confirm = original_confirm
 
         assert.is_false(vim.api.nvim_buf_is_valid(matching_buf))

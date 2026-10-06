@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
+set -euo pipefail
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
-# Run tests and capture output
-output=$(nvim --headless -u tests/minimal_init.lua \
-    -c "lua require('plenary.test_harness').test_directory('tests/spec/', {minimal_init='tests/minimal_init.lua'})" \
-    +qa 2>&1)
-
-echo "$output"
-
-# Count failures and errors (strip ANSI codes first so awk gets the number)
-failures=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep "Failed :" | awk '{print $3}' | awk '{s+=$1} END {print s}')
-errors=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep "Errors :" | awk '{print $3}' | awk '{s+=$1} END {print s}')
-
-failures=${failures:-0}
-errors=${errors:-0}
-
-echo "----------------------------------------"
-if [ "$failures" -eq 0 ] && [ "$errors" -eq 0 ]; then
-    echo "SUMMARY: All tests passed successfully."
+if [[ ${1:-} == --help ]]; then
+    echo 'Usage: bash run_tests.sh [tests/spec/path_spec.lua | tests/spec/directory]'
+    echo 'Runs file-based unit specs. For tmux features: bash run_integration_tests.sh'
     exit 0
-else
-    echo "SUMMARY: Tests failed ($failures failures, $errors errors)."
-    exit 1
 fi
+if (( $# > 1 )); then
+    echo 'Expected at most one spec file or directory.' >&2
+    exit 2
+fi
+export NVIM_TEST_TARGET=${1:-tests/spec}
+test_runtime_dir=$(mktemp -d)
+trap 'rm -rf -- "$test_runtime_dir"' EXIT
+# Plenary is read from the installed data directory; config, state and caches
+# are test-owned so the suite cannot load another checkout or write user logs.
+export XDG_CONFIG_HOME="$test_runtime_dir/config"
+export XDG_STATE_HOME="$test_runtime_dir/state"
+export XDG_CACHE_HOME="$test_runtime_dir/cache"
+export NVIM_LOG_FILE="$test_runtime_dir/nvim.log"
+
+# Preserve Neovim/Plenary's exit status, including startup errors and timeouts.
+nvim --headless -u tests/minimal_init.lua -i NONE -l tests/run_unit.lua

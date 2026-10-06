@@ -1,4 +1,4 @@
-local grep = require('grep')
+local grep = require('nvim_config.grep')
 
 -- Helper: open a floating scratch window
 local function new_win()
@@ -79,5 +79,66 @@ describe('grep.update_loclist_sl', function()
         -- Global must still be the original expression, not a literal title string.
         assert.equals(global_sl_before, vim.o.statusline,
             'global statusline must not be overwritten by either title')
+    end)
+end)
+
+describe('grep.lua list filtering before qflist extraction', function()
+    local origin, paths
+
+    before_each(function()
+        origin = vim.api.nvim_get_current_win()
+        paths = { vim.fn.tempname() .. '_alpha.txt', vim.fn.tempname() .. '_beta.txt' }
+        local items = {
+            { filename = paths[1], lnum = 1, col = 2, text = 'keep first' },
+            { filename = paths[2], lnum = 2, col = 3, text = 'keep second' },
+            { filename = paths[2], lnum = 3, col = 4, text = 'drop third' },
+        }
+        vim.fn.setloclist(origin, {}, ' ', { title = 'owned location list', items = items })
+        vim.fn.setqflist({}, ' ', { title = 'independent quickfix', items = items })
+        vim.cmd('lopen')
+    end)
+
+    after_each(function()
+        vim.cmd('lclose')
+        vim.api.nvim_set_current_win(origin)
+        for _, path in ipairs(paths) do
+            local buf = vim.fn.bufnr(path)
+            if buf > 0 then vim.api.nvim_buf_delete(buf, { force = true }) end
+        end
+        vim.fn.setloclist(origin, {}, 'f')
+        vim.fn.setqflist({}, 'f')
+    end)
+
+    it('filters by text from the list window without changing quickfix or item coordinates', function()
+        vim.cmd('Lfilter /keep/')
+        local items = vim.fn.getloclist(origin)
+        assert.are.equal(2, #items)
+        assert.are.equal(2, items[2].lnum)
+        assert.are.equal(3, items[2].col)
+        assert.are.equal(3, #vim.fn.getqflist())
+        assert.are.same({ 'keep' }, grep.get_filter_chain(0))
+    end)
+
+    it('supports filename matches and chained inverse filters', function()
+        vim.cmd('Lfilter /beta/')
+        vim.cmd('Lfilter! /drop/')
+        assert.are.equal('keep second', vim.fn.getloclist(origin)[1].text)
+        assert.are.equal(1, #vim.fn.getloclist(origin))
+        assert.are.same({ 'beta', '!drop' }, grep.get_filter_chain(0))
+    end)
+
+    it('filters quickfix without changing the window-owned location list', function()
+        vim.cmd('Cfilter! /drop/')
+        assert.are.equal(2, #vim.fn.getqflist())
+        assert.are.equal(3, #vim.fn.getloclist(origin))
+    end)
+
+    it('sorts by filename then line number and reverses direction on the next call', function()
+        grep.sort_list()
+        local items = vim.fn.getloclist(origin)
+        assert.are.same({ 1, 2, 3 }, { items[1].lnum, items[2].lnum, items[3].lnum })
+        grep.sort_list()
+        items = vim.fn.getloclist(origin)
+        assert.are.same({ 3, 2, 1 }, { items[1].lnum, items[2].lnum, items[3].lnum })
     end)
 end)
