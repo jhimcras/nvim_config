@@ -1,5 +1,20 @@
 local M = {}
 local command = 'nvim.markdown.createFile'
+local refresh_command = 'nvim.markdown.refreshCreatedFiles'
+
+local function notify_created(client, uris)
+    local files, changes = {}, {}
+    for _, uri in ipairs(uris) do
+        if vim.fn.filereadable(vim.uri_to_fname(uri)) == 1 then
+            files[#files + 1] = { uri = uri }
+            changes[#changes + 1] = { uri = uri, type = vim.lsp.protocol.FileChangeType.Created }
+        end
+    end
+    if #files == 0 then return end
+    client:notify('workspace/didCreateFiles', { files = files })
+    -- Oxide 0.25.12 indexes new files on watched-file events, not didCreateFiles alone.
+    client:notify('workspace/didChangeWatchedFiles', { changes = changes })
+end
 
 local function link_path(bufnr, position, encoding)
     local line = vim.api.nvim_buf_get_lines(bufnr, position.line, position.line + 1, false)[1]
@@ -59,18 +74,17 @@ local function create_file(client, cmd)
         return
     end
     vim.uv.fs_close(fd)
-    local uri = vim.uri_from_fname(path)
-    client:notify('workspace/didCreateFiles', { files = { { uri = uri } } })
-    -- Oxide 0.25.12 indexes new files on watched-file events, not didCreateFiles alone.
-    client:notify('workspace/didChangeWatchedFiles', {
-        changes = { { uri = uri, type = vim.lsp.protocol.FileChangeType.Created } },
-    })
+    notify_created(client, { vim.uri_from_fname(path) })
 end
 
 function M.attach(client)
     -- Wrap the client's request once, not per buffer.
     if client.commands[command] then return end
     client.commands[command] = function(cmd) create_file(client, cmd) end
+    client.commands[refresh_command] = function(cmd, ctx)
+        notify_created(client, cmd.arguments[1])
+        if cmd.arguments[2] then client:exec_cmd(cmd.arguments[2], ctx) end
+    end
     local request = client.request
     client.request = function(self, method, params, handler, bufnr)
         if method == 'textDocument/rename' and handler then
@@ -88,8 +102,17 @@ function M.attach(client)
                 local uri = path and vim.uri_from_fname(path)
                 local duplicate = false
                 for _, action in ipairs(result) do
+                    local created = {}
                     for _, change in ipairs(action.edit and action.edit.documentChanges or {}) do
                         if change.kind == 'create' and change.uri == uri then duplicate = true end
+                        if change.kind == 'create' then created[#created + 1] = change.uri end
+                    end
+                    if #created > 0 then
+                        -- Native code actions apply the edit before executing this command.
+                        action.command = {
+                            title = action.title, command = refresh_command,
+                            arguments = { created, action.command },
+                        }
                     end
                 end
                 if path and not duplicate then

@@ -101,6 +101,25 @@ describe('Markdown file creation actions', function()
         assert.equals(1, #request({ '[text](new.md)' }))
     end)
 
+    it('notifies after server edits and preserves the original command', function()
+        local uri = vim.uri_from_fname(root .. '/docs/new.md')
+        local original = { title = 'Follow up', command = 'server.followUp' }
+        response = { { title = 'Server create', command = original, edit = { documentChanges = {
+            { kind = 'create', uri = uri },
+        } } } }
+        local action = request({ '[text](new.md)' })[1]
+        local executed, context
+        client.exec_cmd = function(_, cmd, ctx) executed, context = cmd, ctx end
+        local ctx = { bufnr = buf }
+        vim.lsp.util.apply_workspace_edit(action.edit, client.offset_encoding)
+        client.commands[action.command.command](action.command, ctx)
+        assert.equals(uri, notifications[1].params.files[1].uri)
+        assert.equals(uri, notifications[2].params.changes[1].uri)
+        assert.equals(vim.lsp.protocol.FileChangeType.Created, notifications[2].params.changes[1].type)
+        assert.equals(original, executed)
+        assert.equals(ctx, context)
+    end)
+
     it('preserves server errors and does not wrap twice on a second attachment', function()
         local wrapper = client.request
         actions.attach(client)
@@ -192,5 +211,25 @@ describe('Markdown actions in the native LSP menu', function()
         assert.equals(1, #choices)
         assert.equals('Create File: "wikimissing.md"', choices[1].action.title)
         assert.is_table(choices[1].action.edit)
+        choices = nil
+        vim.ui.select = function(items, _, callback) choices = items; callback(items[1]) end
+        vim.lsp.buf.code_action()
+        assert.is_true(vim.wait(5000, function()
+            return vim.fn.filereadable(root .. '/wikimissing.md') == 1
+        end))
+        definition = nil
+        probe = function()
+            client:request('textDocument/definition', {
+                textDocument = { uri = vim.uri_from_fname(source) },
+                position = { line = 1, character = 5 },
+            }, function(_, result) definition = result end, buf)
+        end
+        probe()
+        assert.is_true(vim.wait(5000, function()
+            if definition and #definition > 0 then return true end
+            if definition then definition = nil; probe() end
+            return false
+        end, 50))
+        assert.equals(vim.uri_from_fname(root .. '/wikimissing.md'), definition[1].uri)
     end)
 end)
