@@ -60,7 +60,9 @@ describe('Markdown file creation actions', function()
         assert.equals('workspace/didChangeWatchedFiles', notifications[2].method)
         assert.equals(1, notifications[2].params.changes[1].type)
         response = {}
-        assert.equals(0, #request({ '[text](./sub/new%20note.md#heading)' }))
+        local existing = request({ '[text](./sub/new%20note.md#heading)' })
+        assert.equals(1, #existing)
+        assert.equals('Rename Linked File', existing[1].title)
     end)
 
     it('does not truncate a file created while the menu was open', function()

@@ -73,29 +73,33 @@ function M.attach(client)
     client.commands[command] = function(cmd) create_file(client, cmd) end
     local request = client.request
     client.request = function(self, method, params, handler, bufnr)
+        if method == 'textDocument/rename' and handler then
+            return require('lsp_setting.markdown_rename').request(
+                request, self, params, handler, bufnr or vim.api.nvim_get_current_buf())
+        end
         if method ~= 'textDocument/codeAction' or not handler then
             return request(self, method, params, handler, bufnr)
         end
         bufnr = bufnr or vim.api.nvim_get_current_buf()
         local path = link_path(bufnr, params.range.start, self.offset_encoding)
-        if not path then return request(self, method, params, handler, bufnr) end
         return request(self, method, params, function(err, result, ctx, config)
             if not err then
                 result = result or {}
-                local uri = vim.uri_from_fname(path)
+                local uri = path and vim.uri_from_fname(path)
                 local duplicate = false
                 for _, action in ipairs(result) do
                     for _, change in ipairs(action.edit and action.edit.documentChanges or {}) do
                         if change.kind == 'create' and change.uri == uri then duplicate = true end
                     end
                 end
-                if not duplicate then
+                if path and not duplicate then
                     -- A Command executes natively, without server resolve.
                     result[#result + 1] = {
                         title = 'Create File: "' .. vim.fs.basename(path) .. '"',
                         kind = 'quickfix', command = command, arguments = { path },
                     }
                 end
+                require('lsp_setting.markdown_rename').add_action(self, result, params, bufnr)
             end
             handler(err, result, ctx, config)
         end, bufnr)
