@@ -51,6 +51,7 @@ describe('images inside rendered tables', function()
     end)
 
     after_each(function()
+        vim.w.read_mode_active = nil
         wrap.disable(0)
         image.safe_screenpos = old_screenpos
         vim.ui.img = old_img
@@ -106,25 +107,10 @@ describe('images inside rendered tables', function()
         for _, row in ipairs(grid(3)) do assert.is_true(vim.fn.strdisplaywidth(row) <= 35) end
     end)
 
-    it('keeps the grid and image on a normal-mode cursor row and covers the raw text', function()
-        local long = string.rep('word ', 30)
-        refresh({ 'prose', '|a|b|', '|--|--|', '|![](' .. path .. ')|' .. long .. '|' })
-        vim.api.nvim_win_set_cursor(0, { 4, 0 })
-        wrap.refresh(0)
-        assert.are.equal(1, #wrap.table_row(vim.api.nvim_get_current_buf(), 3))
-        assert.are.equal(1, #image.collect_markdown_images(vim.api.nvim_get_current_buf(), 0, 4))
-        local raw = vim.api.nvim_buf_get_lines(0, 3, 4, false)[1]
-        assert.is_true(vim.fn.strdisplaywidth(grid(3)[1]) >= vim.fn.strdisplaywidth(raw))
-    end)
-
-    it('reveals the insert-mode cursor row and drops table geometry when disabled', function()
+    it('reveals the cursor row and drops table geometry when disabled', function()
         refresh({ 'prose', '|a|b|', '|--|--|', '|![](' .. path .. ')|text|' })
         vim.api.nvim_win_set_cursor(0, { 4, 0 })
-        local get_mode = vim.api.nvim_get_mode
-        vim.api.nvim_get_mode = function() return { mode = 'i', blocking = false } end
-        local ok, err = pcall(wrap.refresh, 0)
-        vim.api.nvim_get_mode = get_mode
-        assert(ok, err)
+        wrap.refresh(0)
         assert.are.same({}, wrap.table_row(vim.api.nvim_get_current_buf(), 3))
         assert.are.equal(0, #image.collect_markdown_images(vim.api.nvim_get_current_buf(), 0, 4))
         wrap.disable(0)
@@ -132,10 +118,12 @@ describe('images inside rendered tables', function()
         assert.are.equal(1, #image.collect_markdown_images(vim.api.nvim_get_current_buf(), 0, 4))
     end)
 
-    it('sends the table image on every scroll step while its row is in view', function()
+    it('sends the table image on every read-mode scroll step while its row is in view', function()
         local lines = { 'prose', '|a|b|', '|--|--|', '|![](' .. path .. ')|text|', '' }
         for i = 1, 60 do lines[#lines + 1] = 'line ' .. i end
         refresh(lines)
+        -- read mode renders the cursor row too
+        vim.w.read_mode_active = true
         local buf = vim.api.nvim_get_current_buf()
         for top = 1, 5 do
             -- C-e drags the cursor along with topline.

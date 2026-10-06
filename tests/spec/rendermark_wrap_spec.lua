@@ -641,7 +641,7 @@ describe('wrap behavior', function()
         end
     end)
 
-    it('renders a table as a grid and leaves the insert-mode cursor row raw', function()
+    it('renders a table as a grid and leaves the cursor row raw in every mode', function()
         wrap.setup({ left_pad = 0, right_pad = 0 })
         vim.api.nvim_buf_set_lines(0, 0, -1, false, {
             'prose',
@@ -662,27 +662,24 @@ describe('wrap behavior', function()
             assert.is_true(#marks > 0)
         end
 
-        local function cursor_row_concealed()
-            local on_cursor = vim.api.nvim_buf_get_extmarks(0, ns, { 3, 0 }, { 3, -1 },
-                { details = true })
-            for _, m in ipairs(on_cursor) do
-                if m[4] and m[4].conceal ~= nil then return true end
-            end
-            return false
-        end
-
-        -- park the cursor on a data row: normal mode keeps the grid
+        -- park the cursor on the wrapping data row: it is left raw, with no
+        -- conceal/overlay and only the border below it as a virt_line
         vim.api.nvim_win_set_cursor(0, { 4, 0 })
-        wrap.refresh(0)
-        assert.is_true(cursor_row_concealed())
-
-        -- insert mode leaves that row raw (no conceal extmark)
         local get_mode = vim.api.nvim_get_mode
-        vim.api.nvim_get_mode = function() return { mode = 'i', blocking = false } end
-        local ok, err = pcall(wrap.refresh, 0)
-        vim.api.nvim_get_mode = get_mode
-        assert(ok, err)
-        assert.is_false(cursor_row_concealed())
+        for _, mode in ipairs({ 'n', 'v', 'i' }) do
+            vim.api.nvim_get_mode = function() return { mode = mode, blocking = false } end
+            local ok, err = pcall(wrap.refresh, 0)
+            vim.api.nvim_get_mode = get_mode
+            assert(ok, err)
+            local vlines = 0
+            for _, m in ipairs(vim.api.nvim_buf_get_extmarks(0, ns, { 3, 0 }, { 3, -1 },
+                { details = true })) do
+                assert.is_nil(m[4].conceal, mode)
+                assert.is_nil(m[4].virt_text, mode)
+                vlines = vlines + #(m[4].virt_lines or {})
+            end
+            assert.are.equal(1, vlines, mode)
+        end
     end)
 
     it('styles table cells, conceals markers, and keeps the grid aligned', function()

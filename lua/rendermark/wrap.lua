@@ -490,8 +490,8 @@ local function table_border(left, mid, right, widths)
 end
 
 -- Render a pipe table as a boxed grid: source rows are overlaid, borders and
--- continuations are virt_lines. Row `raw_lnum` (the insert-mode cursor) stays raw.
-local function render_table(buf, t_start, t_end, avail, raw_lnum, cursor_lnum, inline)
+-- continuations are virt_lines. The cursor row stays raw.
+local function render_table(buf, t_start, t_end, avail, cursor_lnum, inline)
     local lines = vim.api.nvim_buf_get_lines(buf, t_start, t_end + 1, false)
     if #lines < 2 then
         return
@@ -664,15 +664,6 @@ local function render_table(buf, t_start, t_end, avail, raw_lnum, cursor_lnum, i
         if #raw > 0 then
             vim.api.nvim_buf_set_extmark(buf, ns, lnum0, 0, { end_col = #raw, conceal = '' })
         end
-        -- Conceal yields on the cursor row: blank out raw text past the grid.
-        if lnum0 + 1 == cursor_lnum then
-            local shown = 0
-            for _, ch in ipairs(chunks) do shown = shown + dw(ch[1]) end
-            local extra = dw(raw) - shown
-            if extra > 0 then
-                chunks = vim.list_extend(vim.deepcopy(chunks), { hl_chunk(string.rep(' ', extra)) })
-            end
-        end
         vim.api.nvim_buf_set_extmark(buf, ns, lnum0, 0,
             { virt_text = chunks, virt_text_pos = 'overlay' })
     end
@@ -686,7 +677,7 @@ local function render_table(buf, t_start, t_end, avail, raw_lnum, cursor_lnum, i
 
     -- Header: top border above, content overlaid, continuations below.
     vlines(t_start, { { hl_chunk(top) } }, true)
-    if t_start + 1 ~= raw_lnum then
+    if t_start + 1 ~= cursor_lnum then
         local block = row_block(header, t_start)
         overlay(t_start, block[1])
         local cont = {}
@@ -698,7 +689,7 @@ local function render_table(buf, t_start, t_end, avail, raw_lnum, cursor_lnum, i
 
     -- Delimiter row: separator, or bottom border if there is no data.
     local d_lnum = t_start + 1
-    if d_lnum + 1 ~= raw_lnum then
+    if d_lnum + 1 ~= cursor_lnum then
         overlay(d_lnum, { hl_chunk(#data > 0 and sep or bot) })
     end
 
@@ -706,7 +697,7 @@ local function render_table(buf, t_start, t_end, avail, raw_lnum, cursor_lnum, i
     for i, cells in ipairs(data) do
         local lnum0 = t_start + 1 + i
         local below = (i == #data) and bot or sep
-        if lnum0 + 1 ~= raw_lnum then
+        if lnum0 + 1 ~= cursor_lnum then
             local block = row_block(cells, lnum0)
             overlay(lnum0, block[1])
             local rest = {}
@@ -836,11 +827,8 @@ local function render_range(buf, first, last, width, cursor_row, images_active)
         end
     end
 
-    -- Tables stay rendered under a normal-mode cursor, so scrolling keeps their images.
-    local mode = vim.api.nvim_get_mode().mode
-    local table_cursor = mode:match('^[iR]') and cursor_row or -1
     for _, t in ipairs(tables) do
-        render_table(buf, t[1], t[2], width, table_cursor, cursor_row, inline)
+        render_table(buf, t[1], t[2], width, cursor_row, inline)
     end
 
     -- rendermark.image lays out image-link lines itself.
