@@ -157,6 +157,10 @@ function M.Sessions()
     local session = require 'session'
     pickers.new({}, {
         prompt_title = 'Sessions',
+        mappings = {
+            i = { ['<C-v>'] = false, ['<C-x>'] = false },
+            n = { ['<C-v>'] = false, ['<C-x>'] = false },
+        },
         finder = finders.new_table { results = session.SessionList(), },
         sorter = conf.generic_sorter({}),
         previewer = false,
