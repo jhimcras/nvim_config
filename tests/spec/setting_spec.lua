@@ -1,4 +1,4 @@
-local setting = require('setting')
+local setting = require('nvim_config.setting')
 
 describe('setting', function()
     it('should have a setup function', function()

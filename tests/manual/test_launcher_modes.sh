@@ -59,24 +59,24 @@ verify_output() {
 
 # Test General Mode
 echo "Testing General Mode..."
-tmux send-keys -t "$SESSION" ":lua require'launcher'.LaunchObject('gen')" Enter
+tmux send-keys -t "$SESSION" ":lua require'nvim_config.launcher'.LaunchObject('gen')" Enter
 sleep 2
 verify_output "hellogeneral" "General mode output captured"
 
 # Test Terminal Mode
 echo "Testing Terminal Mode..."
 tmux send-keys -t "$SESSION" C-w l
-tmux send-keys -t "$SESSION" ":lua require'launcher'.LaunchObject('term')" Enter
+tmux send-keys -t "$SESSION" ":lua require'nvim_config.launcher'.LaunchObject('term')" Enter
 sleep 2
 verify_output "helloterminal" "Terminal mode output captured"
 
 # Test External Mode
 echo "Testing External Mode..."
 tmux send-keys -t "$SESSION" C-w l
-tmux send-keys -t "$SESSION" ":lua require'launcher'.LaunchObject('ext')" Enter
+tmux send-keys -t "$SESSION" ":lua require'nvim_config.launcher'.LaunchObject('ext')" Enter
 sleep 1
 # Verify PID tracking via Lua and extract PID for 'ps' check
-tmux send-keys -t "$SESSION" ":lua for _, p in ipairs(require'launcher'.GetRunningProcesses()) do if p.obj == 'ext' then print('EXT_PID:' .. p.pid) end end" Enter
+tmux send-keys -t "$SESSION" ":lua for _, p in ipairs(require'nvim_config.launcher'.GetRunningProcesses()) do if p.obj == 'ext' then print('EXT_PID:' .. p.pid) end end" Enter
 sleep 1
 tmux capture-pane -pt "$SESSION" > "$SCREEN_OUTPUT"
 EXT_PID=$(grep -oP 'EXT_PID:\K[0-9]+' "$SCREEN_OUTPUT")
@@ -90,7 +90,7 @@ fi
 
 # Test Termination
 echo "Testing Termination..."
-tmux send-keys -t "$SESSION" ":lua require'launcher'.Launch( 'sleep', {'100'}, '.', nil, nil, {orientation='vertical'}, 'use', nil, nil, 'sleeper')" Enter
+tmux send-keys -t "$SESSION" ":lua require'nvim_config.launcher'.Launch( 'sleep', {'100'}, '.', nil, nil, {orientation='vertical'}, 'use', nil, nil, 'sleeper')" Enter
 sleep 1
 tmux send-keys -t "$SESSION" C-c
 sleep 1

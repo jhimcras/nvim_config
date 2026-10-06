@@ -1,5 +1,5 @@
-local launcher = require('launcher')
-local pr = require('prjroot')
+local launcher = require('nvim_config.launcher')
+local pr = require('nvim_config.prjroot')
 
 -- Mock prjroot config
 local mock_config = {

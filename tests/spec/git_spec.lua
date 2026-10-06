@@ -12,8 +12,8 @@ end
 
 -- git module caches by dir; use a fresh tmpdir per test to avoid TTL collisions.
 local function fresh_git()
-    package.loaded['git'] = nil
-    return require('git')
+    package.loaded['nvim_config.git'] = nil
+    return require('nvim_config.git')
 end
 
 describe('git.git_branch_commit', function()

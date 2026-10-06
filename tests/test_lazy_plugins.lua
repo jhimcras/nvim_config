@@ -10,7 +10,7 @@ for _, name in ipairs {
 } do
     assert(not loaded(name), name .. ' loaded at startup')
 end
-assert(not package.loaded['plugins.tele'], 'Telescope config loaded at startup')
+assert(not package.loaded['nvim_config.plugins.tele'], 'Telescope config loaded at startup')
 assert(not package.loaded['cmp'], 'cmp loaded at startup')
 
 local case = vim.env.NVIM_LAZY_TEST

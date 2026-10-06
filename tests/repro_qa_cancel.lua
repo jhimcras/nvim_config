@@ -1,5 +1,5 @@
 
-local session = require('lua.session')
+local session = require('nvim_config.session')
 session.setup()
 
 -- Create multiple buffers

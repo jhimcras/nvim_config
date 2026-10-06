@@ -1,4 +1,4 @@
-local html = require('rendermark.html')
+local html = require('nvim_config.rendermark.html')
 local ns = vim.api.nvim_create_namespace('rendermark_html')
 
 local function marks(row)
@@ -101,7 +101,7 @@ describe('rendermark HTML', function()
     end)
 
     it('renders HTML inside table cells without folding or breaking the grid', function()
-        local wrap = require('rendermark.wrap')
+        local wrap = require('nvim_config.rendermark.wrap')
         wrap.setup({ left_pad = 0, right_pad = 0 })
         render({ '| Kind | Value |', '| --- | --- |',
             '| <details><summary>Title</summary> body</details> | <mark>hot</mark><br><u>under</u> <s>old</s> <del>gone</del> |',

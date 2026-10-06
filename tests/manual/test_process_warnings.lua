@@ -1,6 +1,6 @@
 -- tests/manual/test_process_warnings.lua
-local session = require('session')
-local launcher = require('launcher')
+local session = require('nvim_config.session')
+local launcher = require('nvim_config.launcher')
 
 local function assert_eq(actual, expected, msg)
     if actual ~= expected then

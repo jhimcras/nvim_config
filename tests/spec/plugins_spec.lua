@@ -1,4 +1,4 @@
-local plugins = require('plugins')
+local plugins = require('nvim_config.plugins')
 
 describe('plugins', function()
     it('should have a setup function', function()

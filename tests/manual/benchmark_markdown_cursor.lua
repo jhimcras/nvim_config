@@ -15,9 +15,9 @@ for key, name in pairs({ mark = 'nvim_buf_set_extmark', clear = 'nvim_buf_clear_
     vim.api[name] = function(...) counts[key] = counts[key] + 1; return original(...) end
 end
 
-require('rendermark.deco').setup({})
-require('rendermark.html').setup()
-local wrap = require('rendermark.wrap')
+require('nvim_config.rendermark.deco').setup({})
+require('nvim_config.rendermark.html').setup()
+local wrap = require('nvim_config.rendermark.wrap')
 wrap.setup({ max_width = 120 })
 
 local para = 'Lorem ipsum dolor sit amet, **consectetur** adipiscing elit, sed do eiusmod tempor '

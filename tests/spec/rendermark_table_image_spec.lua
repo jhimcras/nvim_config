@@ -1,5 +1,5 @@
-local wrap = require('rendermark.wrap')
-local image = require('rendermark.image')
+local wrap = require('nvim_config.rendermark.wrap')
+local image = require('nvim_config.rendermark.image')
 
 describe('images inside rendered tables', function()
     local path, old_img, old_screenpos

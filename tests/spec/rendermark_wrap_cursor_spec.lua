@@ -1,6 +1,6 @@
 -- The CursorMoved path re-renders only the rows the cursor left and entered.
 -- Every check compares it with a full refresh of an identical buffer and window.
-local wrap = require('rendermark.wrap')
+local wrap = require('nvim_config.rendermark.wrap')
 
 local long = 'Lorem ipsum dolor sit amet, **consectetur** adipiscing elit, sed do eiusmod '
     .. 'tempor incididunt ut labore et dolore magna aliqua, quis `nostrud` exercitation.'
@@ -178,7 +178,7 @@ describe('wrap cursor refresh', function()
     end)
 
     it('resyncs images only when a row height changed', function()
-        local image = require('rendermark.image')
+        local image = require('nvim_config.rendermark.image')
         local old_img, old_sync = vim.ui.img, image.schedule_image_sync
         local syncs = 0
         vim.ui.img = { set = function() end, del = function() end }

@@ -1,5 +1,5 @@
-local ut = require('util')
-local env = require('env')
+local ut = require('nvim_config.util')
+local env = require('nvim_config.env')
 
 describe('buffer utils', function()
     local bufnr
@@ -62,9 +62,9 @@ describe('buffer utils', function()
     describe('GetBufferDir', function()
         it('returns directory for normal files if they exist', function()
             local dir = vim.fn.getcwd()
-            local path = dir .. '/lua/util.lua' -- Known to exist
+            local path = dir .. '/lua/nvim_config/util.lua' -- Known to exist
             vim.api.nvim_buf_set_name(bufnr, path)
-            assert.equals(ut.normalize_path_separator(dir .. '/lua'), ut.GetBufferDir(bufnr))
+            assert.equals(ut.normalize_path_separator(dir .. '/lua/nvim_config'), ut.GetBufferDir(bufnr))
         end)
         
         it('returns empty string for non-existent virtual paths (due to fs_stat)', function()

@@ -3,8 +3,8 @@ local read_mode
 describe('read_mode', function()
     before_each(function()
         pcall(vim.api.nvim_del_augroup_by_name, 'read_mode')
-        package.loaded['read_mode'] = nil
-        read_mode = require('read_mode')
+        package.loaded['nvim_config.read_mode'] = nil
+        read_mode = require('nvim_config.read_mode')
         vim.cmd('enew')
         vim.bo.filetype = ''
         vim.bo.modifiable = true
@@ -184,7 +184,7 @@ describe('read_mode', function()
     it('n includes a foreign hl_group extmark scheduled around the same time as the jump, on the wrapped rows', function()
         -- Regression: n's wrap refresh must run after a foreign decorator's own
         -- vim.schedule, or it snapshots extmarks before the highlight exists.
-        local wrap = require('rendermark.wrap')
+        local wrap = require('nvim_config.rendermark.wrap')
         pcall(vim.api.nvim_del_augroup_by_name, 'markdown_visual_wrap')
         wrap.setup({ left_pad = 0, right_pad = 0 })
 

@@ -1,4 +1,4 @@
-local keymap = require('keymap')
+local keymap = require('nvim_config.keymap')
 
 describe('keymap', function()
     it('should have a setup function', function()

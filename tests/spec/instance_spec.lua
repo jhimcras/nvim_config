@@ -1,4 +1,4 @@
-local instance = require('instance')
+local instance = require('nvim_config.instance')
 
 describe('instance.build_argv', function()
     local function ctx(over)

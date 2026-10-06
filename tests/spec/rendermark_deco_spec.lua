@@ -1,5 +1,5 @@
-local deco = require('rendermark.deco')
-local wrap_text = require('rendermark.wrap.text')
+local deco = require('nvim_config.rendermark.deco')
+local wrap_text = require('nvim_config.rendermark.wrap.text')
 
 local function width_of(chunks)
     local w = 0
@@ -118,7 +118,7 @@ describe('deco.prefix_chunks', function()
 end)
 
 describe('deco rendering', function()
-    local wrap = require('rendermark.wrap')
+    local wrap = require('nvim_config.rendermark.wrap')
     local ns = vim.api.nvim_create_namespace('rendermark_deco')
 
     -- wrap.refresh draws decorations via deco.render_range.
@@ -464,7 +464,7 @@ describe('deco rendering', function()
 end)
 
 describe('deco quote guard', function()
-    local wrap = require('rendermark.wrap')
+    local wrap = require('nvim_config.rendermark.wrap')
     local ns = vim.api.nvim_create_namespace('rendermark_deco')
 
     it('does not bar a ">" that is literal text inside an indented code block', function()

@@ -1,5 +1,5 @@
-local launcher = require('launcher')
-local util = require('util')
+local launcher = require('nvim_config.launcher')
+local util = require('nvim_config.util')
 
 describe('launcher output batching', function()
     local original_async, callbacks, buf
@@ -60,7 +60,7 @@ end)
 
 describe('ANSI span parsing', function()
     it('preserves byte offsets and unrecognized escape sequences', function()
-        local cleaned, highlights = require('ansi_parser').parse_ansi('가\27[31mred\27[0m!\27[X')
+        local cleaned, highlights = require('nvim_config.ansi_parser').parse_ansi('가\27[31mred\27[0m!\27[X')
         assert.are.equal('가red!\27[X', cleaned)
         assert.are.same({{0, 3, 'Normal'}, {3, 6, 'AnsiRed'}, {6, 10, 'Normal'}}, highlights)
     end)

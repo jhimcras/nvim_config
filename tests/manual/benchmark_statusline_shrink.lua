@@ -3,11 +3,11 @@
 vim.opt.rtp:prepend(vim.fn.getcwd())
 vim.o.swapfile = false
 vim.o.laststatus = 2
-package.loaded.prjroot = {
+package.loaded['nvim_config.prjroot'] = {
     GetProjectRoot = function() return '/tmp/statusline-benchmark' end,
 }
-package.loaded.git = { git_branch_commit = function() return 'benchmark-branch' end }
-local status = require('status')
+package.loaded['nvim_config.git'] = { git_branch_commit = function() return 'benchmark-branch' end }
+local status = require('nvim_config.status')
 local counts = { search = 0, lsp = 0, entry = 0 }
 local searchcount = vim.fn.searchcount
 vim.fn.searchcount = function(opts)

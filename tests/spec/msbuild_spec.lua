@@ -1,4 +1,4 @@
-local msbuild = require('msbuild')
+local msbuild = require('nvim_config.msbuild')
 
 describe('msbuild', function()
     it('should have a builder function', function()

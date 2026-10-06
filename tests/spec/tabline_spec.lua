@@ -1,4 +1,4 @@
-local tabline = require('tabline')
+local tabline = require('nvim_config.tabline')
 tabline.setup()
 
 local function visible_tabs(line)
@@ -169,7 +169,7 @@ describe('tabline content cache', function()
     end)
 
     it('shares project root lookups between buffers in the same directory', function()
-        local prjroot = require('prjroot')
+        local prjroot = require('nvim_config.prjroot')
         local original_root = prjroot.GetProjectRoot
         local lookups = 0
         prjroot.GetProjectRoot = function(...)

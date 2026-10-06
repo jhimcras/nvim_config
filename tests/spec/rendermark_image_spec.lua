@@ -1,13 +1,13 @@
 -- rendermark.image: image size parsing/cache, cursor render gate, layout helpers.
 
-local image = require('rendermark.image')
-local image_backend = require('rendermark.image.backend')
-local util = require('util')
+local image = require('nvim_config.rendermark.image')
+local image_backend = require('nvim_config.rendermark.image.backend')
+local util = require('nvim_config.util')
 
 -- Reload the module for fresh module-local state.
 local function fresh_image()
-  package.loaded['rendermark.image'] = nil
-  return require('rendermark.image')
+  package.loaded['nvim_config.rendermark.image'] = nil
+  return require('nvim_config.rendermark.image')
 end
 
 local function bytes(arr)
@@ -734,7 +734,7 @@ describe('resolve_image_path', function()
 
   -- Windows regression: mixed-slash absolute paths were treated as relative.
   it('classifies Windows absolute paths as absolute', function()
-    local scan = require('rendermark.image.scan')
+    local scan = require('nvim_config.rendermark.image.scan')
     assert.is_true(scan.is_absolute_path('C:\\Users\\me/work_data/1787.jpg', true))
     assert.is_true(scan.is_absolute_path('C:/work_data/1787.jpg', true))
     assert.is_true(scan.is_absolute_path('\\\\server\\share\\a.jpg', true))
@@ -744,7 +744,7 @@ describe('resolve_image_path', function()
   end)
 
   it('classifies POSIX paths as absolute only when rooted', function()
-    local scan = require('rendermark.image.scan')
+    local scan = require('nvim_config.rendermark.image.scan')
     assert.is_true(scan.is_absolute_path('/home/me/a.jpg', false))
     assert.is_false(scan.is_absolute_path('C:\\Users\\me\\a.jpg', false))
     assert.is_false(scan.is_absolute_path('a.jpg', false))

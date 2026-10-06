@@ -1,19 +1,20 @@
--- LAUNCHER_BENCH_SOURCE=/tmp/launcher-before for the original implementation.
+-- LAUNCHER_BENCH_SOURCE points to a directory containing ansi_parser.lua and launcher.lua.
+-- For a namespaced checkout use its lua/nvim_config directory.
 -- Run: nvim --headless -i NONE -u NONE -l tests/manual/benchmark_launcher.lua
 vim.opt.rtp:prepend(vim.fn.getcwd())
 local source = os.getenv('LAUNCHER_BENCH_SOURCE')
 if source then
-    package.loaded.ansi_parser = dofile(source .. '/ansi_parser.lua')
-    package.loaded.launcher = dofile(source .. '/launcher.lua')
+    package.loaded['nvim_config.ansi_parser'] = dofile(source .. '/ansi_parser.lua')
+    package.loaded['nvim_config.launcher'] = dofile(source .. '/launcher.lua')
 end
-local launcher = require('launcher')
-local util = require('util')
+local launcher = require('nvim_config.launcher')
+local util = require('nvim_config.util')
 local callbacks
 util.AsyncProcess = function(_, _, _, opts)
     callbacks = opts
     return 1, function() end, function() end, {}
 end
-package.loaded['status.spinner'] = nil
+package.loaded['nvim_config.status.spinner'] = nil
 local rows = {}
 for _, count in ipairs({1000, 2000, 4000}) do
     local samples = {}
@@ -43,7 +44,7 @@ local ansi = {}
 for _, size in ipairs({1024, 10240, 55296}) do
     local text = '\27[31m' .. string.rep('x', size) .. '\27[0m'
     local start = vim.uv.hrtime()
-    for _ = 1, 20 do assert(#require('ansi_parser').parse_ansi(text) == size) end
+    for _ = 1, 20 do assert(#require('nvim_config.ansi_parser').parse_ansi(text) == size) end
     ansi[#ansi + 1] = {bytes = size, mean_ms = (vim.uv.hrtime() - start) / 1e6 / 20}
 end
 print(vim.json.encode({nvim = tostring(vim.version()), launcher = rows, ansi = ansi}))

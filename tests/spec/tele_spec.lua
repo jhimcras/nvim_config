@@ -1,4 +1,4 @@
-local tele = require('plugins.tele')
+local tele = require('nvim_config.plugins.tele')
 
 describe('tele', function()
     it('should have a setup function', function()
@@ -12,7 +12,7 @@ describe('tele', function()
         package.loaded['telescope'] = { setup = function() end }
         
         -- Mock util functions
-        package.loaded['util'] = { nmap = function() end }
+        package.loaded['nvim_config.util'] = { nmap = function() end }
         
         assert.has_no.errors(function() tele.setup() end)
         package.loaded['telescope.actions'] = original_actions

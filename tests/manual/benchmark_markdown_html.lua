@@ -1,6 +1,6 @@
 -- Run: nvim --headless -u tests/minimal_init.lua -l tests/manual/benchmark_markdown_html.lua
 -- Optional first argument: path to an older html.lua implementation.
-local html = arg[1] and dofile(arg[1]) or require('rendermark.html')
+local html = arg[1] and dofile(arg[1]) or require('nvim_config.rendermark.html')
 local uv = vim.uv
 local get_lines = vim.api.nvim_buf_get_lines
 local parse = vim.treesitter.get_parser

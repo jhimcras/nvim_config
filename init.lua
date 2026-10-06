@@ -1,6 +1,6 @@
 vim.loader.enable()
 
-local env = require 'env'
+local env = require 'nvim_config.env'
 local api, cmd = vim.api, vim.cmd
 
 -- TODO: Find out not to use global function
@@ -57,22 +57,22 @@ local function C_CPP_HeaderCorrection()
 end
 
 ----------------------------------------------------------------------------------------------------
-require'setting'.setup()
+require'nvim_config.setting'.setup()
 TerminalSetting()
 SetAutoChangedFileReloading()
-require'plugins'.setup()
-require'prjroot'.setup()
-require'launcher'.setup()
-require'grep'.setup()
-require'json'.setup()
-require'session'.setup()
-require'status'.setup()
-require'file_info'.setup()
-require'smart_cursorline'.setup()
-require'read_mode'.setup()
-require'reopen'.setup()
-require'lsp_setting'.setup()
-require'rendermark'.setup{
+require'nvim_config.plugins'.setup()
+require'nvim_config.prjroot'.setup()
+require'nvim_config.launcher'.setup()
+require'nvim_config.grep'.setup()
+require'nvim_config.json'.setup()
+require'nvim_config.session'.setup()
+require'nvim_config.status'.setup()
+require'nvim_config.file_info'.setup()
+require'nvim_config.smart_cursorline'.setup()
+require'nvim_config.read_mode'.setup()
+require'nvim_config.reopen'.setup()
+require'nvim_config.lsp_setting'.setup()
+require'nvim_config.rendermark'.setup{
     max_width = 120,
     plantuml = {
         preview = {
@@ -86,7 +86,7 @@ require'rendermark'.setup{
         },
     },
 }
-require'keymap'.setup()
-require'instance_move'.setup()
-require'highlight'.setup()
+require'nvim_config.keymap'.setup()
+require'nvim_config.instance_move'.setup()
+require'nvim_config.highlight'.setup()
 C_CPP_HeaderCorrection()

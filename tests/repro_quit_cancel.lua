@@ -1,5 +1,5 @@
 
-local session = require('lua.session')
+local session = require('nvim_config.session')
 
 -- Mock vim.fn.confirm
 local confirm_val = 2 -- Default to Cancel

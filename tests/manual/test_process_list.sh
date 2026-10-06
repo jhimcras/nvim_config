@@ -37,7 +37,7 @@ verify_output() {
 
 # 1. Start a launcher process (sleeper)
 echo "Starting launcher process..."
-tmux send-keys -t "$SESSION" ":lua require'launcher'.Launch('sleep', {'100'}, '.', nil, nil, {orientation='vertical'}, 'use', nil, nil, 'sleeper')" Enter
+tmux send-keys -t "$SESSION" ":lua require'nvim_config.launcher'.Launch('sleep', {'100'}, '.', nil, nil, {orientation='vertical'}, 'use', nil, nil, 'sleeper')" Enter
 sleep 1
 
 # 2. Start a grep process

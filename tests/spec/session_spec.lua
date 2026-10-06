@@ -1,4 +1,4 @@
-local session = require('session')
+local session = require('nvim_config.session')
 local original_stdpath = vim.fn.stdpath
 local test_data_dir = vim.fn.tempname()
 vim.fn.mkdir(test_data_dir, 'p')
@@ -116,7 +116,7 @@ describe('session.SaveSession', function()
         vim.go = { tabline = '' }
 
         -- Ensure tabline module is loaded and has TabLine function
-        package.loaded['tabline'] = package.loaded['tabline'] or {
+        package.loaded['nvim_config.tabline'] = package.loaded['nvim_config.tabline'] or {
             TabLine = function() return 'mock_tabline' end
         }
 
@@ -137,7 +137,7 @@ end)
 
 describe('launcher session highlights', function()
     it('saves and restores ANSI and custom color highlights', function()
-        local launcher = require('launcher')
+        local launcher = require('nvim_config.launcher')
         local name = '__test__launcher_highlights'
         local dir = make_sessions_dir()
         local previous = vim.api.nvim_get_current_buf()
@@ -262,7 +262,7 @@ describe('session cmdheight fix on VimEnter', function()
 end)
 
 describe('session QuitPre exit guard', function()
-    local launcher = require('launcher')
+    local launcher = require('nvim_config.launcher')
     local original_confirm
     local original_get_running_processes
     local original_cmd
@@ -513,8 +513,8 @@ describe('session QuitPre exit guard', function()
         local script_path = vim.fn.tempname() .. '.lua'
         local log_path = vim.fn.tempname()
         local script = string.format([[
-            local session = require('session')
-            local launcher = require('launcher')
+            local session = require('nvim_config.session')
+            local launcher = require('nvim_config.launcher')
             session.setup()
             local buf = vim.api.nvim_create_buf(true, false)
             vim.bo[buf].filetype = 'launcher'

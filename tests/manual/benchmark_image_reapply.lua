@@ -11,7 +11,7 @@ for key, name in pairs({ mark = 'nvim_buf_set_extmark', clear = 'nvim_buf_clear_
   local original = vim.api[name]
   vim.api[name] = function(...) counts[key] = counts[key] + 1; return original(...) end
 end
-local img = require('rendermark.image')
+local img = require('nvim_config.rendermark.image')
 local buf = vim.api.nvim_get_current_buf()
 vim.bo[buf].filetype = 'markdown'
 local lines = {}

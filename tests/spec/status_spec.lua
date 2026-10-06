@@ -1,9 +1,9 @@
-local status = require('status')
+local status = require('nvim_config.status')
 
 describe('status', function()
     it('colors only the window in READ mode without a tag', function()
-        require('highlight').setup()
-        local read_mode = require('read_mode')
+        require('nvim_config.highlight').setup()
+        local read_mode = require('nvim_config.read_mode')
         local read_win = vim.api.nvim_get_current_win()
         vim.cmd('vsplit')
         local other_win = vim.api.nvim_get_current_win()
@@ -41,7 +41,7 @@ describe('status', function()
         vim.g.is_testing = nil -- Temporarily allow setup to run
         
         -- Mock util functions to avoid errors
-        package.loaded['util'] = {
+        package.loaded['nvim_config.util'] = {
             set_highlight = function() end,
             nnoremap = function() end,
         }

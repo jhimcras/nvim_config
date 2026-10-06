@@ -150,3 +150,63 @@ stage 0. The headless workloads above do not represent actual GUI image output,
 real terminal redraw, external language servers, or real plugin startup. Run
 real-init lazy-load cases and manual UI checks after migration; retain stored
 session data formats and restart old instances for the new RPC module paths.
+
+## Stage 0a namespace migration (2026-10-07)
+
+All 55 own modules moved under `lua/nvim_config` without splitting functions.
+Internal require paths, Vim expression/RPC strings, module-cache mocks, manual
+scripts and README paths now use the prefix. A comparison against stage 0
+confirmed that removing `nvim_config.` from every migrated runtime file restores
+its exact previous contents. Public APIs, state and setup order are preserved.
+
+Only `env` and `msbuild` retain temporary forwarding shims: the external
+`/home/ilmoek/workspace/image/.prjroot` still uses those names. Each shim returns
+the same module table and performs no setup. Remove them after that external
+configuration migrates. All 25 audited saved sessions contained no old require
+strings. Restart running instances together before using instance-transfer RPC.
+
+Verification: unit suite 518 successes, integration suite 11 successes, six
+real-init lazy-load assertions passed (Telescope key/command, Config, Git, GV,
+coverage), and both shim identities passed. The InsertEnter case reports
+`vsnip source not registered` and pckr `Invalid group: cmp_nvim_lsp`; the exact
+failure also occurs in the untouched stage 0 checkout with the installed plugins.
+Git assertions pass but the installed Fugitive exit callback reports missing
+`stdout`. Headless Neovim exits 0 despite Lua assertions, so logs were inspected. Existing dirty test-runner
+and spec changes, and untracked integration/spec files, are preserved and remain
+outside the stage commit; their namespace references were updated in the working
+tree so the complete suite tests the migrated implementation. T01–T10 remain.
+
+The require graph now has 57 nodes and 136 edges because of the two compatibility
+shims. The same 7 layer violations and 4 cyclic groups remain for later stages.
+
+All eight existing benchmark workloads completed. Launcher 1k/2k/4k chunks
+measured 51.5/101.9/225.5 ms. Image reapply with unchanged images retained zero
+emits, redraws, clears and extmarks; PlantUML unchanged paths retained zero full
+reads. Status/spinner component counts and HTML full reads/parser requests match
+stage 0. Grep timer cleanup retained zero active timers and idle ticks; a repeat
+returned 35.7/38.1/30.0 ms for exit/signal/close, within baseline run variation.
+Other timings vary with terminal scheduling; no timing improvement is claimed.
+Full local logs: `/tmp/namespace-benchmark-*.log`.
+
+Real-init startup, using three separate processes per case and isolated caches,
+measured a cold-cache median of 94.539 ms (90.290/94.539/95.862) and warm-cache
+median of 64.926 ms (64.926/65.150/63.127). Cold here means an empty Neovim loader
+cache, not a cleared OS disk cache. Startup logs exclude exit cleanup. Stage 0
+did not measure this workload, so these are post-migration references only.
+
+Real-init lazy-case command (installed plugin data is retained, with temporary
+XDG config/state/cache and NVIM_LOG_FILE; run with local RPC socket permissions):
+
+```sh
+NVIM_LAZY_TEST=insert nvim --headless -i NONE \
+  --cmd 'set rtp^=/home/ilmoek/workspace/nvim_config' \
+  -u init.lua -c 'luafile tests/test_lazy_plugins.lua' -c 'qa!'
+```
+
+The same command against a stage 0 archive in `/tmp/namespace-pre-migration`,
+using its runtimepath/init/script, reproduces the InsertEnter error. Other cases
+are `telescope-key`, `telescope-command`, `config`, `git`, `gv`, `coverage`.
+Startup timing uses the same real init/runtimepath, replacing the Lua test with
+`--startuptime /tmp/<sample>.log -c 'qa!'`; cold processes use a fresh cache,
+warm processes share one cache after one unrecorded warmup. The temporary harness
+is `/tmp/namespace_startup.py`; lazy harness `/tmp/namespace_lazy.sh`.

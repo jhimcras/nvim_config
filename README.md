@@ -18,32 +18,37 @@ VIMLS=/path/to/vim-language-server   # VimScript LSP
 
 ## Built-in Modules
 
+Own Lua modules use the `nvim_config` namespace, for example `require('nvim_config.status')`.
+Restart all running Neovim instances after updating so instance-transfer RPC uses the same module paths.
+Temporary `env` and `msbuild` forwarding modules support the external `workspace/image/.prjroot`;
+remove them once that configuration uses the new paths.
+
 | Module | Description |
 |---|---|
-| `lua/setting.lua` | Core options and autocmds (auto-reload, terminal, folding, …) |
-| `lua/keymap.lua` | Global keymaps |
-| `lua/env.lua` | OS/environment detection helpers |
-| `lua/launcher.lua` | Asynchronous program launcher (`lua/launcher/registry.lua`: job registry) |
-| `lua/process_list.lua` | List/inspect/kill running launcher jobs |
-| `lua/prjroot.lua` | Project root detection (`.git`, `.prjroot`, etc.) — see [docs/prjroot.md](docs/prjroot.md) |
-| `lua/session.lua` | Session management per project root |
-| `lua/status.lua` | Custom statusline with LSP, git branch/commit, diagnostics (`lua/status/mode.lua`: mode indicator) |
-| `lua/tabline.lua` | Custom tabline |
-| `lua/instance.lua` | Spawn a new instance of the host — the GUI parent (via `--embed`) or a TUI (`:NewInstance [file]`, `:NewInstance!` to diagnose host detection) |
-| `lua/instance_move.lua` | Move a file/Oil buffer or tab to a new or running Nvim instance (`:MoveBufferToInstance`, `:MoveTabToInstance`) |
-| `lua/reopen.lua` | Reopen the last closed window or tab with its layout (`<leader>u`, `:Reopen`) |
-| `lua/highlight.lua` | Statusline/UI highlight group definitions |
-| `lua/git.lua` | Git branch and commit info with TTL caching |
-| `lua/grep.lua` | RipGrep integration |
-| `lua/msbuild.lua` | MSBuild integration |
-| `lua/lsp_setting.lua` | LSP client configuration (`lua/lsp_setting/`: per-server tweaks — clangd, lua_ls, python, markdown; Markdown code action to create missing link targets) — see [docs/clangd.md](docs/clangd.md) for clangd indexing load |
-| `lua/read_mode.lua` | Distraction-free READ mode, per window, any filetype |
-| `lua/smart_cursorline.lua` | Cursorline shown only where useful (active window, normal mode) |
-| `lua/file_info.lua` | File size/info display (`<C-g>`, `:FileInfo`) |
-| `lua/ansi_parser.lua` | ANSI SGR color codes → Neovim highlight groups |
-| `lua/json.lua` | jq-backed JSON pretty-print/minify (`:JsonPretty`, `:JsonOneline`) |
-| `lua/util.lua` | Shared utilities (memoize, keymaps, … `lua/util/cache.lua`, `lua/util/serialize.lua`) |
-| `lua/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables (images allowed in cells), HTML subset (e.g. `<details>`), inline image and PlantUML previews (neopp GUI), link navigation/completion (`<C-]>`/`<C-}>`, creates missing link/wikilink targets), image file completion for `![`, Obsidian-style checkbox toggle (`<C-Space>`) |
+| `lua/nvim_config/setting.lua` | Core options and autocmds (auto-reload, terminal, folding, …) |
+| `lua/nvim_config/keymap.lua` | Global keymaps |
+| `lua/nvim_config/env.lua` | OS/environment detection helpers |
+| `lua/nvim_config/launcher.lua` | Asynchronous program launcher (`lua/nvim_config/launcher/registry.lua`: job registry) |
+| `lua/nvim_config/process_list.lua` | List/inspect/kill running launcher jobs |
+| `lua/nvim_config/prjroot.lua` | Project root detection (`.git`, `.prjroot`, etc.) — see [docs/prjroot.md](docs/prjroot.md) |
+| `lua/nvim_config/session.lua` | Session management per project root |
+| `lua/nvim_config/status.lua` | Custom statusline with LSP, git branch/commit, diagnostics (`lua/nvim_config/status/mode.lua`: mode indicator) |
+| `lua/nvim_config/tabline.lua` | Custom tabline |
+| `lua/nvim_config/instance.lua` | Spawn a new instance of the host — the GUI parent (via `--embed`) or a TUI (`:NewInstance [file]`, `:NewInstance!` to diagnose host detection) |
+| `lua/nvim_config/instance_move.lua` | Move a file/Oil buffer or tab to a new or running Nvim instance (`:MoveBufferToInstance`, `:MoveTabToInstance`) |
+| `lua/nvim_config/reopen.lua` | Reopen the last closed window or tab with its layout (`<leader>u`, `:Reopen`) |
+| `lua/nvim_config/highlight.lua` | Statusline/UI highlight group definitions |
+| `lua/nvim_config/git.lua` | Git branch and commit info with TTL caching |
+| `lua/nvim_config/grep.lua` | RipGrep integration |
+| `lua/nvim_config/msbuild.lua` | MSBuild integration |
+| `lua/nvim_config/lsp_setting.lua` | LSP client configuration (`lua/nvim_config/lsp_setting/`: per-server tweaks — clangd, lua_ls, python, markdown; Markdown code action to create missing link targets) — see [docs/clangd.md](docs/clangd.md) for clangd indexing load |
+| `lua/nvim_config/read_mode.lua` | Distraction-free READ mode, per window, any filetype |
+| `lua/nvim_config/smart_cursorline.lua` | Cursorline shown only where useful (active window, normal mode) |
+| `lua/nvim_config/file_info.lua` | File size/info display (`<C-g>`, `:FileInfo`) |
+| `lua/nvim_config/ansi_parser.lua` | ANSI SGR color codes → Neovim highlight groups |
+| `lua/nvim_config/json.lua` | jq-backed JSON pretty-print/minify (`:JsonPretty`, `:JsonOneline`) |
+| `lua/nvim_config/util.lua` | Shared utilities (memoize, keymaps, … `lua/nvim_config/util/cache.lua`, `lua/nvim_config/util/serialize.lua`) |
+| `lua/nvim_config/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables (images allowed in cells), HTML subset (e.g. `<details>`), inline image and PlantUML previews (neopp GUI), link navigation/completion (`<C-]>`/`<C-}>`, creates missing link/wikilink targets), image file completion for `![`, Obsidian-style checkbox toggle (`<C-Space>`) |
 
 ## Plugins
 

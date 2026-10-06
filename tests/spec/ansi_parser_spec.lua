@@ -1,4 +1,4 @@
-local ansi_parser = require('ansi_parser')
+local ansi_parser = require('nvim_config.ansi_parser')
 
 describe('ansi_parser', function()
     it('should parse simple ANSI colors', function()

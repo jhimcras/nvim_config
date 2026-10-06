@@ -1,4 +1,4 @@
-local smart_cursorline = require('smart_cursorline')
+local smart_cursorline = require('nvim_config.smart_cursorline')
 
 describe('smart_cursorline', function()
     it('should have a setup function', function()

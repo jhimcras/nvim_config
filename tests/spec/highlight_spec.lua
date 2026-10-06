@@ -1,4 +1,4 @@
-local highlight = require('highlight')
+local highlight = require('nvim_config.highlight')
 
 describe('highlight', function()
     it('should have a setup function', function()

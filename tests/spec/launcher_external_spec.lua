@@ -1,7 +1,7 @@
-local launcher = require('launcher')
-local pr = require('prjroot')
-local util = require('util')
-local env = require('env')
+local launcher = require('nvim_config.launcher')
+local pr = require('nvim_config.prjroot')
+local util = require('nvim_config.util')
+local env = require('nvim_config.env')
 
 describe('external launcher spawn', function()
     local original_root, original_config, original_executable, original_notify, original_win
@@ -72,7 +72,7 @@ describe('external launcher spawn', function()
             if p.obj == 'external_test' then proc = p end
         end
         assert.is_number(proc.pid)
-        local list = require('process_list')
+        local list = require('nvim_config.process_list')
         list.Show()
         local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
         assert.truthy(table.concat(lines, '\n'):find(tostring(proc.pid), 1, true))

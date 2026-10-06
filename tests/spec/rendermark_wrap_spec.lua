@@ -1,5 +1,5 @@
-local wrap = require('rendermark.wrap')
-local wrap_text = require('rendermark.wrap.text')
+local wrap = require('nvim_config.rendermark.wrap')
+local wrap_text = require('nvim_config.rendermark.wrap.text')
 
 describe('wrap.compute_indent', function()
     it('returns hanging indent for list/quote/paragraph lines', function()
@@ -625,12 +625,12 @@ describe('wrap behavior', function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { line })
         vim.bo.filetype = 'markdown'
         vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
-        require('read_mode').enter()
+        require('nvim_config.read_mode').enter()
         vim.api.nvim_win_set_cursor(0, { 1, 0 })
         wrap.refresh(0)
 
         local rows = continuation_rows(0)
-        require('read_mode').exit(0) -- before the assertions, so a failure cannot
+        require('nvim_config.read_mode').exit(0) -- before the assertions, so a failure cannot
                                      -- leak read mode into the next test
         assert.is_true(#rows > 0)
         for _, row in ipairs(rows) do

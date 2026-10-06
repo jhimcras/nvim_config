@@ -1,4 +1,4 @@
-local prjroot = require('prjroot')
+local prjroot = require('nvim_config.prjroot')
 
 local function write_file(path, content)
     local f = assert(io.open(path, 'w'))

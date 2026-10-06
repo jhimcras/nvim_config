@@ -16,12 +16,12 @@ describe('status spinner', function()
             }
         end
         vim.api.nvim__redraw = function(opts) redraws[#redraws + 1] = opts.win end
-        package.loaded['status.spinner'] = nil
-        spinner = require('status.spinner')
+        package.loaded['nvim_config.status.spinner'] = nil
+        spinner = require('nvim_config.status.spinner')
     end)
     after_each(function()
         vim.uv.new_timer, vim.api.nvim__redraw = new_timer, redraw
-        package.loaded['status.spinner'] = nil
+        package.loaded['nvim_config.status.spinner'] = nil
         vim.cmd('only!')
     end)
     local function tick()

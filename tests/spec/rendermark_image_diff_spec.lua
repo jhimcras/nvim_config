@@ -1,5 +1,5 @@
-local extmarks = require('rendermark.image.extmarks')
-local backend = require('rendermark.image.backend')
+local extmarks = require('nvim_config.rendermark.image.extmarks')
+local backend = require('nvim_config.rendermark.image.backend')
 
 describe('image differential updates', function()
   it('reuses unchanged rows, updates changed rows and clears moved or removed marks', function()

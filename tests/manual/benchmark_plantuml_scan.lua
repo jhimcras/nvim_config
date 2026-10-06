@@ -8,7 +8,7 @@ vim.o.columns = 160
 vim.ui.img = { set = function() end, del = function() end }
 vim.g.neopp_channel = 1
 vim.rpcnotify = function() end
-local image = require('rendermark.image')
+local image = require('nvim_config.rendermark.image')
 local buf = vim.api.nvim_get_current_buf()
 vim.bo[buf].filetype = 'markdown'
 local lines = {}

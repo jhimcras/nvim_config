@@ -15,8 +15,8 @@ end
 describe('reopen', function()
     before_each(function()
         pcall(vim.api.nvim_del_augroup_by_name, 'reopen')
-        package.loaded['reopen'] = nil
-        reopen = require('reopen')
+        package.loaded['nvim_config.reopen'] = nil
+        reopen = require('nvim_config.reopen')
         vim.cmd('silent! tabonly!')
         vim.cmd('silent! only!')
         vim.cmd('enew!')

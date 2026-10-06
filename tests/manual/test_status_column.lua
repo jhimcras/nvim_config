@@ -31,11 +31,11 @@ local function test_status_column()
         print("Test Failed: %v reports " .. statusline_v.str .. " (expected 17)")
     end
 
-    -- Now test the actual statusline components from lua/status.lua
-    local status = require('status')
+    -- Now test the actual statusline components from lua/nvim_config/status.lua
+    local status = require('nvim_config.status')
     
     -- Set up statusline to use the entry function
-    vim.o.statusline = "%!v:lua.require'status'.statusline_entry()"
+    vim.o.statusline = "%!v:lua.require'nvim_config.status'.statusline_entry()"
     
     -- Force a redraw
     vim.cmd('redrawstatus')

@@ -1,4 +1,4 @@
-local env = require('env')
+local env = require('nvim_config.env')
 
 describe('env', function()
     it('should have correct OS flags', function()

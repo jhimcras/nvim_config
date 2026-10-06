@@ -1,10 +1,10 @@
 
-local launcher = require('launcher')
+local launcher = require('nvim_config.launcher')
 launcher.setup()
-require('session').setup() -- Ensure session's QuitPre is active
+require('nvim_config.session').setup() -- Ensure session's QuitPre is active
 
 -- Mock AsyncProcess to keep it running
-local ut = require('util')
+local ut = require('nvim_config.util')
 local original_async = ut.AsyncProcess
 ut.AsyncProcess = function(cmd, args, cwd, opts)
     local terminate_fn = function()

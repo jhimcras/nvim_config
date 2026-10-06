@@ -1,4 +1,4 @@
-local ut = require('util')
+local ut = require('nvim_config.util')
 
 describe('util.serialize', function()
     it('empty table returns "{\\n}"', function()

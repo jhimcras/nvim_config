@@ -1,6 +1,6 @@
-local ut = require('util')
-local launcher = require('launcher')
-local session = require('session')
+local ut = require('nvim_config.util')
+local launcher = require('nvim_config.launcher')
+local session = require('nvim_config.session')
 
 -- 1. Setup a dummy launcher process
 local launcher_buf = ut.NewScratchBuffer('vertical')

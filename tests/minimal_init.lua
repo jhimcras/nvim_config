@@ -27,6 +27,6 @@ if not found then
     for _, path in ipairs(potential_paths) do print(path) end
 end
 
-require'status'.setup()
-require'launcher'.setup()
-require'grep'.setup()
+require'nvim_config.status'.setup()
+require'nvim_config.launcher'.setup()
+require'nvim_config.grep'.setup()

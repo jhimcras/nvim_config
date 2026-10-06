@@ -1,6 +1,6 @@
 -- tests/manual/test_warning_options.lua
-local session = require('session')
-local launcher = require('launcher')
+local session = require('nvim_config.session')
+local launcher = require('nvim_config.launcher')
 
 session.setup()
 

@@ -2,16 +2,16 @@
 -- Stub only the process/project/launcher; exercise grep and real libuv timers.
 vim.opt.rtp:prepend(vim.fn.getcwd())
 local exit
-package.loaded.util = {
+package.loaded['nvim_config.util'] = {
     AsyncProcess = function(_, _, _, opts)
         exit = opts.onexit
         return 1, function() end, function() return 'running' end
     end,
     nnoremap = function() end,
 }
-package.loaded.env = {}
-package.loaded.prjroot = { GetCurrentProjectRoot = function() return vim.fn.getcwd() end }
-package.loaded.launcher = {
+package.loaded['nvim_config.env'] = {}
+package.loaded['nvim_config.prjroot'] = { GetCurrentProjectRoot = function() return vim.fn.getcwd() end }
+package.loaded['nvim_config.launcher'] = {
     GetRunningProcesses = function() return {} end,
     RegisterProcess = function() end,
     UnregisterProcess = function() end,
@@ -41,7 +41,7 @@ local function active()
     end
     return count
 end
-local grep = require('grep')
+local grep = require('nvim_config.grep')
 local origin = vim.api.nvim_get_current_win()
 local rows = {}
 for _, scenario in ipairs({ 'exit', 'signal', 'close' }) do
