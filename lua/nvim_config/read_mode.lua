@@ -2,7 +2,7 @@
 -- navigation. <leader>r enters, <Esc> leaves.
 -- rendermark checks M.is_active(win) to skip its cursor-line reveals.
 
-local ut = require 'nvim_config.util'
+local ut = require('nvim_config.util.map')
 local M = {}
 
 local win_state = {}     -- win -> { buf, saved_* options }

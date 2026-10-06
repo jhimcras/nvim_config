@@ -1,7 +1,10 @@
 local M = {}
 
 local pr = require'nvim_config.prjroot'
-local ut = require'nvim_config.util'
+local util_buffer = require('nvim_config.util.buffer')
+local util_job = require('nvim_config.util.job')
+local ut = require('nvim_config.util.map')
+local util_serialize = require('nvim_config.util.serialize')
 local env = require 'nvim_config.env'
 local registry = require('nvim_config.launcher.registry')
 local api = vim.api
@@ -118,7 +121,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     if existing_buf then
         buf = existing_buf
     else
-        buf = ut.NewScratchBuffer(position)
+        buf = util_buffer.NewScratchBuffer(position)
     end
     api.nvim_set_option_value('filetype', 'launcher', { buf = buf })
     api.nvim_set_option_value('bufhidden', 'hide', { buf = buf })
@@ -361,7 +364,7 @@ function M.Launch(cmd, args, cwd, ev, hi, position, color_mode, existing_buf, en
     end
     M.set_launcher_mapping(buf)
 
-    local ok, pid, terminate_fn, get_status, handle, err = pcall(ut.AsyncProcess, cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
+    local ok, pid, terminate_fn, get_status, handle, err = pcall(util_job.AsyncProcess, cmd, args, cwd, { env = ev, onread = onread, onexit = on_exit })
 
     if ok and handle then
         buffers_handles[buf] = handle
@@ -398,7 +401,7 @@ function M.LaunchOnTerm(cmd, args, cwd, ev, position, obj, existing_buf)
     if existing_buf then
         buf = existing_buf
     else
-        buf = ut.NewScratchBuffer(position)
+        buf = util_buffer.NewScratchBuffer(position)
     end
     api.nvim_set_option_value('filetype', 'terminal', { buf = buf })
     api.nvim_set_option_value('bufhidden', 'hide', { buf = buf })
@@ -519,7 +522,7 @@ function M.LaunchObject(obj)
         local position = (lcfg.position) or { orientation = 'vertical' }
         local mode = lcfg.mode or (position == 'external' and 'external' or 'general')
 
-        if not ut.IsExist(cwd) then
+        if not util_buffer.IsExist(cwd) then
             vim.notify(string.format('"%s" is not exist', cwd), vim.log.levels.ERROR)
             return
         end
@@ -576,7 +579,7 @@ function M.LaunchObject(obj)
                     api.nvim_buf_delete(guard_buf, {force = true})
                 end
             end
-            local pid, terminate_fn, get_status, handle, err = ut.AsyncProcess(full_cmd, full_args, cwd, { env = ev, onexit = on_exit })
+            local pid, terminate_fn, get_status, handle, err = util_job.AsyncProcess(full_cmd, full_args, cwd, { env = ev, onexit = on_exit })
             if not handle then
                 on_exit()
                 vim.notify('Failed to start process: ' .. tostring(err or 'unknown'), vim.log.levels.ERROR)
@@ -632,7 +635,7 @@ function M.LaunchObject(obj)
                     -- Hidden: show it again
                     local wins = vim.fn.win_findbuf(existing_buf)
                     if #wins == 0 then
-                        local temp_buf = ut.NewScratchBuffer(position)
+                        local temp_buf = util_buffer.NewScratchBuffer(position)
                         vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), existing_buf)
                         vim.api.nvim_buf_delete(temp_buf, { force = true })
                     else
@@ -716,11 +719,11 @@ function M.PrevMatch()
 end
 
 local function ResolveLauncherFilename(filename, bases)
-    local normalized = ut.normalize_path_separator(filename)
+    local normalized = util_serialize.normalize_path_separator(filename)
     for _, base in ipairs(bases) do
         local path = base and (base .. '/' .. normalized) or normalized
         local full = vim.fn.fnamemodify(path, ':p')
-        if ut.IsExist(full) then
+        if util_buffer.IsExist(full) then
             return full
         end
     end
@@ -731,7 +734,7 @@ local function SearchLauncherFileCandidates(prjroot, filename)
     if not prjroot or vim.fn.executable('rg') ~= 1 then
         return {}
     end
-    local suffix = ut.normalize_path_separator(filename)
+    local suffix = util_serialize.normalize_path_separator(filename)
     while suffix:match('^%.%./') do
         suffix = suffix:sub(4)
     end

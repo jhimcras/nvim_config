@@ -1,6 +1,6 @@
 local M = {}
 
-local ut = require 'nvim_config.util'
+local ut = require('nvim_config.util.map')
 
 local function run_jq(args, line1, line2)
     local lines = vim.api.nvim_buf_get_lines(0, line1 - 1, line2, false)

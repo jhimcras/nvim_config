@@ -1,6 +1,7 @@
 local M = {}
 local api = vim.api
-local ut = require('nvim_config.util')
+local util_buffer = require('nvim_config.util.buffer')
+local ut = require('nvim_config.util.map')
 local launcher = require('nvim_config.launcher')
 
 local process_list_buf = nil
@@ -15,7 +16,7 @@ function M.Show()
         end
     end
 
-    process_list_buf = ut.NewScratchBuffer({ orientation = 'vertical', size = 60 })
+    process_list_buf = util_buffer.NewScratchBuffer({ orientation = 'vertical', size = 60 })
     api.nvim_buf_set_name(process_list_buf, '[Process List]')
     api.nvim_set_option_value('filetype', 'processlist', { buf = process_list_buf })
 

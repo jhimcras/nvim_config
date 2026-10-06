@@ -1,4 +1,6 @@
-local ut = require 'nvim_config.util'
+local util_buffer = require('nvim_config.util.buffer')
+local ut = require('nvim_config.util.map')
+local util_text = require('nvim_config.util.text')
 local api, cmd = vim.api, vim.cmd
 
 local M = {}
@@ -116,12 +118,12 @@ function M.setup()
         if opts.args ~= '' then
             require'nvim_config.plugins.tele'.ConfigFiles(opts.args)
         else
-            ut.OpenConfig(opts)
+            util_buffer.OpenConfig(opts)
         end
     end, { nargs='?' })
-    api.nvim_create_user_command('StripTrailingWhitespace', ut.StripTrailingWhitespace, {})
-    api.nvim_create_user_command('OpenAllHiddenBuffer', ut.OpenAllHiddenBuffers, {})
-    api.nvim_create_user_command('WipeHiddenBuffers', ut.wipeout_hidden_buffers, {})
+    api.nvim_create_user_command('StripTrailingWhitespace', util_text.StripTrailingWhitespace, {})
+    api.nvim_create_user_command('OpenAllHiddenBuffer', util_buffer.OpenAllHiddenBuffers, {})
+    api.nvim_create_user_command('WipeHiddenBuffers', util_buffer.wipeout_hidden_buffers, {})
     api.nvim_create_user_command('NewInstance', function(opts)
         if opts.bang then
             api.nvim_echo({ { require'nvim_config.instance'.diagnose() } }, true, {})
@@ -180,7 +182,7 @@ function M.setup()
     api.nvim_create_user_command('GrepWord', function(t) require'nvim_config.grep'.asyncGrep(t.args, true, vim.fn.win_getid()) end, { nargs='+', bar=true })
     ut.nnoremap('<leader>gg', function() require'nvim_config.grep'.prompt_grep(false) end)
     ut.nnoremap('<leader>gw', function() require'nvim_config.grep'.prompt_grep(true) end)
-    ut.vnoremap('<leader>g', function() require'nvim_config.grep'.asyncGrep(ut.GetSelectWord(), false, vim.fn.win_getid()) end)
+    ut.vnoremap('<leader>g', function() require'nvim_config.grep'.asyncGrep(util_text.GetSelectWord(), false, vim.fn.win_getid()) end)
     ut.nnoremap('<leader>gc', function() require'nvim_config.grep'.asyncGrep(vim.fn.expand('<cword>'), true, vim.fn.win_getid()) end)
 
     -- file_info
@@ -193,9 +195,9 @@ function M.setup()
     ut.nnoremap('<leader>lc', function() require'nvim_config.launcher'.WipeLauncherBuffers() end)
 
     -- prjroot
-    ut.nnoremap('<leader>tv', function() ut.OpenProjectRootTerminal('vertical') end)
-    ut.nnoremap('<leader>tx', function() ut.OpenProjectRootTerminal('horizontal') end)
-    ut.nnoremap('<leader>tt', function() ut.OpenProjectRootTerminal('tab') end)
+    ut.nnoremap('<leader>tv', function() require('nvim_config.prjroot').OpenProjectRootTerminal('vertical') end)
+    ut.nnoremap('<leader>tx', function() require('nvim_config.prjroot').OpenProjectRootTerminal('horizontal') end)
+    ut.nnoremap('<leader>tt', function() require('nvim_config.prjroot').OpenProjectRootTerminal('tab') end)
     api.nvim_create_user_command('PrjRootConfig', function(t)
         vim.cmd.vsplit {mods = t.smods, args = {(require'nvim_config.prjroot'.GetCurrentProjectRoot() or '.') .. '/.prjroot'}}
     end, {})

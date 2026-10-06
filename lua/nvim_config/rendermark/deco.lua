@@ -5,7 +5,7 @@
 
 local M = {}
 
-local ut = require 'nvim_config.util'
+local ut = require('nvim_config.util.hl')
 local html = require 'nvim_config.rendermark.html'
 
 -- Shade of 'Normal', for the code background.

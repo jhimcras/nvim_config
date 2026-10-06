@@ -13,7 +13,8 @@ local function ensure_dir(path)
 end
 local env = require 'nvim_config.env'
 local api = vim.api
-local ut = require 'nvim_config.util'
+local ut = require('nvim_config.util.buffer')
+local util_serialize = require('nvim_config.util.serialize')
 local native_cmd = vim.cmd
 
 local function write_list_file(data, path)
@@ -542,7 +543,7 @@ function M.RemoveSession(session_name)
     local this_session_name = vim.fn.fnamemodify(vim.v.this_session, ':p:t')
     if session_name and session_name ~= '' and session_name ~= this_session_name then
         local sname = vim.fn.stdpath('data') .. '/sessions/' .. session_name
-        sname = ut.normalize_path_separator(sname)
+        sname = util_serialize.normalize_path_separator(sname)
         if vim.fn.filereadable(sname) == 0 then
             vim.notify(string.format("Session %s doesn't exist.", session_name), vim.log.levels.ERROR)
             return

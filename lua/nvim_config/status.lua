@@ -1,5 +1,6 @@
 local env = require 'nvim_config.env'
-local ut = require 'nvim_config.util'
+local util_buffer = require('nvim_config.util.buffer')
+local ut = require('nvim_config.util.cache')
 local status_mode = require('nvim_config.status.mode')
 local M = {}
 
@@ -166,7 +167,7 @@ local function branch_or_commit(dir)
 end
 
 local function project_or_git_branch_name(bufnr, winid)
-    local pr = require'nvim_config.prjroot'.GetProjectRoot(ut.GetBufferDir(bufnr))
+    local pr = require'nvim_config.prjroot'.GetProjectRoot(util_buffer.GetBufferDir(bufnr))
     if pr then
         local fi = {}
         local git_branch = nil
@@ -199,7 +200,7 @@ end
 
 
 local function filename_and_status(bufnr, winid)
-    local buf_name, protocol = ut.GetBufferName(bufnr)
+    local buf_name, protocol = util_buffer.GetBufferName(bufnr)
     if protocol == 'oil' then
         if env.os.win then
             buf_name = buf_name:gsub('^/(%a)/', '%1:/')
@@ -599,7 +600,7 @@ end
 function M.statusline_entry()
     local winid = vim.g.statusline_winid or 0
     local bufnr = vim.api.nvim_win_get_buf(winid)
-    local protocol = ut.GetBufferProtocol(bufnr)
+    local protocol = util_buffer.GetBufferProtocol(bufnr)
     local w = vim.api.nvim_win_get_width(winid)
     local activation = winid == vim.api.nvim_get_current_win()
     local entryfunc = get_entry_func(vim.bo[bufnr].buftype, vim.bo[bufnr].filetype, protocol)

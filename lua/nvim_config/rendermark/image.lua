@@ -3,7 +3,7 @@
 
 local M = {}
 
-local util = require('nvim_config.util')
+local util = require('nvim_config.util.cache')
 local image_backend = require('nvim_config.rendermark.image.backend')
 local image_scan = require('nvim_config.rendermark.image.scan')
 local image_size = require('nvim_config.rendermark.image.size')

@@ -1,6 +1,6 @@
 local launcher = require('nvim_config.launcher')
 local pr = require('nvim_config.prjroot')
-local util = require('nvim_config.util')
+local util = require('nvim_config.util.job')
 
 describe('launcher focus option', function()
     local original_root, original_config, original_async, original_confirm

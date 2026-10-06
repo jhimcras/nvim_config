@@ -1,5 +1,6 @@
 local env = require 'nvim_config.env'
-local ut = require 'nvim_config.util'
+local ut = require('nvim_config.util.hl')
+local util_serialize = require('nvim_config.util.serialize')
 local M = {}
 
 local tab_offset = 1
@@ -64,7 +65,7 @@ function M.tabtitle(n)
             local bufname = vim.fn.bufname(bufnum)
             local pr = prjroot_of(bufname) or ''
             r[pr] = r[pr] or {}
-            ut.insert_unique_by(r[pr], bufname, is_equal)
+            util_serialize.insert_unique_by(r[pr], bufname, is_equal)
         end
     end
     local title = {}

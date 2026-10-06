@@ -1,4 +1,4 @@
-local ut = require 'nvim_config.util'
+local ut = require('nvim_config.util.hl')
 
 local M = {}
 

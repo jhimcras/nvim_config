@@ -41,9 +41,8 @@ describe('status', function()
         vim.g.is_testing = nil -- Temporarily allow setup to run
         
         -- Mock util functions to avoid errors
-        package.loaded['nvim_config.util'] = {
+        package.loaded['nvim_config.util.hl'] = {
             set_highlight = function() end,
-            nnoremap = function() end,
         }
         
         status.setup()

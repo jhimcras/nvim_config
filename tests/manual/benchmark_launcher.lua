@@ -8,7 +8,7 @@ if source then
     package.loaded['nvim_config.launcher'] = dofile(source .. '/launcher.lua')
 end
 local launcher = require('nvim_config.launcher')
-local util = require('nvim_config.util')
+local util = require('nvim_config.util.job')
 local callbacks
 util.AsyncProcess = function(_, _, _, opts)
     callbacks = opts

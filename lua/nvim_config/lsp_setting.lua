@@ -1,5 +1,7 @@
 local env = require 'nvim_config.env'
-local ut = require 'nvim_config.util'
+local util_cache = require('nvim_config.util.cache')
+local util_hl = require('nvim_config.util.hl')
+local ut = require('nvim_config.util.map')
 local api = vim.api
 
 local M = {}
@@ -104,11 +106,11 @@ function M.setup()
         }
     }
 
-    ut.set_highlight('LspReferenceText', { gui='bold' })
-    ut.set_highlight('LspReferenceRead', { gui='bold' })
-    ut.set_highlight('LspReferenceWrite', { gui='bold' })
+    util_hl.set_highlight('LspReferenceText', { gui='bold' })
+    util_hl.set_highlight('LspReferenceRead', { gui='bold' })
+    util_hl.set_highlight('LspReferenceWrite', { gui='bold' })
 
-    local redrawstatus_throttled = ut.throttle(function() vim.cmd.redrawstatus() end, 80)
+    local redrawstatus_throttled = util_cache.throttle(function() vim.cmd.redrawstatus() end, 80)
     api.nvim_create_autocmd({'LspProgress', 'DiagnosticChanged'}, {
         callback = function(ev)
             if ev.event == 'LspProgress' then

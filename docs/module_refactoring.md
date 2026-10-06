@@ -210,3 +210,41 @@ Startup timing uses the same real init/runtimepath, replacing the Lua test with
 `--startuptime /tmp/<sample>.log -c 'qa!'`; cold processes use a fresh cache,
 warm processes share one cache after one unrecorded warmup. The temporary harness
 is `/tmp/namespace_startup.py`; lazy harness `/tmp/namespace_lazy.sh`.
+
+## Stage 2 utility decomposition (2026-10-07)
+
+`nvim_config.util` is now an `init.lua` facade over buffer, text, map, hl, job,
+cache, and serialize modules. Internal runtime modules import the specific
+helpers they use; public utility functions remain available through the facade.
+`OpenProjectRootTerminal` moved to `nvim_config.prjroot`, and terminal keymaps
+call it there. No utility module requires a feature or infrastructure module.
+The facade exports the same function references rather than copying state;
+process/scratch-buffer mocks and manual benchmarks now patch job/buffer modules.
+
+Validation: full unit suite exit 0 (515 successes, 0 failures, 0 errors across
+47 batches), full integration suite 11/11 passed. The unit log still contains
+the baseline's fake launcher-handle cleanup error and temporary-file E211
+message; neither is a new stage 2 failure. The graph now has 62 modules and
+153 edges, 5 layer violations, and 4 cyclic groups. The launcher cycle is
+reduced to launcher/process_list; util/prjroot are no longer in a cyclic group.
+
+The launcher benchmark retains all output/match assertions: 1k/2k/4k chunks
+have medians 51.252/102.092/222.935 ms. The grep timer benchmark still asserts
+one timer per search and reports zero active timers and zero idle ticks after
+exit, signal, and close. Its CPU readings vary materially between runs, so a
+separate sequential pre-stage/post-stage comparison was also performed using
+the original grep and benchmark files from the stage 1 commit in isolated
+Neovim processes; no code from both versions is loaded into one process.
+
+| grep scenario (20 rounds) | Pre-stage CPU ms | Post-stage CPU ms |
+| --- | ---: | ---: |
+| exit | 77.629 | 76.661 |
+| signal | 73.323 | 82.549 |
+| close | 51.768 | 66.150 |
+
+The original stage 0 readings were 36.311/37.223/31.985 ms, while this run's
+pre-stage readings are also substantially higher. The isolated pair gives
+mixed timing results; it does not establish a sustained performance regression.
+CPU timing remains a noisy diagnostic for this wait-heavy workload; deterministic
+timer cleanup assertions passed in both versions. Additional repeated timing
+comparisons are needed before interpreting the signal/close deltas as a change.

@@ -1,6 +1,6 @@
 local M = {}
 local env = require'nvim_config.env'
-local ut = require'nvim_config.util'
+local ut = require('nvim_config.util.buffer')
 
 M.general_root_markers = {
     '.git',
@@ -102,6 +102,15 @@ function M.GetPrjrootConfig(filepath, root_markers)
     local prj_root = M.GetProjectRoot(filepath, root_markers)
     if prj_root then
         return load_config(prj_root .. '/.prjroot')
+    end
+end
+
+function M.OpenProjectRootTerminal(splitcmd)
+    local pr = M.GetCurrentProjectRoot()
+    if pr then
+        ut.OpenTerminal(pr, splitcmd)
+    else
+        ut.OpenTerminal(ut.GetCurrentBufferDir(), splitcmd)
     end
 end
 

@@ -23,26 +23,26 @@ describe('launcher', function()
 
     it('should set launcher buffer to be non-modifiable in M.Launch', function()
         local mock_buf = vim.api.nvim_create_buf(false, true)
-        local original_new_scratch = require('nvim_config.util').NewScratchBuffer
-        require('nvim_config.util').NewScratchBuffer = function() return mock_buf end
+        local original_new_scratch = require('nvim_config.util.buffer').NewScratchBuffer
+        require('nvim_config.util.buffer').NewScratchBuffer = function() return mock_buf end
         
         -- Mock AsyncProcess to avoid actual process creation
-        local original_async = require('nvim_config.util').AsyncProcess
-        require('nvim_config.util').AsyncProcess = function() return 123, function() end, function() return "running" end, {} end
+        local original_async = require('nvim_config.util.job').AsyncProcess
+        require('nvim_config.util.job').AsyncProcess = function() return 123, function() end, function() return "running" end, {} end
         
         launcher.Launch('ls', {}, '.', nil, nil, nil, 'use', nil, nil, 'test')
         
         local modifiable = vim.api.nvim_get_option_value('modifiable', { buf = mock_buf })
         assert.is_false(modifiable)
         
-        require('nvim_config.util').NewScratchBuffer = original_new_scratch
-        require('nvim_config.util').AsyncProcess = original_async
+        require('nvim_config.util.buffer').NewScratchBuffer = original_new_scratch
+        require('nvim_config.util.job').AsyncProcess = original_async
     end)
 end)
 
 describe('launcher.lua object reuse and project boundaries', function()
     local pr = require('nvim_config.prjroot')
-    local util = require('nvim_config.util')
+    local util = require('nvim_config.util.job')
     local original_root, original_config, original_async, original_confirm
     local root, starts, stops, buffers
 
@@ -145,7 +145,7 @@ describe('launcher.Restore', function()
 end)
 
 describe('launcher.CloseLauncherBuffer', function()
-    local util = require('nvim_config.util')
+    local util = require('nvim_config.util.job')
     local original_async, original_confirm
     local buf, killed
 

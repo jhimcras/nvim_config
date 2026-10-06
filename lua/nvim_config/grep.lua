@@ -1,4 +1,6 @@
-local ut = require 'nvim_config.util'
+local ut = require('nvim_config.util.buffer')
+local util_job = require('nvim_config.util.job')
+local util_map = require('nvim_config.util.map')
 local api = vim.api
 local env = require 'nvim_config.env'
 local M = {}
@@ -278,7 +280,7 @@ function M.asyncGrep(term, word, wndidforll)
         onexit(code, signal)
     end
 
-    local pid, term_func, status, handle = ut.AsyncProcess('rg', args, '.', { onread = onread, onexit = wrapped_onexit })
+    local pid, term_func, status, handle = util_job.AsyncProcess('rg', args, '.', { onread = onread, onexit = wrapped_onexit })
     require'nvim_config.launcher'.RegisterProcess(qf_buf, {
         type = 'grep',
         pid = pid,
@@ -291,7 +293,7 @@ function M.asyncGrep(term, word, wndidforll)
         wndidforll = wndidforll
     })
 
-    ut.nnoremap('<C-c>', function()
+    util_map.nnoremap('<C-c>', function()
         killed = true
         term_func("sigkill")
         vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-c>", true, false, true), "n", false)

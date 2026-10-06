@@ -1,5 +1,5 @@
 local launcher = require('nvim_config.launcher')
-local util = require('nvim_config.util')
+local util = require('nvim_config.util.job')
 
 describe('launcher output batching', function()
     local original_async, callbacks, buf

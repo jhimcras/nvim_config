@@ -1,7 +1,7 @@
 -- Toggle `[ ]`/`[x]` on the cursor line or Visual selection (Obsidian syntax).
 -- A list item without a checkbox gets `[ ]`; non-list lines are untouched.
 
-local ut = require 'nvim_config.util'
+local ut = require('nvim_config.util.map')
 
 local M = {}
 

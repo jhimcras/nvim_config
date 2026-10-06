@@ -1,6 +1,6 @@
 local M = {}
 local pr = require 'nvim_config.prjroot'
-local ut = require 'nvim_config.util'
+local ut = require('nvim_config.util.buffer')
 
 -- Reference: https://github.com/nvim-telescope/telescope.nvim/blob/master/developers.md
 local pickers, finders, conf, actions, action_state, make_entry

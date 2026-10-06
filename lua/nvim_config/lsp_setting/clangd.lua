@@ -1,5 +1,5 @@
 local lsp_setting = require('nvim_config.lsp_setting')
-local ut = require 'nvim_config.util'
+local ut = require('nvim_config.util.map')
 
 local M = {}
 

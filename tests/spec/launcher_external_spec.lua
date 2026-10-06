@@ -1,6 +1,7 @@
 local launcher = require('nvim_config.launcher')
 local pr = require('nvim_config.prjroot')
-local util = require('nvim_config.util')
+local util_buffer = require('nvim_config.util.buffer')
+local util_job = require('nvim_config.util.job')
 local env = require('nvim_config.env')
 
 describe('external launcher spawn', function()
@@ -43,10 +44,10 @@ describe('external launcher spawn', function()
                 cmd = 'echo', mode = 'external', cwd = '/nonexistent-launcher-test-cwd'
             } } }
         end
-        local original_exists = util.IsExist
-        util.IsExist = function() return true end
+        local original_exists = util_buffer.IsExist
+        util_buffer.IsExist = function() return true end
         local ok, err = pcall(launcher.LaunchObject, 'external_test')
-        util.IsExist = original_exists
+        util_buffer.IsExist = original_exists
         assert.is_true(ok, err)
         for _, p in ipairs(launcher.GetRunningProcesses()) do
             assert.is_not.equal('external_test', p.obj)
@@ -60,12 +61,12 @@ describe('external launcher spawn', function()
     it('registers a numeric PID and displays it in ProcessList', function()
         -- Use sh as the selected terminal so this runs without a desktop session.
         vim.fn.executable = function() return 1 end
-        local original_async = util.AsyncProcess
-        util.AsyncProcess = function(_, _, cwd, opts)
+        local original_async = util_job.AsyncProcess
+        util_job.AsyncProcess = function(_, _, cwd, opts)
             return original_async('sh', { '-c', 'sleep 30' }, cwd, opts)
         end
         local ok, err = pcall(launcher.LaunchObject, 'external_test')
-        util.AsyncProcess = original_async
+        util_job.AsyncProcess = original_async
         assert.is_true(ok, err)
         local proc
         for _, p in ipairs(launcher.GetRunningProcesses()) do
