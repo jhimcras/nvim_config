@@ -235,25 +235,6 @@ function M.virtual_indent_anchor_min_col(buf, row, col, base_col, buffer_col)
   return math.max(min_col, base_col + buffer_col - 1 + prefix_width)
 end
 
-function M.virtual_indent_width(buf, row, col)
-  local ok, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, -1, { row, 0 }, { row + 1, 0 }, { details = true })
-  if not ok then return 0 end
-
-  local width = 0
-  for _, mark in ipairs(marks) do
-    local mark_row = mark[2]
-    local mark_col = mark[3]
-    local details = mark[4] or {}
-    if mark_row == row and (mark_col <= col or (col == 0 and mark_col <= 1)) then
-      local virt_width = M.virt_text_width(details.virt_text)
-      if virt_width > 0 and (details.virt_text_pos == 'inline' or details.virt_text_pos == 'overlay' or details.virt_text_win_col ~= nil) then
-        width = width + virt_width
-      end
-    end
-  end
-  return width
-end
-
 function M.image_anchor_extmark_sig(buf, start_row, end_row)
   local ok, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, -1, { start_row, 0 }, { end_row, 0 }, { details = true })
   if not ok then return '' end

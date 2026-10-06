@@ -3,36 +3,6 @@ local ut = require 'nvim_config.util'
 local status_mode = require('nvim_config.status.mode')
 local M = {}
 
-local function GetModeColor(mode)
-    return status_mode.color(mode)
-end
-
-function M.get_current_mode(buftype)
-    return status_mode.current(buftype)
-end
-
-function M.status_update()
-    local color = GetModeColor(M.get_current_mode(vim.bo.buftype))
-    ut.set_highlight('StatusLineMode', {guibg = color.bg[1], guifg = color.fg[1]})
-    ut.set_highlight('StatusLineNormal', {guibg = color.bg[2], guifg = color.fg[2]})
-    return ''
-end
-
-local function terminalinfo()
-    local buf_name = ut.GetCurrentBufferDir()
-    local term_cmd = string.sub(buf_name, vim.fn.match(buf_name, [[\v\:\zs[^:]+$]])+1)
-    return '   TERM │ ' .. (term_cmd or '')
-end
-
-local function helpinfo()
-    local buf_name = ut.GetCurrentBufferDir()
-    local help_file_regex = [[\v\/\zs[^/]+\ze\.txt$]]
-    local s = vim.fn.match(buf_name, help_file_regex)+1
-    local e = vim.fn.matchend(buf_name, help_file_regex)
-    local help_file_name = string.sub(buf_name, s, e)
-    return 'HELP │ ' .. (help_file_name or '')
-end
-
 local spinner_frames = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
 
 local function launcher_status_icon(bufnr, winid)
@@ -76,23 +46,6 @@ local function launcher_command(bufnr)
     local b = bufnr and vim.b[bufnr] or vim.b
     return b.lc_command or b.lc_object or '?'
 end
-
-local function launcher_info(bufnr, winid)
-    local icon = launcher_status_icon(bufnr, winid)
-    local icon_str = (icon and icon ~= '') and (icon .. ' ') or ''
-    return string.format('%s%s %s', icon_str, launcher_folder_compact(bufnr), launcher_command(bufnr))
-end
-
-local function quickfix()
-    return vim.w.quickfix_title
-end
-
-local types = {
-    { bt = 'terminal', info = terminalinfo },
-    { bt = 'help', info = helpinfo },
-    { ft = 'launcher', info = launcher_info },
-    { bt = 'quickfix', info = quickfix },
-}
 
 function M.lsp(bufnr)
     bufnr = bufnr or 0
@@ -140,10 +93,6 @@ function M.lsp(bufnr)
         end
     end
     return table.concat(parts, ' ')
-end
-
-function M.session()
-    return vim.fn.fnamemodify(vim.v.this_session,':p:t')
 end
 
 function M.titlecontext()
@@ -214,125 +163,6 @@ local function branch_or_commit(dir)
         return branch
     end
     return commit and commit:sub(1, 10)
-end
-
-function M.leftside()
-    local extends = vim.list_extend
-    for _, t in ipairs(types) do
-        if (t.bt and vim.bo.buftype == t.bt) or (t.ft and vim.bo.filetype == t.ft) then
-            return t.info()
-        end
-    end
-    local pr = require'nvim_config.prjroot'.GetCurrentProjectRoot()
-    local gb = nil
-    local fi = {}
-    if pr then
-        if pr ~= '' then
-            gb = branch_or_commit(pr)
-            if gb and gb ~= '' then
-                extends(fi, { ' ', gb, ' │ ' })
-            end
-        end
-        if vim.fn.fnamemodify(pr, ':t') ~= gb then
-            extends(fi, { '🖿 ', vim.fn.fnamemodify(pr, ':t'), ' │ ' })
-        end
-    end
-    if vim.bo.fileencoding ~= 'utf-8' and vim.bo.fileencoding ~= '' then
-        extends(fi, { vim.bo.fileencoding, ' │ ' })
-    end
-    if vim.bo.bomb then
-        extends(fi, {'BOM │ '})
-    end
-    local buf_name = vim.api.nvim_buf_get_name(0)
-    if env.os.win then
-        buf_name = buf_name:gsub("/", "\\")
-    end
-    if pr then
-        extends(fi, { '🗎', '.' .. buf_name:sub(pr:len()+1) })
-    else
-        extends(fi, (buf_name ~= '') and { '🗎', buf_name } or { 'No Name' } )
-    end
-    extends(fi, {
-        vim.bo.modified and ' +' or '',
-        vim.bo.readonly and ' ' or '',
-        not vim.bo.modifiable and ' -'  or '',
-    })
-    local cur_func = M.current_function()
-    if cur_func and cur_func ~= '' then
-        extends(fi, {' │ ℱ ', cur_func})
-    end
-    return table.concat(fi)
-end
-
-if env.os.win then
-    local ffi = require("ffi")
-
-    ffi.cdef[[
-        void* GetForegroundWindow(void);
-        void* GetParent(void* hWnd);
-        unsigned int GetWindowThreadProcessId(void* hWnd, unsigned int* lpdwProcessId);
-        void* ImmGetContext(void* hWnd);
-        int ImmGetOpenStatus(void* hIMC);
-    ]]
-
-    local user32 = ffi.load("user32")
-    local imm32 = ffi.load("imm32")
-
-    local function get_hwnd()
-        local fg = user32.GetForegroundWindow()
-        local parent = user32.GetParent(fg)
-        if parent ~= nil then
-            return parent -- use parent if exists
-        else
-            return fg
-        end
-    end
-
-    function M.GetIMEStatus()
-        local hwnd = get_hwnd()
-        if hwnd == nil then return "?hwnd" end
-
-        local himc = imm32.ImmGetContext(hwnd)
-        if himc == nil then return "?himc" end
-
-        local status = imm32.ImmGetOpenStatus(himc)
-        if status == 1 then
-            return "한"  -- Hangul mode
-        else
-            return "A"   -- English mode
-        end
-    end
-else
-    function M.GetIMEStatus() return "" end
-end
-
-function M.search_result()
-    if vim.v.hlsearch == 0 then
-        return ''
-    end
-
-    local ok, searchcount = pcall(vim.fn.searchcount, { maxcount = 99999, timeout = 100 })
-    if not ok or not searchcount.total or searchcount.total == 0 then
-        return ''
-    end
-
-    return string.format('  %d/%d', searchcount.current, searchcount.total)
-end
-
-function M.ActiveWin()
-    local sl = {
-        "%{v:lua.require'nvim_config.status'.status_update()}",
-        "%(%#StatusLineNormal# %{v:lua.require'nvim_config.status'.leftside()} %)",
-        "%=",
-        "%{v:lua.require'nvim_config.status'.lsp()}",
-        "%(%#StatusLineMode# %{v:lua.require'nvim_config.status'.search_result()}%)",
-        "%(%#StatusLineMode# %p%% %v %)",
-    }
-    return table.concat(sl)
-end
-
-function M.InactiveWin()
-    return "%(%#StatusLineInactive# %{v:lua.require'nvim_config.status'.leftside()}%)"
 end
 
 local function project_or_git_branch_name(bufnr, winid)
@@ -714,18 +544,6 @@ local function terminal_statusline(activation, mode)
     return {' ', hl = hl(), sep = '',}
 end
 
-
-local function oil_statusline(activation, mode)
-    local active_only = function(st) return activation and st or '' end
-    local hl = function(num)
-        return 'StatuslineGeneral' .. (activation and ('Active_%d_%s'):format(num, mode) or 'Inactive')
-    end
-    return {
-        { project_or_git_branch_name, filename_and_status, hl = hl(1), sep = ' │ ', pad = ' ' },
-        gap,
-        active_only { search_count, percentage_loc, hl = hl(2), sep = ' ', pad = ' ' },
-    }
-end
 
 local function launcher_statusline(activation, mode, winid)
     local active_only = function(st) return activation and st or '' end

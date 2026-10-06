@@ -4,12 +4,6 @@ local api = vim.api
 
 local M = {}
 
-function M.has_lsp_attached(bufnr)
-    bufnr = bufnr or vim.api.nvim_get_current_buf()
-    local clients = vim.lsp.get_clients{ bufnr = bufnr }
-    return next(clients) ~= nil
-end
-
 local orig_util_open_floating_preview = vim.lsp.util.open_floating_preview
 local fence_conceal_ns = api.nvim_create_namespace('lsp_hover_fence_conceal')
 function vim.lsp.util.open_floating_preview(contents, syntax, opts, ...)

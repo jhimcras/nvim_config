@@ -261,43 +261,6 @@ function M.AsyncProcess(cmd, args, cwd, ev_or_opts, read_func, end_func)
     return pid, terminate_function, get_status, handle
 end
 
-function M.SimpleAsyncProcess(cmd, args, on_completed, cwd, ev)
-    local stdout = vim.uv.new_pipe(false)
-    local result = {}
-    local handle
-    handle = vim.uv.spawn(
-        cmd,
-        { args = args, stdio = { nil, stdout, nil }, cwd = cwd, env = ev, },
-        vim.schedule_wrap(function()
-            stdout:read_stop()
-            stdout:close()
-            if handle and not handle:is_closing() then
-                handle:close()
-            end
-            if on_completed then
-                on_completed(result)
-            end
-        end))
-
-    local remain = ''
-    vim.uv.read_start(stdout, function(err, data)
-        if data then
-            data = data:gsub('\r\n', '\n')
-            local vals = vim.split(data, '\n')
-            vals[1] = remain .. vals[1]
-            if data:sub(-1) ~= '\n' then
-                remain = table.remove(vals)
-            else
-                remain = ''
-            end
-            for _, d in ipairs(vals) do
-                result[#result+1] = d
-            end
-        end
-    end)
-end
-
-
 function M.IsExist(path)
     return vim.fn.filereadable(path) ~= 0 or vim.fn.isdirectory(path) ~= 0
 end
@@ -311,89 +274,12 @@ function M.OpenAllHiddenBuffers()
     end
 end
 
--- Hidden buffer call (from https://github.com/arithran/vim-delete-hidden-buffers)
-function M.DeleteHiddenBuffers()
---[[
-function! DeleteHiddenBuffers()
-    let tpbl=[]
-    call map(range(1, tabpagenr('$')), 'extend(tpbl, tabpagebuflist(v:val))')
-    for buf in filter(range(1, bufnr('$')), 'bufexists(v:val) && index(tpbl, v:val)==-1')
-        silent execute 'bwipeout' buf
-    endfor
-endfunction
-command! DeleteHiddenBuffers call DeleteHiddenBuffers()
-]]--
-end
-
 function M.StripTrailingWhitespace()
     local prevPosition = vim.fn.getpos('.')
     local prevSearch = vim.fn.getreg('/')
     vim.cmd('%s/\\s\\+$//e')
     vim.fn.setreg('/', prevSearch)
     vim.fn.setpos('.', prevPosition)
-end
-
-local function IsCurrentFileLuaPlugin()
-    local current_file_path = M.GetCurrentBufferDir():gsub(env.dir_sep, '/')
-    local lua_plugin_folder = table.concat{vim.fn.fnamemodify(vim.env.MYVIMRC, ':p:h'), env.dir_sep, 'lua'}:gsub(env.dir_sep, '/')
-    return string.sub(current_file_path, 1, #lua_plugin_folder) == lua_plugin_folder
-end
-
-
-function M.ResetPlugin(plugname)
-    if _G.package.loaded[plugname] then
-        _G.package.loaded[plugname] = nil
-    end
-end
-
-
-function M.AutoResetPlugin()
-    if IsCurrentFileLuaPlugin() then
-        local current_file_path = M.GetCurrentBufferDir():gsub(env.dir_sep, '/')
-        local file_name = vim.fn.fnamemodify(current_file_path, ':t:r')
-        local folder = vim.fn.fnamemodify(current_file_path, ':h'):gsub(env.dir_sep, '/')
-        local lua_plugin_folder = table.concat{vim.fn.fnamemodify(vim.env.MYVIMRC, ':p:h'), env.dir_sep, 'lua'}:gsub(env.dir_sep, '/')
-        local path_from_lua = folder:sub(#lua_plugin_folder+1)
-        local prefix = path_from_lua:gsub('/', '.')
-        if prefix ~= '' then prefix = prefix .. '.' end
-        M.ResetPlugin(prefix .. file_name)
-    end
-end
-
-
-function M.LaunchCurrentLuaFile()
-    local lua_exe = ''
-    if env.os.win == true then
-        lua_exe = 'luajit' -- TODO: findout actual lua executable file
-    elseif env.os.unix == true then
-        lua_exe = 'lua'
-    end
-    if vim.fn.executable(lua_exe) then
-        require'nvim_config.launcher'.Launch(lua_exe, {vim.fn.expand('%')}, vim.fn.fnamemodify('%', ':p:h'), 'vertical')
-    end
-end
-
-
-function M.CreateMarkdownNote()
-    vim.cmd.vnew()
-    vim.api.nvim_get_current_buf()
-    vim.bo.filetype = 'markdown'
-end
-
-
--- Diff the buffer against the saved file.
-function M.DiffOrig()
-    vim.cmd('vert new | set bt=nofile | r ++edit # | 0d_ | diffthis | wincmd p | diffthis')
-end
-
--- Syntax highlight stack under the cursor (not treesitter).
-function M.SynStack()
-    local syn_stack = ''
-    local syn = vim.fn.synstack(vim.fn.line('.'), vim.fn.col('.'))
-    for _, s in ipairs(syn) do
-        syn_stack = (syn_stack~='' and (syn_stack .. ' > ') or '') .. vim.fn.synIDattr(vim.v.val, 'name')
-    end
-    vim.notify(syn_stack, vim.log.levels.INFO)
 end
 
 -- Shift `rgb` ('#RRGGBB' or packed number) toward white (pct > 0) or black (pct < 0).
@@ -478,11 +364,6 @@ for _, m in ipairs(modes) do
     M[m .. 'noremap'] = function(lh, rh, opts) map_general(m, lh, rh, vim.tbl_extend('force', opts or {}, {noremap=true, silent=true})) end
 end
 
-function Dump(...)
-    local objects = vim.tbl_map(vim.inspect, {...})
-    print(unpack(objects))
-end
-
 function M.wipeout_hidden_buffers()
     local visible_buffers = {}
     for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -550,17 +431,6 @@ function M.get_window_context(winid)
         bufname = bufname,
         mtime   = bufname ~= '' and vim.fn.getftime(bufname) or nil,
     }
-end
-
-
-function M.close_all_qf_and_loc_windows()
-    for _, winid in ipairs(vim.api.nvim_list_wins()) do
-        local buf = vim.api.nvim_win_get_buf(winid)
-        local bt = vim.bo[buf].buftype
-        if bt == 'quickfix' then
-            vim.api.nvim_win_close(winid, true)
-        end
-    end
 end
 
 
