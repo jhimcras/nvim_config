@@ -17,7 +17,7 @@ require'nvim_config.file_info'.setup()
 require'nvim_config.smart_cursorline'.setup()
 require'nvim_config.read_mode'.setup()
 require'nvim_config.reopen'.setup()
-require'nvim_config.lsp_setting'.setup()
+require'nvim_config.lsp'.setup()
 require'nvim_config.rendermark'.setup{
     max_width = 120,
     plantuml = {

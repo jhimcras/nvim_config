@@ -6,8 +6,8 @@ local function feedkey(key, mode)
 end
 
 function M.setup()
-    cmp.register_source('markdown_link', require('nvim_config.rendermark.link_complete').new())
-    cmp.register_source('markdown_image', require('nvim_config.rendermark.image_complete').new())
+    cmp.register_source('markdown_link', require('nvim_config.rendermark.complete.link').new())
+    cmp.register_source('markdown_image', require('nvim_config.rendermark.complete.image').new())
 
     cmp.setup {
         mapping = cmp.mapping.preset.insert {

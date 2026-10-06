@@ -1,9 +1,9 @@
-local lsp_setting = require('nvim_config.lsp_setting')
+local attach = require('nvim_config.lsp.attach')
 local env = require 'nvim_config.env'
 
 local M = {}
 
-local on_attach_lua = lsp_setting.make_on_attach(nil)
+local on_attach_lua = attach.make_on_attach(nil)
 
 function M.setup()
     local lua_lsp_cmd

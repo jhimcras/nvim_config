@@ -1,4 +1,4 @@
-local actions = require('nvim_config.lsp_setting.markdown_actions')
+local actions = require('nvim_config.rendermark.actions')
 
 describe('Markdown file creation actions', function()
     local root, buf, client, response, request_error, notifications, calls, notify

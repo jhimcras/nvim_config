@@ -338,3 +338,29 @@ run-to-run variation documented above. Raw outputs:
 ```text
 {"lines":5000,"iterations":50,"nvim":{"api_compatible":0,"build":"v0.12.4","minor":12,"patch":4,"major":0,"api_level":14,"api_prerelease":false},"rows":[{"redraw_ms":958.534639,"drained_ms":1013.242645,"width":24,"calls":{"search":51,"entry":204,"lsp":50},"active":"general"},{"redraw_ms":39.753378,"drained_ms":97.00398199999999,"width":23,"calls":{"search":52,"entry":208,"lsp":1},"active":"quickfix"},{"redraw_ms":904.646658,"drained_ms":960.845681,"width":119,"calls":{"search":51,"entry":204,"lsp":50},"active":"general"},{"redraw_ms":27.096964,"drained_ms":82.11129,"width":120,"calls":{"search":50,"entry":200,"lsp":0},"active":"quickfix"}]}
 ```
+
+## Stage 6 status and LSP (2026-10-07)
+
+Status is now an entry/setup facade, component/render helpers and layouts.
+One render context/cache survives every shrink pass; the public API table travels
+with that context so existing `status.lsp`/`current_function` overrides remain
+visible without a component-to-parent dependency. Tree-sitter symbol lookup
+lives in the L2 symbol module and the LSP summary in lsp/status. FileInfo now
+reads those feature helpers directly, removing its upward status dependency.
+
+LSP assembly now lives in lsp/init, common attachment in attach, float decoration
+in float, progress state in progress and server settings under servers. Requiring
+LSP leaves the global floating-preview handler unchanged. Explicit setup installs
+one wrapper; repeated setup retains that wrapper. Diagnostic symbols and progress
+state aliases remain public, with one progress-state table. Markdown actions and
+rename helpers live in rendermark; completion sources under rendermark/complete.
+
+Verification: full unit suite exits 0 (526 success lines), all 11 integrations
+pass, including actual FileInfo and statusline rendering. Float load/setup regression
+verifies no load-time replacement, idempotent setup, one underlying preview call,
+and unchanged border options. The status benchmark retains exactly the baseline
+entry/search/LSP counts in all four layouts; general redraw timings are 769/760 ms
+versus baseline 816/820 ms, with no improvement claim. Local logs:
+`/tmp/stage6-unit.log`, `/tmp/stage6-integration.log`, `/tmp/stage6-status-benchmark.log`.
+The graph now has one upward dependency and two cyclic groups, scheduled for
+stages 7 and 8. Independent setup order and plugin lazy callbacks are preserved.

@@ -1,8 +1,6 @@
 local env = require 'nvim_config.env'
 local util_buffer = require('nvim_config.util.buffer')
 local ut = require('nvim_config.util.cache')
-local status_mode = require('nvim_config.status.mode')
-local M = {}
 
 local spinner_frames = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
 
@@ -46,116 +44,6 @@ end
 local function launcher_command(bufnr)
     local b = bufnr and vim.b[bufnr] or vim.b
     return b.lc_command or b.lc_object or '?'
-end
-
-function M.lsp(bufnr)
-    bufnr = bufnr or 0
-    local clients = vim.lsp.get_clients{bufnr = bufnr}
-    if next(clients) == nil then
-        return ''
-    end
-    local ls = require 'nvim_config.lsp_setting'
-    local S = vim.diagnostic.severity
-    local counts = vim.diagnostic.count(bufnr)
-    local parts = {}
-    for _, seg in ipairs({
-        { counts[S.ERROR], ls.SymError },
-        { counts[S.WARN],  ls.SymWarn  },
-        { counts[S.INFO],  ls.SymInfo  },
-        { counts[S.HINT],  ls.SymHint  },
-    }) do
-        if seg[1] and seg[1] > 0 then
-            parts[#parts + 1] = seg[2] .. seg[1]
-        end
-    end
-    -- vim.lsp.status() concatenates every buffered report; keep only the newest.
-    local prog = ''
-    for _, c in ipairs(clients) do
-        for progress in c.progress do
-            local value = progress.value
-            if type(value) == 'table' and value.kind then
-                prog = value.message and (value.title .. ': ' .. value.message)
-                    or value.title
-            end
-        end
-    end
-    prog = vim.trim(prog)
-    if prog ~= '' then
-        parts[#parts + 1] = prog
-    else
-        local any_running, any_done = false, false
-        for _, c in ipairs(clients) do
-            local state = ls.progress_state[c.id]
-            if state == 'running' then any_running = true end
-            if state == 'done' then any_done = true end
-        end
-        if any_done and not any_running and #parts == 0 then
-            parts[#parts + 1] = '✓'
-        end
-    end
-    return table.concat(parts, ' ')
-end
-
-function M.titlecontext()
-    local session = vim.fn.fnamemodify(vim.v.this_session, ':t:r')
-    if session ~= '' then
-        return session
-    end
-    return vim.fn.fnamemodify(vim.fn.getcwd(), ':~')
-end
-
-
-function M.current_function(bufnr, winid)
-    local ok, parser = pcall(vim.treesitter.get_parser)
-    if ok and parser then
-        parser:parse()
-        local node = vim.treesitter.get_node()
-        while node do
-            local ntype = node:type()
-
-            if ntype == "function_definition" or ntype == "function_declaration" then
-                -- Python / Lua: name is the function name
-                local name_node = node:field("name")[1]
-                if name_node then
-                    local name_type = name_node:type()
-                    if name_type == "identifier" then
-                        return vim.treesitter.get_node_text(name_node, 0)
-                    elseif name_type == "dot_index_expression" then
-                        local table = name_node:field("table")[1]
-                        local field = name_node:field("field")[1]
-                        if table and field then
-                            return vim.treesitter.get_node_text(table, 0)
-                                .. "." .. vim.treesitter.get_node_text(field, 0)
-                        end
-                    end
-                end
-
-                -- C / C++: name is in the declarator
-                local decl = node:field("declarator")[1]
-                if decl then
-                    local inner = decl:field("declarator")[1]
-                    if inner then
-                        local itype = inner:type()
-
-                        if itype == "qualified_identifier" then
-                            local scope = inner:field("scope")[1]
-                            local name = inner:field("name")[1]
-                            if scope and name then
-                                return vim.treesitter.get_node_text(scope, 0)
-                                    .. "::" .. vim.treesitter.get_node_text(name, 0)
-                            end
-                        elseif itype == "field_identifier" then
-                            return vim.treesitter.get_node_text(inner, 0)
-                        end
-                    end
-                end
-            end
-
-            node = node:parent()
-        end
-    end
-
-    return ""
 end
 
 local function branch_or_commit(dir)
@@ -248,16 +136,16 @@ local function filename_and_status_compact(bufnr, winid)
 end
 
 
-local function current_function(bufnr, winid)
-    local curfunc =  M.current_function()
+local function current_function(bufnr, winid, api)
+    local curfunc = api.current_function()
     if curfunc and curfunc ~= '' then
         return 'ℱ ' .. curfunc
     end
 end
 
 
-local function lsp_status(bufnr, winid)
-    local s = M.lsp(bufnr)
+local function lsp_status(bufnr, winid, api)
+    local s = api.lsp(bufnr)
     if s ~= '' then return s end
 end
 
@@ -292,11 +180,6 @@ local function measure_sl_text(s)
     s = s:gsub('%%%%', '%%')      -- %% -> literal %
     return vim.fn.strdisplaywidth(s)
 end
-
-local percentage_loc = '%p%%'
-local column_loc = 'ﮇ %v'
-local gap = '%<%='
-
 
 local function fugitive_info(bufnr, winid)
     local info = require'nvim_config.git'.get_fugitive_info(bufnr)
@@ -392,7 +275,7 @@ local function make_statusline_text(bufnr, winid, components, sep, ctx)
         if ctx then
             local cached = ctx.cache[components]
             if not cached then
-                cached = { value = components(bufnr, winid), text = {} }
+                cached = { value = components(bufnr, winid, ctx and ctx.api), text = {} }
                 ctx.cache[components] = cached
             end
             if cached.text[sep] == nil then
@@ -400,7 +283,7 @@ local function make_statusline_text(bufnr, winid, components, sep, ctx)
             end
             return cached.text[sep]
         end
-        local res = components(bufnr, winid)
+        local res = components(bufnr, winid, ctx and ctx.api)
         if res == nil then return '' end
         return make_statusline_text(bufnr, winid, res, sep, ctx)
     elseif type(components) == 'table' and components.__sh then
@@ -451,191 +334,26 @@ local filename_and_status_compact_memoized = ut.memoize_ttl(filename_and_status_
 local encoding_memoized                    = ut.memoize_ttl(encoding,                     {ttl_ms=2000})
 local current_function_memoized            = ut.memoize_ttl(current_function,             {ttl_ms=200})
 
-local function general_statusline(activation, mode, winid)
-    local hl = function(num)
-        return 'StatuslineGeneral' .. (activation and ('Active_%d_%s'):format(num, mode) or 'Inactive')
-    end
-    return {
-        {
-            sh(proj_or_git_branch_memoized, 9),
-            sh(filename_and_status_memoized, 1, filename_and_status_compact_memoized),
-            activation and sh(lsp_status, 2) or false,
-            hl = hl(1), sep = ' │ ', pad = ' '
-        },
-        gap,
-        {
-            activation and sh(current_function_memoized, 3) or false,
-            sh(encoding_memoized, 4),
-            hl = hl(1), sep = ' │ ', pad = ' '
-        },
-        activation and {
-            sh(search_count, 5),
-            sh(percentage_loc, 10),
-            sh(column_loc, 6),
-            hl = hl(2), sep = ' ', pad = ' '
-        } or false,
-        loclist_tag,
-    }
-end
-
-
-local function quickfix_statusline(activation, mode, winid)
-    local is_search = false
-    if winid and winid ~= 0 then
-        local filewinid = vim.fn.getloclist(winid, { filewinid = 0 }).filewinid
-        if filewinid and filewinid ~= 0 then
-            local title = vim.fn.getloclist(filewinid, { title = 0 }).title
-            is_search = title ~= nil and title:sub(1, 8) == 'Search: '
-        end
-    end
-    local hl1 = is_search and 'StatuslineSearch_1' or 'StatuslineGeneralActive_1_n'
-    local hl2 = is_search and 'StatuslineSearch_2' or 'StatuslineGeneralActive_2_n'
-    return {
-        { 'ﴴ ', sh(quickfix_search_query, 1, quickfix_search_query_compact), hl = hl1, sep = ' ', pad = ' ' },
-        gap,
-        { grep_status_icon, activation and sh(search_count, 2) or false, sh('%l/%L', 3, '%l'), hl = hl2, sep = ' ', pad = ' ' },
-        loclist_tag,
-    }
-end
-
-local function help_statusline(activation)
-    local active_only = function(st) return activation and st or '' end
-    return {
-        {' ', filename_only, hl = 'StatuslineGeneralActive_1_n', pad = ' ', sep = ' ' },
-        gap,
-        active_only{ sh(search_count, 1), sh(percentage_loc, 2), hl = 'StatuslineGeneralActive_2_n', pad = ' ', sep = ' ' },
-     }
-end
-
-local function man_title(bufnr, winid)
-    local name = vim.fn.bufname(bufnr)
-    return name:gsub('^man://', '')
-end
-
-local function checkhealth_statusline(activation)
-    return {
-        { 'Checkhealth', hl = 'StatuslineGeneralActive_1_n', pad = ' ' },
-        gap,
-    }
-end
-
-local function man_statusline(activation)
-    local active_only = function(st) return activation and st or '' end
-    return {
-        { 'ManPage', man_title, hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
-        gap,
-        active_only{ sh(search_count, 1), sh(percentage_loc, 2), sh(column_loc, 3),
-                     hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
-    }
-end
-
-local function fugitive_statusline(activation)
-    local active_only = function(st) return activation and st or '' end
-    return {
-        { ' ', sh(fugitive_info, 2, fugitive_info_compact), hl = 'StatuslineGeneralActive_1_n', sep = ' ', pad = ' ' },
-        gap,
-        active_only{ sh(percentage_loc, 1), hl = 'StatuslineGeneralActive_2_n', sep = ' ', pad = ' ' },
-    }
-end
-
-local function terminal_statusline(activation, mode)
-    local hl = function()
-        return 'StatuslineTerm' .. (activation and ('Active_1_%s'):format(mode) or 'Inactive')
-    end
-    return {' ', hl = hl(), sep = '',}
-end
-
-
-local function launcher_statusline(activation, mode, winid)
-    local active_only = function(st) return activation and st or '' end
-    local hl = function(num)
-        return 'StatuslineGeneral' .. (activation and ('Active_%d_%s'):format(num, mode) or 'Inactive')
-    end
-    return {
-        {
-            launcher_status_icon,
-            sh(launcher_folder, 1, launcher_folder_compact),
-            '│',
-            sh(launcher_command, 2),
-            hl = hl(1), sep = ' ', pad = ' '
-        },
-        gap,
-        active_only {
-            search_count,
-            sh('%l/%L', 10, '%l'),
-            hl = hl(2), sep = ' ', pad = ' '
-        },
-    }
-end
-
--- No function calls in 'statusline': component events update it, then redraw.
-local statusline_setup = {
-    components = {
-        general = general_statusline,
-        quickfix = quickfix_statusline,
-        help = help_statusline,
-        fugitive = fugitive_statusline,
-        terminal = terminal_statusline,
-        launcher = launcher_statusline,
-        checkhealth = checkhealth_statusline,
-        health      = checkhealth_statusline,
-        man         = man_statusline,
-    },
+return {
+    launcher_status_icon = launcher_status_icon,
+    grep_status_icon = grep_status_icon,
+    launcher_folder = launcher_folder,
+    launcher_folder_compact = launcher_folder_compact,
+    launcher_command = launcher_command,
+    filename_only = filename_only,
+    lsp_status = lsp_status,
+    search_count = search_count,
+    sh = sh,
+    measure_sl_text = measure_sl_text,
+    fugitive_info = fugitive_info,
+    fugitive_info_compact = fugitive_info_compact,
+    quickfix_search_query = quickfix_search_query,
+    quickfix_search_query_compact = quickfix_search_query_compact,
+    loclist_tag = loclist_tag,
+    make_statusline_text = make_statusline_text,
+    proj_or_git_branch_memoized = proj_or_git_branch_memoized,
+    filename_and_status_memoized = filename_and_status_memoized,
+    filename_and_status_compact_memoized = filename_and_status_compact_memoized,
+    encoding_memoized = encoding_memoized,
+    current_function_memoized = current_function_memoized,
 }
-
-local function get_entry_func(buftype, filetype, protocol)
-    local components = statusline_setup.components
-
-    if components[protocol] then
-        return components[protocol]
-    elseif components[buftype] then
-        return components[buftype]
-    elseif components[filetype] then
-        return components[filetype]
-    end
-
-    return components.general
-end
-
-function M.statusline_entry()
-    local winid = vim.g.statusline_winid or 0
-    local bufnr = vim.api.nvim_win_get_buf(winid)
-    local protocol = util_buffer.GetBufferProtocol(bufnr)
-    local w = vim.api.nvim_win_get_width(winid)
-    local activation = winid == vim.api.nvim_get_current_win()
-    local entryfunc = get_entry_func(vim.bo[bufnr].buftype, vim.bo[bufnr].filetype, protocol)
-    local is_read = require('nvim_config.read_mode').is_active(winid)
-    local mode = is_read and 'read' or vim.fn.mode()
-    local tree = entryfunc(activation, mode, winid)
-
-    local excluded = {}
-    -- Cache full/compact text for this render only, including empty results.
-    local ctx = { excluded = excluded, candidates = {}, cache = {} }
-    local result = make_statusline_text(bufnr, winid, tree, '', ctx)
-    if measure_sl_text(result) > w then
-        table.sort(ctx.candidates, function(a, b)
-            if a.priority ~= b.priority then return a.priority < b.priority end
-            return a.order < b.order
-        end)
-        for _, c in ipairs(ctx.candidates) do
-            if not excluded[c.fn] then
-                excluded[c.fn] = true
-                result = make_statusline_text(bufnr, winid, tree, '', ctx)
-                if measure_sl_text(result) <= w then break end
-            end
-        end
-    end
-
-    return result
-end
-
-function M.setup()
-    -- Skip in tests (headless UI errors).
-    if vim.g.is_testing then return end
-
-    vim.o.laststatus = 2
-    vim.o.statusline = "%!v:lua.require'nvim_config.status'.statusline_entry()"
-
-end
-
-return M

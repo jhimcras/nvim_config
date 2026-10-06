@@ -1,4 +1,4 @@
-local actions = require('nvim_config.lsp_setting.markdown_actions')
+local actions = require('nvim_config.rendermark.actions')
 
 describe('Markdown linked file rename', function()
     local root, client, previous_buf, buffers, select, input

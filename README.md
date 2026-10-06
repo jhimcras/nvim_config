@@ -32,7 +32,7 @@ remove them once that configuration uses the new paths.
 | `lua/nvim_config/launcher/process_list.lua` | List/inspect/kill running launcher jobs |
 | `lua/nvim_config/prjroot.lua` | Project root detection (`.git`, `.prjroot`, etc.) — see [docs/prjroot.md](docs/prjroot.md) |
 | `lua/nvim_config/session.lua` | Session management per project root |
-| `lua/nvim_config/status.lua` | Custom statusline with LSP, git branch/commit, diagnostics (`lua/nvim_config/status/mode.lua`: mode indicator) |
+| `lua/nvim_config/status/` | Custom statusline with LSP, git branch/commit, diagnostics (`lua/nvim_config/status/mode.lua`: mode indicator) |
 | `lua/nvim_config/tabline.lua` | Custom tabline |
 | `lua/nvim_config/instance.lua` | Spawn a new instance of the host — the GUI parent (via `--embed`) or a TUI (`:NewInstance [file]`, `:NewInstance!` to diagnose host detection) |
 | `lua/nvim_config/instance_move.lua` | Move a file/Oil buffer or tab to a new or running Nvim instance (`:MoveBufferToInstance`, `:MoveTabToInstance`) |
@@ -41,7 +41,7 @@ remove them once that configuration uses the new paths.
 | `lua/nvim_config/git.lua` | Git branch and commit info with TTL caching |
 | `lua/nvim_config/grep.lua` | RipGrep integration |
 | `lua/nvim_config/msbuild.lua` | MSBuild integration |
-| `lua/nvim_config/lsp_setting.lua` | LSP client configuration (`lua/nvim_config/lsp_setting/`: per-server tweaks — clangd, lua_ls, python, markdown; Markdown code action to create missing link targets) — see [docs/clangd.md](docs/clangd.md) for clangd indexing load |
+| `lua/nvim_config/lsp/` | LSP client configuration (`lua/nvim_config/lsp/servers/`: per-server tweaks — clangd, lua_ls, python, markdown; Markdown code action to create missing link targets) — see [docs/clangd.md](docs/clangd.md) for clangd indexing load |
 | `lua/nvim_config/read_mode.lua` | Distraction-free READ mode, per window, any filetype |
 | `lua/nvim_config/smart_cursorline.lua` | Cursorline shown only where useful (active window, normal mode) |
 | `lua/nvim_config/file_info.lua` | File size/info display (`<C-g>`, `:FileInfo`) |

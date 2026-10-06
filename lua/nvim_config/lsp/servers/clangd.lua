@@ -1,4 +1,4 @@
-local lsp_setting = require('nvim_config.lsp_setting')
+local attach = require('nvim_config.lsp.attach')
 local ut = require('nvim_config.util.map')
 
 local M = {}
@@ -23,7 +23,7 @@ local function switch_source_header(bufnr)
     end, bufnr)
 end
 
-local on_attach_clangd = lsp_setting.make_on_attach(function(client, bufnr)
+local on_attach_clangd = attach.make_on_attach(function(client, bufnr)
     vim.api.nvim_buf_create_user_command(0, 'ClangdSwitchSourceHeader', function() switch_source_header(0) end, { desc = 'Switch between source/header' })
     ut.nnoremap('<m-o>', '<cmd>ClangdSwitchSourceHeader<cr>', { 'buffer' })
     ut.nnoremap('<m-O>', '<cmd>vertical split<cr><cmd>ClangdSwitchSourceHeader<cr>', { 'buffer' })

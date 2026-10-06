@@ -1,4 +1,4 @@
-local lsp_setting = require('nvim_config.lsp_setting')
+local lsp_setting = require('nvim_config.lsp')
 
 describe('lsp_setting', function()
     it('should have a setup function', function()
@@ -8,27 +8,35 @@ describe('lsp_setting', function()
     it('should have basic diagnostic symbols', function()
         assert.is_string(lsp_setting.SymError)
         assert.is_string(lsp_setting.SymWarn)
+        assert.are.equal(require('nvim_config.lsp.progress').progress_state, lsp_setting.progress_state)
     end)
 
-    it('does not inject a border into floating preview options', function()
-        local original_open_floating_preview = vim.lsp.util.open_floating_preview
-        local original_lsp_setting = package.loaded['nvim_config.lsp_setting']
-        local captured_opts
-
-        vim.lsp.util.open_floating_preview = function(_, _, opts)
+    it('loads without patching floats and installs one wrapper during setup', function()
+        local original_preview = vim.lsp.util.open_floating_preview
+        local original_lsp = package.loaded['nvim_config.lsp']
+        local captured_opts, calls = nil, 0
+        local preview = function(_, _, opts)
+            calls = calls + 1
             captured_opts = opts
             return nil, nil
         end
-        package.loaded['nvim_config.lsp_setting'] = nil
-        require('nvim_config.lsp_setting')
+        vim.lsp.util.open_floating_preview = preview
+        package.loaded['nvim_config.lsp'] = nil
+        require('nvim_config.lsp')
+        assert.are.equal(preview, vim.lsp.util.open_floating_preview)
 
+        local float = require('nvim_config.lsp.float')
+        float.setup()
+        local wrapper = vim.lsp.util.open_floating_preview
+        float.setup()
+        assert.are.equal(wrapper, vim.lsp.util.open_floating_preview)
         vim.lsp.util.open_floating_preview({ 'hover' }, 'markdown', {})
-
+        assert.are.equal(1, calls)
         assert.is_table(captured_opts)
         assert.is_nil(captured_opts.border)
 
-        vim.lsp.util.open_floating_preview = original_open_floating_preview
-        package.loaded['nvim_config.lsp_setting'] = original_lsp_setting
+        vim.lsp.util.open_floating_preview = original_preview
+        package.loaded['nvim_config.lsp'] = original_lsp
     end)
 
     describe('lua_ls settings', function()
@@ -109,7 +117,7 @@ describe('lsp_setting', function()
             vim.lsp.config = setmetatable({}, { __call = function()
                 error('lua_ls should not be configured without an executable')
             end })
-            assert.has_no.errors(function() require('nvim_config.lsp_setting.lua_ls').setup() end)
+            assert.has_no.errors(function() require('nvim_config.lsp.servers.lua_ls').setup() end)
         end)
 
         it('uses a server on PATH when LUALS is absent', function()
@@ -121,7 +129,7 @@ describe('lsp_setting', function()
             vim.lsp.config = setmetatable({}, { __call = function(_, name, config)
                 if name == 'lua_ls' then lua_config = config end
             end })
-            require('nvim_config.lsp_setting.lua_ls').setup()
+            require('nvim_config.lsp.servers.lua_ls').setup()
             assert.are.same({ 'lua-language-server' }, lua_config.cmd)
         end)
 
@@ -221,7 +229,7 @@ describe('lsp_setting', function()
     end)
 
     describe('clangd command line', function()
-        local clangd = require('nvim_config.lsp_setting.clangd')
+        local clangd = require('nvim_config.lsp.servers.clangd')
 
         local function index_of(cmd, pattern)
             for i, arg in ipairs(cmd) do

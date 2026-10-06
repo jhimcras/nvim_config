@@ -63,14 +63,14 @@ function M.show()
     local total_lines = vim.api.nvim_buf_line_count(bufnr)
     add_line("Cursor", string.format("Line %d, Col %d (%d%%)", cursor[1], cursor[2], math.floor(cursor[1] / (total_lines > 0 and total_lines or 1) * 100)))
 
-    local status = require 'nvim_config.status'
-    local cur_func = status.current_function()
+    local symbol = require 'nvim_config.symbol'
+    local cur_func = symbol.current_function()
     if cur_func and cur_func ~= "" then
         add_line("Function", cur_func)
     end
 
     if next(vim.lsp.get_clients{bufnr = bufnr}) ~= nil then
-        local lsp = status.lsp(bufnr)
+        local lsp = require('nvim_config.lsp.status').summary(bufnr)
         if lsp ~= '' then
             add_line("LSP", lsp)
         end

@@ -11,7 +11,7 @@ function M.setup()
             filetypes = { 'markdown' },
             root_markers = { '.git', '.obsidian', '.moxide.toml' },
             capabilities = capabilities,
-            on_attach = require('nvim_config.lsp_setting.markdown_actions').attach,
+            on_attach = require('nvim_config.rendermark.actions').attach,
         })
         vim.lsp.enable('markdown_oxide')
     end

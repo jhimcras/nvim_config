@@ -88,7 +88,7 @@ function M.attach(client)
     local request = client.request
     client.request = function(self, method, params, handler, bufnr)
         if method == 'textDocument/rename' and handler then
-            return require('nvim_config.lsp_setting.markdown_rename').request(
+            return require('nvim_config.rendermark.rename').request(
                 request, self, params, handler, bufnr or vim.api.nvim_get_current_buf())
         end
         if method ~= 'textDocument/codeAction' or not handler then
@@ -122,7 +122,7 @@ function M.attach(client)
                         kind = 'quickfix', command = command, arguments = { path },
                     }
                 end
-                require('nvim_config.lsp_setting.markdown_rename').add_action(self, result, params, bufnr)
+                require('nvim_config.rendermark.rename').add_action(self, result, params, bufnr)
             end
             handler(err, result, ctx, config)
         end, bufnr)

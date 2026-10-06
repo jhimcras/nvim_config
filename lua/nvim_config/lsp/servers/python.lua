@@ -1,8 +1,8 @@
-local lsp_setting = require('nvim_config.lsp_setting')
+local attach = require('nvim_config.lsp.attach')
 
 local M = {}
 
-local on_attach = lsp_setting.make_on_attach(nil)
+local on_attach = attach.make_on_attach(nil)
 
 function M.setup()
     -- vim.lsp.config.jedi_lanuage_server = {

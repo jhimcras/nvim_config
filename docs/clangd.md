@@ -10,7 +10,7 @@ Three levers, roughly in increasing order of effect:
 
 ## 1. Default flags (already applied)
 
-`lua/lsp_setting/clangd.lua` builds the clangd command line in `M.cmd()`:
+`lua/nvim_config/lsp/servers/clangd.lua` builds the clangd command line in `M.cmd()`:
 
 | Flag | Why |
 |---|---|
