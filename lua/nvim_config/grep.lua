@@ -1,10 +1,11 @@
+local registry = require('nvim_config.launcher.registry')
 local ut = require('nvim_config.util.buffer')
 local util_job = require('nvim_config.util.job')
 local util_map = require('nvim_config.util.map')
 local api = vim.api
 local env = require 'nvim_config.env'
 local M = {}
-local spinner = require('nvim_config.status.spinner')
+local spinner = require('nvim_config.spinner')
 
 local tag_counter = 0
 local filter_chains = {}   -- keyed by loclist window ID
@@ -71,14 +72,13 @@ function M.asyncGrep(term, word, wndidforll)
         return
     end
 
-    local launcher = require'nvim_config.launcher'
-    local processes = launcher.GetRunningProcesses()
+    local processes = registry.list()
     for _, p in ipairs(processes) do
         if p.type == 'grep' and p.wndidforll == wndidforll then
             local msg = string.format("Search [%s] is still running for this window. Stop it?", p.title or p.cmd)
             if vim.fn.confirm(msg, "&Yes\n&No", 1) == 1 then
                 if p.terminate then p.terminate() end
-                launcher.UnregisterProcess(p.key)
+                registry.unregister(p.key)
             else
                 -- Parallel runs are confusing, so ask.
             end
@@ -139,7 +139,7 @@ function M.asyncGrep(term, word, wndidforll)
             vim.cmd 'redrawstatus!'
         end
         if qf_buf and vim.api.nvim_buf_is_valid(qf_buf) then
-            require'nvim_config.launcher'.UnregisterProcess(qf_buf)
+            registry.unregister(qf_buf)
         end
     end
 
@@ -281,7 +281,7 @@ function M.asyncGrep(term, word, wndidforll)
     end
 
     local pid, term_func, status, handle = util_job.AsyncProcess('rg', args, '.', { onread = onread, onexit = wrapped_onexit })
-    require'nvim_config.launcher'.RegisterProcess(qf_buf, {
+    registry.register(qf_buf, {
         type = 'grep',
         pid = pid,
         handle = handle,

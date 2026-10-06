@@ -57,7 +57,7 @@ vim.schedule(function()
         for _, implementation in ipairs({ 'before', 'after' }) do
             local active = windows[1]
             local tick, keys = nil, {}
-            local spinner = require('nvim_config.status.spinner')
+            local spinner = require('nvim_config.spinner')
             if implementation == 'after' then
                 local new_timer, schedule_wrap = vim.uv.new_timer, vim.schedule_wrap
                 vim.uv.new_timer = function()

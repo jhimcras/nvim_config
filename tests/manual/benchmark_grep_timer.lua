@@ -11,10 +11,10 @@ package.loaded['nvim_config.util.job'] = {
 package.loaded['nvim_config.util.map'] = { nnoremap = function() end }
 package.loaded['nvim_config.env'] = {}
 package.loaded['nvim_config.prjroot'] = { GetCurrentProjectRoot = function() return vim.fn.getcwd() end }
-package.loaded['nvim_config.launcher'] = {
-    GetRunningProcesses = function() return {} end,
-    RegisterProcess = function() end,
-    UnregisterProcess = function() end,
+package.loaded['nvim_config.launcher.registry'] = {
+    list = function() return {} end,
+    register = function() end,
+    unregister = function() end,
 }
 local starts, ticks, handles = 0, 0, {}
 local new_timer = vim.uv.new_timer

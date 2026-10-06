@@ -1,11 +1,14 @@
--- LAUNCHER_BENCH_SOURCE points to a directory containing ansi_parser.lua and launcher.lua.
+-- LAUNCHER_BENCH_SOURCE points to a directory containing ansi_parser.lua and launcher/init.lua.
 -- For a namespaced checkout use its lua/nvim_config directory.
 -- Run: nvim --headless -i NONE -u NONE -l tests/manual/benchmark_launcher.lua
 vim.opt.rtp:prepend(vim.fn.getcwd())
 local source = os.getenv('LAUNCHER_BENCH_SOURCE')
 if source then
+    vim.opt.rtp:prepend(vim.fn.fnamemodify(source, ':h:h'))
+    local launcher_source = source .. '/launcher/init.lua'
+    if vim.fn.filereadable(launcher_source) == 0 then launcher_source = source .. '/launcher.lua' end
     package.loaded['nvim_config.ansi_parser'] = dofile(source .. '/ansi_parser.lua')
-    package.loaded['nvim_config.launcher'] = dofile(source .. '/launcher.lua')
+    package.loaded['nvim_config.launcher'] = dofile(launcher_source)
 end
 local launcher = require('nvim_config.launcher')
 local util = require('nvim_config.util.job')
@@ -14,7 +17,7 @@ util.AsyncProcess = function(_, _, _, opts)
     callbacks = opts
     return 1, function() end, function() end, {}
 end
-package.loaded['nvim_config.status.spinner'] = nil
+package.loaded['nvim_config.spinner'] = nil
 local rows = {}
 for _, count in ipairs({1000, 2000, 4000}) do
     local samples = {}

@@ -1,16 +1,16 @@
-local process_list = require('nvim_config.process_list')
-local launcher = require('nvim_config.launcher')
+local process_list = require('nvim_config.launcher.process_list')
+local registry = require('nvim_config.launcher.registry')
 
 describe('process_list.lua selection and window ownership', function()
     local original_list, original_notify, buf, job_buf, origin
 
     before_each(function()
-        original_list, original_notify = launcher.GetRunningProcesses, vim.notify
+        original_list, original_notify = registry.list, vim.notify
         vim.notify = function() end
         job_buf = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_win_set_buf(0, job_buf)
         origin = vim.api.nvim_get_current_win()
-        launcher.GetRunningProcesses = function()
+        registry.list = function()
             return { { type = 'general', obj = 'build', pid = 42, buf = job_buf, key = job_buf } }
         end
         process_list.Show()
@@ -19,7 +19,7 @@ describe('process_list.lua selection and window ownership', function()
 
     after_each(function()
         process_list.StopRefresh()
-        launcher.GetRunningProcesses, vim.notify = original_list, original_notify
+        registry.list, vim.notify = original_list, original_notify
         if vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_delete(buf, { force = true }) end
         if vim.api.nvim_buf_is_valid(job_buf) then vim.api.nvim_buf_delete(job_buf, { force = true }) end
     end)
@@ -39,7 +39,7 @@ describe('process_list.lua selection and window ownership', function()
 
     it('ignores header selection and sends SIGTERM to the selected row only', function()
         local signals = {}
-        launcher.GetRunningProcesses = function()
+        registry.list = function()
             return { { type = 'general', obj = 'build',
                 terminate = function(signal) signals[#signals + 1] = signal end } }
         end
@@ -62,7 +62,7 @@ describe('process_list.lua selection and window ownership', function()
 
     it('opens a hidden job buffer in a new split', function()
         local hidden = vim.api.nvim_create_buf(false, true)
-        launcher.GetRunningProcesses = function() return { { type = 'general', key = hidden } } end
+        registry.list = function() return { { type = 'general', key = hidden } } end
         process_list.Update()
         vim.api.nvim_win_set_cursor(0, { 3, 0 })
         process_list.JumpToProcess()

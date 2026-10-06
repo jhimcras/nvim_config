@@ -28,8 +28,8 @@ remove them once that configuration uses the new paths.
 | `lua/nvim_config/setting.lua` | Core options and autocmds (auto-reload, terminal, folding, …) |
 | `lua/nvim_config/keymap.lua` | Global keymaps |
 | `lua/nvim_config/env.lua` | OS/environment detection helpers |
-| `lua/nvim_config/launcher.lua` | Asynchronous program launcher (`lua/nvim_config/launcher/registry.lua`: job registry) |
-| `lua/nvim_config/process_list.lua` | List/inspect/kill running launcher jobs |
+| `lua/nvim_config/launcher/init.lua` | Asynchronous program launcher (`lua/nvim_config/launcher/registry.lua`: job registry) |
+| `lua/nvim_config/launcher/process_list.lua` | List/inspect/kill running launcher jobs |
 | `lua/nvim_config/prjroot.lua` | Project root detection (`.git`, `.prjroot`, etc.) — see [docs/prjroot.md](docs/prjroot.md) |
 | `lua/nvim_config/session.lua` | Session management per project root |
 | `lua/nvim_config/status.lua` | Custom statusline with LSP, git branch/commit, diagnostics (`lua/nvim_config/status/mode.lua`: mode indicator) |

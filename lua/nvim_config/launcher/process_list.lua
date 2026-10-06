@@ -2,7 +2,7 @@ local M = {}
 local api = vim.api
 local util_buffer = require('nvim_config.util.buffer')
 local ut = require('nvim_config.util.map')
-local launcher = require('nvim_config.launcher')
+local registry = require('nvim_config.launcher.registry')
 
 local process_list_buf = nil
 local refresh_timer = nil
@@ -40,7 +40,7 @@ function M.SetMappings(buf)
 end
 
 local function gather_processes()
-    local processes = launcher.GetRunningProcesses()
+    local processes = registry.list()
 
     -- Add terminal buffers not tracked by launcher
     local tracked_bufs = {}
