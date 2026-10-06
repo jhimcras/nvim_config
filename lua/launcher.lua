@@ -576,7 +576,12 @@ function M.LaunchObject(obj)
                     api.nvim_buf_delete(guard_buf, {force = true})
                 end
             end
-            local pid, terminate_fn, get_status, handle = ut.AsyncProcess(full_cmd, full_args, cwd, { env = ev, onexit = on_exit })
+            local pid, terminate_fn, get_status, handle, err = ut.AsyncProcess(full_cmd, full_args, cwd, { env = ev, onexit = on_exit })
+            if not handle then
+                on_exit()
+                vim.notify('Failed to start process: ' .. tostring(err or 'unknown'), vim.log.levels.ERROR)
+                return
+            end
             M.running_processes[guard_buf] = {
                 type = 'external',
                 pid = pid,

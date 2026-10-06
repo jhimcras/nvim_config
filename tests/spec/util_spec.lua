@@ -148,3 +148,28 @@ describe('util.shade', function()
         assert.is_nil(ut.shade(nil, 8))
     end)
 end)
+
+describe('util.AsyncProcess spawn failure', function()
+    it('returns an error instead of a PID and closes output pipes', function()
+        local original_spawn = vim.uv.spawn
+        local original_pipe = vim.uv.new_pipe
+        local pipes = {}
+        vim.uv.new_pipe = function(...)
+            local pipe = original_pipe(...)
+            table.insert(pipes, pipe)
+            return pipe
+        end
+        vim.uv.spawn = function() return nil, 'ENOENT: no such file or directory' end
+        local ok, pid, terminate, status, handle, err = pcall(ut.AsyncProcess,
+            'missing-command', {}, nil, { onread = function() end })
+        vim.uv.spawn = original_spawn
+        vim.uv.new_pipe = original_pipe
+        assert.is_true(ok)
+        assert.is_nil(pid)
+        assert.is_nil(handle)
+        assert.equals('failed', status())
+        assert.truthy(err:find('ENOENT', 1, true))
+        assert.is_true(pipes[1]:is_closing())
+        assert.is_true(pipes[2]:is_closing())
+    end)
+end)

@@ -237,8 +237,11 @@ function M.AsyncProcess(cmd, args, cwd, ev_or_opts, read_func, end_func)
     }
 
     local success, err_or_handle, pid_or_err = pcall(vim.uv.spawn, cmd, spawn_options, vim.schedule_wrap(on_exit))
-    if not success then
-        return nil, function() end, function() return "failed" end, nil, err_or_handle
+    if not success or not err_or_handle then
+        if stdout then stdout:close() end
+        if stderr then stderr:close() end
+        local err = success and pid_or_err or err_or_handle
+        return nil, function() end, function() return "failed" end, nil, err
     end
     handle, pid = err_or_handle, pid_or_err
     status = 'running'
