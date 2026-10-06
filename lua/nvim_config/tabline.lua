@@ -270,6 +270,10 @@ function M.TabLine()
 end
 
 function M.setup()
+    vim.api.nvim_create_autocmd('User', {
+        pattern = { 'SessionChanged', 'SessionLoaded' },
+        callback = function() vim.go.tabline = M.TabLine() end,
+    })
     local pending = false
     local tabs_changed = false
     local function paint_content(after_session)

@@ -1,4 +1,6 @@
-local grep = require('nvim_config.grep')
+local tag = require('nvim_config.qflist.tag')
+local filter = require('nvim_config.qflist.filter')
+local edit = require('nvim_config.qflist.edit')
 
 -- Helper: open a floating scratch window
 local function new_win()
@@ -9,7 +11,7 @@ local function new_win()
     return win, buf
 end
 
-describe('grep.update_loclist_sl', function()
+describe('tag.update_loclist_sl', function()
     local wins, bufs = {}, {}
     local global_sl_before
 
@@ -50,7 +52,7 @@ describe('grep.update_loclist_sl', function()
     it('does not corrupt the global statusline', function()
         local win = make_win()
         vim.w[win].grep_title = 'Search: foo │ /project'
-        grep.update_loclist_sl(win)
+        tag.update_loclist_sl(win)
         assert.equals(global_sl_before, vim.o.statusline,
             'update_loclist_sl must not overwrite vim.o.statusline')
     end)
@@ -60,7 +62,7 @@ describe('grep.update_loclist_sl', function()
         vim.w[win].grep_title = 'Search: foo │ /project'
         -- Clear any pre-existing local statusline so the test starts clean.
         vim.api.nvim_win_call(win, function() vim.wo.statusline = '' end)
-        grep.update_loclist_sl(win)
+        tag.update_loclist_sl(win)
         local local_sl = vim.wo[win].statusline
         -- An empty local value reads back as the global one.
         local expected = vim.o.statusline
@@ -74,15 +76,15 @@ describe('grep.update_loclist_sl', function()
         local win2 = make_win()
         vim.w[win1].grep_title = 'Search: alpha │ /proj'
         vim.w[win2].grep_title = 'Search: beta │ /proj'
-        grep.update_loclist_sl(win1)
-        grep.update_loclist_sl(win2)
+        tag.update_loclist_sl(win1)
+        tag.update_loclist_sl(win2)
         -- Global must still be the original expression, not a literal title string.
         assert.equals(global_sl_before, vim.o.statusline,
             'global statusline must not be overwritten by either title')
     end)
 end)
 
-describe('grep.lua list filtering before qflist extraction', function()
+describe('qflist filtering and editing', function()
     local origin, paths
 
     before_each(function()
@@ -116,7 +118,7 @@ describe('grep.lua list filtering before qflist extraction', function()
         assert.are.equal(2, items[2].lnum)
         assert.are.equal(3, items[2].col)
         assert.are.equal(3, #vim.fn.getqflist())
-        assert.are.same({ 'keep' }, grep.get_filter_chain(0))
+        assert.are.same({ 'keep' }, filter.get_filter_chain(0))
     end)
 
     it('supports filename matches and chained inverse filters', function()
@@ -124,7 +126,7 @@ describe('grep.lua list filtering before qflist extraction', function()
         vim.cmd('Lfilter! /drop/')
         assert.are.equal('keep second', vim.fn.getloclist(origin)[1].text)
         assert.are.equal(1, #vim.fn.getloclist(origin))
-        assert.are.same({ 'beta', '!drop' }, grep.get_filter_chain(0))
+        assert.are.same({ 'beta', '!drop' }, filter.get_filter_chain(0))
     end)
 
     it('filters quickfix without changing the window-owned location list', function()
@@ -134,10 +136,10 @@ describe('grep.lua list filtering before qflist extraction', function()
     end)
 
     it('sorts by filename then line number and reverses direction on the next call', function()
-        grep.sort_list()
+        edit.sort_list()
         local items = vim.fn.getloclist(origin)
         assert.are.same({ 1, 2, 3 }, { items[1].lnum, items[2].lnum, items[3].lnum })
-        grep.sort_list()
+        edit.sort_list()
         items = vim.fn.getloclist(origin)
         assert.are.same({ 3, 2, 1 }, { items[1].lnum, items[2].lnum, items[3].lnum })
     end)

@@ -7,71 +7,10 @@ local env = require 'nvim_config.env'
 local M = {}
 local spinner = require('nvim_config.spinner')
 
-local tag_counter = 0
-local filter_chains = {}   -- keyed by loclist window ID
-local origin_tags = {}     -- origin_winid -> last tag (survives loclist close)
-local active_loclist = {}  -- origin_winid -> current loclist winid
-local search_info = {}     -- loclist title -> {term=str, word=bool}
+local tag = require('nvim_config.qflist.tag')
+local filter = require('nvim_config.qflist.filter')
 
-function M.update_loclist_sl(winid)
-    -- No window-local statusline: for qf buffers it overwrites the global one.
-    if not winid or not vim.api.nvim_win_is_valid(winid) then return end
-    vim.cmd 'redrawstatus!'
-end
-
-function M.restore_highlight(loclist_winid)
-    local filewinid = vim.fn.getloclist(loclist_winid, { filewinid = 0 }).filewinid
-    if not filewinid or filewinid == 0 then return end
-    local title = vim.fn.getloclist(filewinid, { title = 0 }).title
-    local info = title and search_info[title]
-    vim.api.nvim_win_call(loclist_winid, function()
-        vim.fn.clearmatches()
-        if info then
-            if info.word then
-                vim.fn.matchadd('Special', [[\v<]] .. info.term .. [[>]])
-            else
-                vim.fn.matchadd('Special', [[\v]] .. info.term)
-            end
-        end
-    end)
-end
-
-function M.assign_tag(origin_winid, loc_winid)
-    tag_counter = (tag_counter % 5) + 1
-    vim.w[origin_winid].loclist_tag = tag_counter
-    vim.w[loc_winid].loclist_tag = tag_counter
-end
-
-function M.record_filter(loclist_winid, term, bang)
-    if loclist_winid == 0 then
-        loclist_winid = vim.api.nvim_get_current_win()
-    end
-    local label = bang and ('!' .. term) or term
-    filter_chains[loclist_winid] = filter_chains[loclist_winid] or {}
-    table.insert(filter_chains[loclist_winid], label)
-    M.update_loclist_sl(loclist_winid)
-    vim.cmd 'redrawstatus!'
-end
-
-function M.get_filter_chain(loclist_winid)
-    if loclist_winid == 0 then
-        loclist_winid = vim.api.nvim_get_current_win()
-    end
-    return filter_chains[loclist_winid]
-end
-
-function M.set_filter_chain(loclist_winid, chain)
-    filter_chains[loclist_winid] = chain
-    M.update_loclist_sl(loclist_winid)
-    vim.cmd 'redrawstatus!'
-end
-
-function M.asyncGrep(term, word, wndidforll)
-    if term == nil or term == '' or term == '\n' then
-        print('Cannot grep a blank word')
-        return
-    end
-
+local function confirm_previous_search(wndidforll)
     local processes = registry.list()
     for _, p in ipairs(processes) do
         if p.type == 'grep' and p.wndidforll == wndidforll then
@@ -85,14 +24,11 @@ function M.asyncGrep(term, word, wndidforll)
         end
     end
 
-    local killed = false
-    local remain = ""
-    local qfwinid
-    local redraw_timer
-    local loclist_nr
+end
 
-    local onread = function(err, data)
-        if killed then return end
+local function make_reader(state)
+    return function(err, data)
+        if state.killed then return end
 
         if err then
             vim.notify("Error reading from process: " .. err, vim.log.levels.ERROR)
@@ -102,12 +38,12 @@ function M.asyncGrep(term, word, wndidforll)
             data = data:gsub('\r\n', '\n')
             local vals = vim.split(data, "\n")
 
-            remain = remain or ""
-            vals[1] = remain .. vals[1]
+            state.remain = state.remain or ""
+            vals[1] = state.remain .. vals[1]
             if data:sub(-1) ~= "\n" then
-                remain = table.remove(vals)
+                state.remain = table.remove(vals)
             else
-                remain = nil
+                state.remain = nil
             end
 
             local results = {}
@@ -119,78 +55,80 @@ function M.asyncGrep(term, word, wndidforll)
 
             if #results > 0 then
                 vim.schedule(function()
-                    if not killed then
-                        vim.fn.setloclist(wndidforll, {}, 'a', {nr = loclist_nr, lines = results})
+                    if not state.killed then
+                        vim.fn.setloclist(state.wndidforll, {}, 'a', {nr = state.loclist_nr, lines = results})
                     end
                 end)
             end
         end
     end
 
-    local qf_buf
-    local onexit = function(code, signal)
-        local final_status = (killed or signal ~= 0) and 'killed' or 'done'
-        killed = true
-        spinner.stop(redraw_timer)
-        redraw_timer = nil
-        if qfwinid and vim.api.nvim_win_is_valid(qfwinid) then
-            vim.w[qfwinid].grep_status = final_status
-            M.update_loclist_sl(qfwinid)
+end
+
+local function make_exit_callback(state)
+    return function(code, signal)
+        local final_status = (state.killed or signal ~= 0) and 'killed' or 'done'
+        state.killed = true
+        spinner.stop(state.redraw_timer)
+        state.redraw_timer = nil
+        if state.qfwinid and vim.api.nvim_win_is_valid(state.qfwinid) then
+            vim.w[state.qfwinid].grep_status = final_status
+            tag.update_loclist_sl(state.qfwinid)
             vim.cmd 'redrawstatus!'
         end
-        if qf_buf and vim.api.nvim_buf_is_valid(qf_buf) then
-            registry.unregister(qf_buf)
+        if state.qf_buf and vim.api.nvim_buf_is_valid(state.qf_buf) then
+            registry.unregister(state.qf_buf)
         end
     end
 
-    killed = false
+end
+
+local function open_loclist(state, term, word)
     assert(vim.fn.executable('rg') == 1, 'cannot execute ripgrep')
-    local prjroot = require'nvim_config.prjroot'.GetCurrentProjectRoot() or
+    state.prjroot = require'nvim_config.prjroot'.GetCurrentProjectRoot() or
                     vim.b.qf_prjroot or
                     ut.GetCurrentBufferDir()
     -- A loclist inherited from a vsplit belongs to another origin; flush it.
-    vim.api.nvim_set_current_win(wndidforll)
-    local inherited = vim.fn.getloclist(wndidforll, { winid = 0 }).winid
+    vim.api.nvim_set_current_win(state.wndidforll)
+    local inherited = vim.fn.getloclist(state.wndidforll, { winid = 0 }).winid
     if inherited ~= 0 and vim.api.nvim_win_is_valid(inherited) then
         local origin = vim.fn.getloclist(inherited, { filewinid = 0 }).filewinid
-        if origin ~= 0 and origin ~= wndidforll then
-            vim.fn.setloclist(wndidforll, {}, 'f')
+        if origin ~= 0 and origin ~= state.wndidforll then
+            vim.fn.setloclist(state.wndidforll, {}, 'f')
         end
     end
-    local title = string.format("Search: %s │ %s", term, prjroot)
-    search_info[title] = {term = term, word = word == true}
-    vim.fn.setloclist(wndidforll, {}, ' ', {title = title, items = {}, nr = '$'})
-    loclist_nr = vim.fn.getloclist(wndidforll, {nr = '$'}).nr
+    state.title = string.format("Search: %s │ %s", term, state.prjroot)
+    tag.record_search(state.title, term, word)
+    vim.fn.setloclist(state.wndidforll, {}, ' ', {title = state.title, items = {}, nr = '$'})
+    state.loclist_nr = vim.fn.getloclist(state.wndidforll, {nr = '$'}).nr
     vim.cmd.lopen()
-    qfwinid = vim.fn.getloclist(wndidforll, { winid = 0 }).winid
-    if not qfwinid or qfwinid == 0 then
-        qfwinid = vim.fn.win_getid()
+    state.qfwinid = vim.fn.getloclist(state.wndidforll, { winid = 0 }).winid
+    if not state.qfwinid or state.qfwinid == 0 then
+        state.qfwinid = vim.fn.win_getid()
     end
-    vim.api.nvim_set_current_win(qfwinid)
-    qf_buf = vim.api.nvim_win_get_buf(qfwinid)
+    vim.api.nvim_set_current_win(state.qfwinid)
+    state.qf_buf = vim.api.nvim_win_get_buf(state.qfwinid)
     -- Clear the window-local statusline so the global one is used.
-    vim.api.nvim_set_option_value('statusline', '', { win = qfwinid })
+    vim.api.nvim_set_option_value('statusline', '', { win = state.qfwinid })
     vim.cmd.nohlsearch()
-    vim.b.qf_prjroot = prjroot
-    tag_counter = (tag_counter % 5) + 1
-    local tag = tag_counter
-    vim.w[qfwinid].grep_title = title
-    vim.w[wndidforll].loclist_tag = tag
-    vim.w[qfwinid].loclist_tag = tag
-    origin_tags[wndidforll] = tag
-    active_loclist[wndidforll] = qfwinid
-    vim.w[qfwinid].grep_status = 'searching'
-    filter_chains[qfwinid] = nil
+    vim.b.qf_prjroot = state.prjroot
+    vim.w[state.qfwinid].grep_title = state.title
+    tag.assign_search_tag(state.wndidforll, state.qfwinid)
+    vim.w[state.qfwinid].grep_status = 'searching'
+    filter.clear_filter_chain(state.qfwinid)
     
-    redraw_timer = spinner.start({ win = qfwinid })
+    state.redraw_timer = spinner.start({ win = state.qfwinid })
 
-    M.update_loclist_sl(qfwinid)
+    tag.update_loclist_sl(state.qfwinid)
+end
+
+local function install_lifecycle(state)
     -- Close the loclist on QuitPre so quitting the last window exits cleanly.
     local quit_handled = false
     local quitpre_au_id
     quitpre_au_id = api.nvim_create_autocmd('QuitPre', {
         callback = function()
-            if vim.api.nvim_get_current_win() ~= wndidforll then return end
+            if vim.api.nvim_get_current_win() ~= state.wndidforll then return end
             pcall(api.nvim_del_autocmd, quitpre_au_id)
             quit_handled = true
             for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -198,7 +136,7 @@ function M.asyncGrep(term, word, wndidforll)
                     local bt = vim.bo[vim.api.nvim_win_get_buf(win)].buftype
                     if bt == 'quickfix' then
                         local info = vim.fn.getloclist(win, { filewinid = 0 })
-                        if info.filewinid == wndidforll then
+                        if info.filewinid == state.wndidforll then
                             vim.api.nvim_win_close(win, true)
                         end
                     end
@@ -209,29 +147,22 @@ function M.asyncGrep(term, word, wndidforll)
 
     -- Loclist closed: hide the origin's tag (BufWinEnter restores it).
     api.nvim_create_autocmd('WinClosed', {
-        pattern = tostring(qfwinid),
+        pattern = tostring(state.qfwinid),
         once = true,
         callback = function()
-            spinner.stop(redraw_timer)
-            redraw_timer = nil
-            if active_loclist[wndidforll] == qfwinid then
-                active_loclist[wndidforll] = nil
-                if vim.api.nvim_win_is_valid(wndidforll) then
-                    vim.w[wndidforll].loclist_tag = nil
-                    vim.cmd 'redrawstatus!'
-                end
-            end
+            spinner.stop(state.redraw_timer)
+            state.redraw_timer = nil
+            tag.hide_tag(state.wndidforll, state.qfwinid)
         end,
     })
 
     -- Fallback for closes without QuitPre (wincmd c, API).
     api.nvim_create_autocmd('WinClosed', {
-        pattern = tostring(wndidforll),
+        pattern = tostring(state.wndidforll),
         once = true,
         callback = function()
             pcall(api.nvim_del_autocmd, quitpre_au_id)
-            origin_tags[wndidforll] = nil
-            active_loclist[wndidforll] = nil
+            tag.forget_origin(state.wndidforll)
             if quit_handled then return end  -- QuitPre already cleaned up
             vim.schedule(function()
                 for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -239,7 +170,7 @@ function M.asyncGrep(term, word, wndidforll)
                         local buftype = vim.bo[vim.api.nvim_win_get_buf(win)].buftype
                         if buftype == 'quickfix' then
                             local info = vim.fn.getloclist(win, { filewinid = 0 })
-                            if info.filewinid == wndidforll then
+                            if info.filewinid == state.wndidforll then
                                 vim.api.nvim_win_close(win, true)
                             end
                         end
@@ -266,6 +197,9 @@ function M.asyncGrep(term, word, wndidforll)
             end)
         end,
     })
+end
+
+local function search_args(state, term, word)
     vim.fn.clearmatches()
     local args = {'--vimgrep', '--smart-case'}
     if word and word == true then
@@ -275,29 +209,47 @@ function M.asyncGrep(term, word, wndidforll)
         vim.fn.matchadd('Special', [[\v]] .. term)
     end
     args[#args+1] = term
-    args[#args+1] = prjroot
+    args[#args+1] = state.prjroot
+    return args
+end
+
+local function launch_process(state, args, onread, onexit)
     local wrapped_onexit = function(code, signal)
         onexit(code, signal)
     end
 
     local pid, term_func, status, handle = util_job.AsyncProcess('rg', args, '.', { onread = onread, onexit = wrapped_onexit })
-    registry.register(qf_buf, {
+    registry.register(state.qf_buf, {
         type = 'grep',
         pid = pid,
         handle = handle,
         cmd = 'rg',
         args = args,
-        title = title,
+        title = state.title,
         onexit = wrapped_onexit,
         terminate = term_func,
-        wndidforll = wndidforll
+        wndidforll = state.wndidforll
     })
 
     util_map.nnoremap('<C-c>', function()
-        killed = true
+        state.killed = true
         term_func("sigkill")
         vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-c>", true, false, true), "n", false)
     end, {buffer = true})
+end
+
+function M.asyncGrep(term, word, wndidforll)
+    if term == nil or term == '' or term == '\n' then
+        print('Cannot grep a blank word')
+        return
+    end
+    confirm_previous_search(wndidforll)
+    local state = { killed = false, remain = "", wndidforll = wndidforll }
+    local onread = make_reader(state)
+    local onexit = make_exit_callback(state)
+    open_loclist(state, term, word)
+    install_lifecycle(state)
+    launch_process(state, search_args(state, term, word), onread, onexit)
 end
 
 function M.prompt_grep(word)
@@ -310,228 +262,6 @@ end
 function M.setup()
     api.nvim_create_user_command('Grep', function(t) M.asyncGrep(t.args, false, vim.fn.win_getid()) end, { nargs='+', bar=true })
     api.nvim_create_user_command('GrepWord', function(t) M.asyncGrep(t.args, true, vim.fn.win_getid()) end, { nargs='+', bar=true })
-    api.nvim_create_autocmd('BufWinEnter', {
-        callback = function(ev)
-            local winid = vim.fn.bufwinid(ev.buf)
-            if winid == -1 then return end
-            if vim.bo[ev.buf].buftype ~= 'quickfix' then return end
-            local winfo = vim.fn.getwininfo(winid)[1]
-            if not winfo then return end
-            -- Tag from the origin window, or origin_tags after an lclose.
-            local info = vim.fn.getloclist(winid, { filewinid = 0 })
-            if info.filewinid and info.filewinid ~= 0 then
-                local filewinid = info.filewinid
-                local tag = vim.w[filewinid] and vim.w[filewinid].loclist_tag
-                if not tag then
-                    tag = origin_tags[filewinid]
-                    if tag and vim.api.nvim_win_is_valid(filewinid) then
-                        vim.w[filewinid].loclist_tag = tag
-                    end
-                end
-                if tag and not (vim.w[winid] and vim.w[winid].loclist_tag) then
-                    vim.w[winid].loclist_tag = tag
-                end
-                -- Track the active loclist so WinClosed can hide the tag.
-                if active_loclist[filewinid] ~= winid then
-                    active_loclist[filewinid] = winid
-                    api.nvim_create_autocmd('WinClosed', {
-                        pattern = tostring(winid),
-                        once = true,
-                        callback = function()
-                            if active_loclist[filewinid] == winid then
-                                active_loclist[filewinid] = nil
-                                if vim.api.nvim_win_is_valid(filewinid) then
-                                    vim.w[filewinid].loclist_tag = nil
-                                    vim.cmd 'redrawstatus!'
-                                end
-                            end
-                        end,
-                    })
-                end
-            end
-            -- '' = use global. Only {win=winid}; scope='local' corrupts vim.o.statusline.
-            vim.api.nvim_set_option_value('statusline', '', { win = winid })
-            M.update_loclist_sl(winid)
-            M.restore_highlight(winid)
-        end,
-    })
-
-    local function filter_list(get_items, set_items, pat, bang)
-        local items = get_items()
-        local filtered = {}
-        for _, item in ipairs(items) do
-            local text = item.text or ''
-            local fname = item.bufnr and vim.fn.bufname(item.bufnr) or ''
-            local matches = vim.fn.match(text, pat) >= 0 or vim.fn.match(fname, pat) >= 0
-            if (bang and not matches) or (not bang and matches) then
-                table.insert(filtered, item)
-            end
-        end
-        set_items(filtered)
-    end
-
-    local function strip_pat(raw) return raw:gsub('^/', ''):gsub('/$', '') end
-
-    local function handle_lfilter(opts)
-        local winid = vim.api.nvim_get_current_win()
-        local term = strip_pat(opts.args)
-        -- Items belong to the file window (filewinid).
-        local info = vim.fn.getloclist(winid, { filewinid = 0 })
-        local owner = (info.filewinid and info.filewinid ~= 0) and info.filewinid or winid
-        filter_list(
-            function() return vim.fn.getloclist(owner) end,
-            function(items) vim.fn.setloclist(owner, {}, 'r', { items = items }) end,
-            term, opts.bang
-        )
-        M.record_filter(winid, term, opts.bang)
-    end
-
-    local function handle_cfilter(opts)
-        local winid = vim.api.nvim_get_current_win()
-        local term = strip_pat(opts.args)
-        filter_list(
-            function() return vim.fn.getqflist() end,
-            function(items) vim.fn.setqflist({}, 'r', { items = items }) end,
-            term, opts.bang
-        )
-        M.record_filter(winid, term, opts.bang)
-    end
-
-    api.nvim_create_user_command('Lfilter', handle_lfilter, { nargs = '+', bang = true, force = true })
-    api.nvim_create_user_command('Cfilter', handle_cfilter, { nargs = '+', bang = true, force = true })
-
-    local function delete_lines(start_line, end_line)
-        if start_line < 1 or end_line < start_line then return end
-        local info = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1]
-        local new_items = {}
-        if info.loclist == 1 then
-            for i, item in ipairs(vim.fn.getloclist(0)) do
-                if i < start_line or i > end_line then
-                    table.insert(new_items, item)
-                end
-            end
-            vim.fn.setloclist(0, {}, 'r', { items = new_items })
-        else
-            for i, item in ipairs(vim.fn.getqflist()) do
-                if i < start_line or i > end_line then
-                    table.insert(new_items, item)
-                end
-            end
-            vim.fn.setqflist({}, 'r', { items = new_items })
-        end
-        local new_line = math.min(start_line, #new_items)
-        if new_line > 0 then
-            vim.api.nvim_win_set_cursor(0, { new_line, 0 })
-        end
-    end
-
-    M.sort_list = function()
-        local winid = vim.api.nvim_get_current_win()
-        if vim.w[winid].grep_status == 'searching' or vim.w[winid].sorting then
-            vim.notify("List is being updated. Please wait.", vim.log.levels.WARN)
-            return
-        end
-
-        local info = vim.fn.getwininfo(winid)[1]
-        local is_loclist = info.loclist == 1
-        local get_items = is_loclist and function() return vim.fn.getloclist(0) end or function() return vim.fn.getqflist() end
-        local set_items = is_loclist and function(items) vim.fn.setloclist(0, {}, 'r', { items = items }) end or function(items) vim.fn.setqflist({}, 'r', { items = items }) end
-
-        local items = get_items()
-        if #items == 0 then return end
-
-        vim.w[winid].sorting = true
-        local current_order = vim.w[winid].sort_order or 'desc' -- first press toggles to 'asc'
-        local new_order = current_order == 'asc' and 'desc' or 'asc'
-        vim.w[winid].sort_order = new_order
-
-        table.sort(items, function(a, b)
-            local a_name = vim.fn.bufname(a.bufnr)
-            local b_name = vim.fn.bufname(b.bufnr)
-            if a_name ~= b_name then
-                if new_order == 'asc' then
-                    return a_name < b_name
-                else
-                    return a_name > b_name
-                end
-            end
-            if new_order == 'asc' then
-                return a.lnum < b.lnum
-            else
-                return a.lnum > b.lnum
-            end
-        end)
-
-        set_items(items)
-        vim.w[winid].sorting = false
-        vim.notify(string.format("Sorted by name (%s)", new_order))
-    end
-
-    M.delete_operator = function(_type)
-        delete_lines(vim.fn.line("'["), vim.fn.line("']"))
-    end
-
-    api.nvim_create_autocmd('FileType', {
-        pattern = 'qf',
-        callback = function()
-            vim.keymap.set('n', 'dd', function()
-                delete_lines(vim.fn.line('.'), vim.fn.line('.'))
-            end, { buffer = true, silent = true })
-
-            vim.keymap.set('n', 'd', function()
-                vim.o.operatorfunc = "v:lua.require'nvim_config.grep'.delete_operator"
-                return 'g@'
-            end, { buffer = true, expr = true, silent = true })
-
-            -- Select mode would edit this nomodifiable buffer (E21); use Visual instead.
-            vim.keymap.set('n', 'gh', 'v', { buffer = true, silent = true })
-            vim.keymap.set('n', 'gH', 'V', { buffer = true, silent = true })
-
-            vim.keymap.set('n', 'sn', function()
-                require'nvim_config.grep'.sort_list()
-            end, { buffer = true, silent = true })
-
-            local filter_cword = function()
-                local word = vim.fn.expand('<cword>')
-                if word == '' then return end
-                local winfo = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1]
-                local is_loclist = winfo.loclist == 1
-                local cur = vim.fn.line('.')
-                local pat = '\\v' .. word
-                -- First non-matching item at or after the cursor
-                local new_idx, target_new_idx = 0, nil
-                local items = is_loclist and vim.fn.getloclist(0) or vim.fn.getqflist()
-                for i, item in ipairs(items) do
-                    local text = item.text or ''
-                    local fname = item.bufnr and vim.fn.bufname(item.bufnr) or ''
-                    local matches = vim.fn.match(text, pat) >= 0 or vim.fn.match(fname, pat) >= 0
-                    if not matches then
-                        new_idx = new_idx + 1
-                        if i >= cur and target_new_idx == nil then
-                            target_new_idx = new_idx
-                        end
-                    end
-                end
-                target_new_idx = target_new_idx or new_idx  -- fallback: last non-matching
-                local cmd = is_loclist and 'Lfilter!' or 'Cfilter!'
-                vim.cmd(cmd .. ' /\\v' .. word .. '/')
-                if target_new_idx > 0 then
-                    local new_items = is_loclist and vim.fn.getloclist(0) or vim.fn.getqflist()
-                    vim.api.nvim_win_set_cursor(0, { math.min(target_new_idx, #new_items), 0 })
-                end
-            end
-            vim.keymap.set('n', 'diw', filter_cword, { buffer = true, silent = true })
-            vim.keymap.set('n', 'daw', filter_cword, { buffer = true, silent = true })
-
-            local visual_delete = function()
-                vim.o.operatorfunc = "v:lua.require'nvim_config.grep'.delete_operator"
-                return 'g@'
-            end
-            vim.keymap.set('x', 'd', visual_delete, { buffer = true, expr = true, silent = true })
-            vim.keymap.set('x', 'x', visual_delete, { buffer = true, expr = true, silent = true })
-        end,
-    })
-
 end
 
 return M

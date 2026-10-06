@@ -29,4 +29,7 @@ end
 
 require'nvim_config.status'.setup()
 require'nvim_config.launcher'.setup()
+require'nvim_config.qflist.tag'.setup()
+require'nvim_config.qflist.filter'.setup()
+require'nvim_config.qflist.edit'.setup()
 require'nvim_config.grep'.setup()

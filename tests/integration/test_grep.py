@@ -13,7 +13,7 @@ class Grep(TmuxCase):
         self.assertEqual(owner, self.lua("return vim.fn.getloclist(0, {filewinid=0}).filewinid"))
         self.command("Lfilter /keep/")
         self.wait_lua("return #vim.fn.getloclist(0)", 2)
-        self.assertEqual(["keep"], self.lua("return require('nvim_config.grep').get_filter_chain(0)"))
+        self.assertEqual(["keep"], self.lua("return require('nvim_config.qflist.filter').get_filter_chain(0)"))
         self.keys("s", "n")
         self.wait_lua("return vim.w.sort_order", "asc")
         self.assertEqual(["a.txt", "z.txt"], self.lua(

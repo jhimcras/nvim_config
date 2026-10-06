@@ -270,3 +270,71 @@ actual SaveSession command completion. Real-init fold-text/command expressions
 pass with Telescope and cmp still unloaded (`/tmp/stage3_startup.lua`), using
 test-owned XDG config/state/cache/log paths. The require graph retains 5 layer
 violations and 4 cyclic groups; session notifications remain for stage 5.
+
+## Stage 5 qflist and session decomposition (2026-10-07)
+
+Grep now owns rg process stages and prompts: previous-job confirmation,
+stream callbacks, list creation, window lifecycle, argument construction, and
+process registration/cancellation. Search state, including the project root,
+travels in one context; timer/callback scheduling and registry ownership remain
+unchanged. Generic list tags/highlights, filter chains/commands, and edit/sort
+operators live in `qflist/tag.lua`, `filter.lua`, and `edit.lua`. Their setup
+calls are explicit beside grep in init; status and session list persistence use
+the qflist modules directly. Operator strings now target `qflist.edit`.
+
+Session uses `session/init.lua` for public commands, `lists.lua` for existing
+quickfix/loclist/launcher sidecar formats and restore order, and `exit_guard.lua`
+for process/modified-buffer inspection and quit handling. Process inspection
+reads the shared registry directly. The command wrapper is still installed by
+setup, forwards indexed native commands through the original metatable, and
+preserves forced quit, write-before-quit, cancellation, and QuitPre behavior.
+The guard receives a dynamic process getter, preserving public process getter
+mocking without a require back to the session parent.
+
+### Session event contract
+
+Both notifications are synchronous `User` autocmds; no new schedule/debounce
+boundary is introduced. Payload is `{ action, path, session }`: `path` is the
+affected session file, and `session` is `vim.v.this_session` after the operation.
+
+| Event | action | Emission point |
+| --- | --- | --- |
+| SessionChanged | save | After sidecars, mksession, and success notification |
+| SessionChanged | remove | After deleting the target and clearing current session when appropriate |
+| SessionChanged | close | After process termination, buffer wipeout, cwd reset, current-session clearing, and quickfix clearing |
+| SessionLoaded | open | After sourcing the session, setting every list before opening windows, restoring matches/cursors, and resetting cmdheight |
+
+Cancelled operations and missing-session removals emit nothing. Tabline handles
+both events with a synchronous full refresh, preserving immediately visible
+SaveSession updates and showing fully restored state on OpenSession. Native
+`nvim -S` keeps its existing `SessionLoadPost` handler.
+
+### Validation
+
+Full unit suite and all 11 integration cases exit 0. Added four tests for
+event payload/order, synchronous tabline updates, restored lists/cmdheight,
+and cancelled/missing operations; two process tests cover split read chunks,
+project roots differing from cwd, and queued reads after cancellation. An
+initial complete run reported 526 successful assertions in 50 batches. The
+final full run reported 503 successes in 49 summaries; the launcher worker
+printed 22 successes then exited without its summary. Its targeted rerun
+completed all 23 launcher tests with no failures/errors. The baseline fake
+launcher-handle cleanup and temporary-file E211 messages remain unchanged.
+
+Graph: 72 modules, 187 local edges, 2 upward violations, 3 cyclic groups.
+Session no longer requires tabline, and qflist/grep/session introduce no cycles.
+The remaining violations are file_info -> status and instance_move -> plugins.tele;
+remaining cyclic groups are LSP server/parent, rendermark, and plugin/picker.
+
+Both targeted benchmarks exited 0. Grep timer cleanup still reports no active
+timers and no idle ticks in all three scenarios. Statusline search/LSP/entry
+counts exactly match the stage 0 workload; timings remain subject to the
+run-to-run variation documented above. Raw outputs:
+
+```text
+{"rows":[{"cpu_ms":49.818,"scenario":"exit","rounds":20,"active_immediately":0,"idle_ticks":0},{"cpu_ms":71.98700000000001,"scenario":"signal","rounds":20,"active_immediately":0,"idle_ticks":0},{"cpu_ms":48.59099999999999,"scenario":"close","rounds":20,"active_immediately":0,"idle_ticks":0}],"nvim":"0.12.4+v0.12.4"}
+```
+
+```text
+{"lines":5000,"iterations":50,"nvim":{"api_compatible":0,"build":"v0.12.4","minor":12,"patch":4,"major":0,"api_level":14,"api_prerelease":false},"rows":[{"redraw_ms":958.534639,"drained_ms":1013.242645,"width":24,"calls":{"search":51,"entry":204,"lsp":50},"active":"general"},{"redraw_ms":39.753378,"drained_ms":97.00398199999999,"width":23,"calls":{"search":52,"entry":208,"lsp":1},"active":"quickfix"},{"redraw_ms":904.646658,"drained_ms":960.845681,"width":119,"calls":{"search":51,"entry":204,"lsp":50},"active":"general"},{"redraw_ms":27.096964,"drained_ms":82.11129,"width":120,"calls":{"search":50,"entry":200,"lsp":0},"active":"quickfix"}]}
+```

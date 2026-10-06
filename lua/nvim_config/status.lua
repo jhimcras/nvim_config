@@ -344,7 +344,7 @@ local function quickfix_search_query(bufnr, winid)
         title = vim.w[winid].quickfix_title
     end
     if not title then return end
-    local chain = require'nvim_config.grep'.get_filter_chain(winid)
+    local chain = require'nvim_config.qflist.filter'.get_filter_chain(winid)
     if not chain or #chain == 0 then return title end
     local MAX_CHAIN = 25
     local visible = {}
