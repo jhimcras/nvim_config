@@ -308,6 +308,8 @@ function M.prompt_grep(word)
 end
 
 function M.setup()
+    api.nvim_create_user_command('Grep', function(t) M.asyncGrep(t.args, false, vim.fn.win_getid()) end, { nargs='+', bar=true })
+    api.nvim_create_user_command('GrepWord', function(t) M.asyncGrep(t.args, true, vim.fn.win_getid()) end, { nargs='+', bar=true })
     api.nvim_create_autocmd('BufWinEnter', {
         callback = function(ev)
             local winid = vim.fn.bufwinid(ev.buf)

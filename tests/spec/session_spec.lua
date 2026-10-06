@@ -215,6 +215,18 @@ describe('session cmdheight round trip', function()
     end)
 end)
 
+describe('session command completion', function()
+    it('resolves SaveSession completion through the session module', function()
+        local original = session.SessionList
+        session.SessionList = function() return { 'completion-session' } end
+        session.setup()
+        local ok, completions = pcall(vim.fn.getcompletion, 'SaveSession ', 'cmdline')
+        session.SessionList = original
+        assert.is_true(ok)
+        assert.are.same({ 'completion-session' }, completions)
+    end)
+end)
+
 describe('session cmdheight fix on VimEnter', function()
     after_each(function()
         vim.o.cmdheight = 1

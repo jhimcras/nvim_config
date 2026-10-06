@@ -178,8 +178,6 @@ function M.setup()
     api.nvim_create_user_command('GclogBack', gclog_back, {})
 
     -- grep
-    api.nvim_create_user_command('Grep', function(t) require'nvim_config.grep'.asyncGrep(t.args, false, vim.fn.win_getid()) end, { nargs='+', bar=true })
-    api.nvim_create_user_command('GrepWord', function(t) require'nvim_config.grep'.asyncGrep(t.args, true, vim.fn.win_getid()) end, { nargs='+', bar=true })
     ut.nnoremap('<leader>gg', function() require'nvim_config.grep'.prompt_grep(false) end)
     ut.nnoremap('<leader>gw', function() require'nvim_config.grep'.prompt_grep(true) end)
     ut.vnoremap('<leader>g', function() require'nvim_config.grep'.asyncGrep(util_text.GetSelectWord(), false, vim.fn.win_getid()) end)
@@ -215,7 +213,6 @@ function M.setup()
     end
 
     -- session
-    api.nvim_create_user_command('SaveSession', function(t) require'nvim_config.session'.SaveSession(t.args) end, { nargs='?', complete="customlist,v:lua.require'nvim_config.session'.SessionList" })
     ut.nnoremap('<F12>', function() require'nvim_config.session'.SaveSession() end)
 
     -- tabline

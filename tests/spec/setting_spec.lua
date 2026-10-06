@@ -15,4 +15,16 @@ describe('setting', function()
         assert.is_equal(2, vim.o.showtabline)
         assert.is_equal(4, vim.o.shiftwidth)
     end)
+
+    it('evaluates fold text through the setting module without a global helper', function()
+        setting.setup()
+        local foldmethod = vim.wo.foldmethod
+        vim.wo.foldmethod = 'manual'
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'fold heading', 'fold body' })
+        vim.cmd('1,2fold')
+        assert.is_equal('fold heading  ', vim.fn.foldtextresult(1):sub(1, 14))
+        assert.is_nil(_G.FoldText)
+        vim.cmd('normal! zE')
+        vim.wo.foldmethod = foldmethod
+    end)
 end)

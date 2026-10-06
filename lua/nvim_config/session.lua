@@ -621,6 +621,7 @@ end
 
 
 function M.setup()
+    api.nvim_create_user_command('SaveSession', function(t) M.SaveSession(t.args) end, { nargs='?', complete="customlist,v:lua.require'nvim_config.session'.SessionList" })
     api.nvim_create_user_command('RemoveSession', function(t) M.RemoveSession(t.args) end, { nargs='?', complete="customlist,v:lua.require'nvim_config.session'.SessionList" })
     api.nvim_create_user_command('CloseSession', M.CloseSession, {})
 

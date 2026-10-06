@@ -248,3 +248,25 @@ mixed timing results; it does not establish a sustained performance regression.
 CPU timing remains a noisy diagnostic for this wait-heavy workload; deterministic
 timer cleanup assertions passed in both versions. Additional repeated timing
 comparisons are needed before interpreting the signal/close deltas as a change.
+
+## Stage 3 settings and assembly (2026-10-07)
+
+`init.lua` now shows the independent setup calls: tabline setup follows status
+setup directly. Status no longer initializes tabline. Unit minimal init retains
+its previous headless skip; integration uses the real assembly. Plugin lazy
+callbacks and rendermark internal setup remain at their existing initialization
+points.
+
+Fold text, terminal options, external-file reload and header detection now live
+in setting. Fold text evaluates `nvim_config.setting.fold_text` rather than the
+removed global `FoldText`. Grep/GrepWord and SaveSession commands register in
+their owning setup functions; options, completion and keymaps retain their
+behavior. Completion keeps an explicit module expression.
+
+Verification: full unit suite exits 0; integration 11 cases pass, including real
+header detection, external reload, terminal behavior, commands, statusline and
+tabline. New tests evaluate fold text without the global helper and exercise
+actual SaveSession command completion. Real-init fold-text/command expressions
+pass with Telescope and cmp still unloaded (`/tmp/stage3_startup.lua`), using
+test-owned XDG config/state/cache/log paths. The require graph retains 5 layer
+violations and 4 cyclic groups; session notifications remain for stage 5.

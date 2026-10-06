@@ -636,7 +636,6 @@ function M.setup()
     vim.o.laststatus = 2
     vim.o.statusline = "%!v:lua.require'nvim_config.status'.statusline_entry()"
 
-    require'nvim_config.tabline'.setup()
 end
 
 return M

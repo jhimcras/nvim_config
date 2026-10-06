@@ -30,7 +30,7 @@ describe('status', function()
         assert.is_function(status.setup)
     end)
     
-    it('should setup tabline and statusline', function()
+    it('should setup statusline', function()
         -- Mock vim.o and vim.go
         local original_o = vim.o
         local original_go = vim.go
