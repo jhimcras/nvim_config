@@ -506,4 +506,50 @@ creation, then closes the prompt and checks the source survives cancellation.
 Lazy startup assertions verify both tele setup and picker modules stay unloaded.
 Logs: `/tmp/stage8-lazy-{telescope-key,telescope-command,config,move}.log`.
 The existing baseline InsertEnter plugin errors remain outside this refactor.
-Actual cross-process GUI movement still needs manual acceptance.
+Actual cross-process GUI movement still needs manual acceptance; the final
+headless two-process RPC checks are recorded in stage 9.
+
+## Stage 9 final module/spec documentation (2026-10-07)
+
+README paths/descriptions now match the final launcher, session, instance, util,
+LSP, quickfix and Markdown/Telescope modules. Eighteen specs moved to their module
+folders/names; existing regression bodies remain, with small describe/import
+updates for renamed owners. Literal local require, package.loaded mock and direct
+file-load targets were checked against the final runtime tree: none are missing.
+
+Final full unit suite: 538 successes, 0 failures, 0 errors across all 52 summaries,
+exit 0 (`/tmp/stage9-final-unit.log`). Final integration: 11/11 passed
+(`/tmp/stage9-final-integration.log`). Dependency graph: 90 modules, 211 local
+edges, 0 layer violations, 0 cyclic groups. Existing baseline fake launcher-handle
+cleanup traceback and temporary-file E211 remain in unit logs.
+
+A real two-process headless RPC smoke passed for buffer and tab transfer.
+Both source and destination used integration/init (real assembly with plugins
+mocked and external LSP disabled), with separate test-owned XDG directories and
+local sockets. Buffer transfer opened the exact path containing spaces in a new
+destination tab and deleted the source buffer. Tab transfer opened two files in
+one destination tab with two splits and removed the source buffers/tab. Both
+instances reported integration_errors=[] and an empty vim.v.errmsg. Selection
+was injected; this validates actual RPC/receiver behavior, with Telescope first
+use verified separately in stage 8. Log: `/tmp/stage9-rpc-smoke.log`; detailed
+artifacts: `/tmp/stage9-real-rpc-4g0bqqj6/{source,destination}/headless.log` and
+`result.json`. Normal sandbox denied --listen sockets; a permitted harness run
+passed without runtime changes.
+
+### Acceptance coverage and remaining manual checks
+
+The real-init tmux suite exercises startup/statusline/tabline, launcher output/
+ANSI/jump/reuse/process cancellation/terminal mode, grep/list filtering/editing,
+session round-trip/quit cancellation, read mode and Markdown table/wrap/checkbox
+rendering. Real installed Telescope first-use and Config/move prompt checks passed
+in stage 8. Headless Markdown/image benchmarks preserve deterministic counters;
+image/PlantUML geometry and reservation tests use simulated image backends.
+
+A neopp GUI/display is unavailable in this execution environment. Actual GUI
+image/PlantUML output, GUI key handling, GUI instance transfer, and the complete
+interactive session exit/save confirmation flow still need user-side manual
+acceptance. The final issue remains open for those checks rather than claiming
+all manual acceptance is complete. Windows-specific behavior was not run here.
+Temporary env/msbuild shims remain for the previously verified external .prjroot
+caller, and T01–T10 manual diagnostic scripts remain pending the user's choices.
+No unrelated InsertEnter plugin fix or external configuration migration is included.

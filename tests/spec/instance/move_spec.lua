@@ -1,7 +1,7 @@
 local move = require 'nvim_config.instance.move'
 local api = vim.api
 
-describe('instance_move', function()
+describe('instance.move', function()
     local old_new, old_input
     local select_target
     local file

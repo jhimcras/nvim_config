@@ -1,14 +1,14 @@
-local lsp_setting = require('nvim_config.lsp')
+local lsp = require('nvim_config.lsp')
 
-describe('lsp_setting', function()
+describe('lsp', function()
     it('should have a setup function', function()
-        assert.is_function(lsp_setting.setup)
+        assert.is_function(lsp.setup)
     end)
     
     it('should have basic diagnostic symbols', function()
-        assert.is_string(lsp_setting.SymError)
-        assert.is_string(lsp_setting.SymWarn)
-        assert.are.equal(require('nvim_config.lsp.progress').progress_state, lsp_setting.progress_state)
+        assert.is_string(lsp.SymError)
+        assert.is_string(lsp.SymWarn)
+        assert.are.equal(require('nvim_config.lsp.progress').progress_state, lsp.progress_state)
     end)
 
     it('loads without patching floats and installs one wrapper during setup', function()
@@ -105,7 +105,7 @@ describe('lsp_setting', function()
                 return nil
             end
 
-            lsp_setting.setup()
+            lsp.setup()
 
             assert.is_table(lua_config)
             return lua_config
@@ -197,7 +197,7 @@ describe('lsp_setting', function()
         end)
 
         local function on_attach_with_buffer(bufname)
-            lsp_setting.setup()
+            lsp.setup()
             local clangd_config = vim.lsp.config.clangd
             assert.is_table(clangd_config)
 

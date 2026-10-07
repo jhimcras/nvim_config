@@ -1,4 +1,4 @@
-describe('rendermark.image_complete', function()
+describe('rendermark.complete.image', function()
     local source = require('nvim_config.rendermark.complete.image')
     local dir, buf, original_cmp
 
