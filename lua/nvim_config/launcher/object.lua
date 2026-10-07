@@ -204,7 +204,7 @@ function M.BufMapping()
     if c and c.launchers then
         for key, val in pairs(c.launchers) do
             if val.key then
-                ut.nnoremap(val.key, function() M.LaunchObject(key) end)
+                util_map.nnoremap(val.key, function() M.LaunchObject(key) end)
             end
         end
     end

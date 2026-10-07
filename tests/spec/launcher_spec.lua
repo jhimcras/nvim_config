@@ -1,5 +1,36 @@
 local launcher = require('nvim_config.launcher')
 
+describe('launcher project mappings', function()
+    local pr = require('nvim_config.prjroot')
+    local object = require('nvim_config.launcher.object')
+    local original_config, original_launch
+    local key = '<F6>'
+
+    before_each(function()
+        original_config, original_launch = pr.GetCurrentConfig, object.LaunchObject
+    end)
+
+    after_each(function()
+        pr.GetCurrentConfig, object.LaunchObject = original_config, original_launch
+        pcall(vim.keymap.del, 'n', key)
+    end)
+
+    it('registers and dispatches project launcher keys on BufNew', function()
+        local launched
+        pr.GetCurrentConfig = function()
+            return { launchers = { build = { key = key, cmd = 'build' } } }
+        end
+        object.LaunchObject = function(name) launched = name end
+
+        vim.api.nvim_exec_autocmds('BufNew', { buffer = 0 })
+
+        local mapping = vim.fn.maparg(key, 'n', false, true)
+        assert.is_function(mapping.callback)
+        mapping.callback()
+        assert.are.equal('build', launched)
+    end)
+end)
+
 describe('launcher', function()
     it('should have a setup function', function()
         assert.is_function(launcher.setup)
