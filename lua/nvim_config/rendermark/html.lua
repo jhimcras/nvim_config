@@ -373,7 +373,10 @@ function M.toggle()
             block.expanded = not block.expanded
             cache.painted = false
             M.refresh(buf, row)
-            require('nvim_config.rendermark.wrap').refresh(0)
+            vim.api.nvim_exec_autocmds('User', {
+                pattern = 'MarkdownDetailsChanged', modeline = false,
+                data = { buf = buf, win = vim.api.nvim_get_current_win() },
+            })
             return true
         end
     end

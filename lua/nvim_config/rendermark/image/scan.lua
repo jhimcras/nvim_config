@@ -163,12 +163,12 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
   local ok, lines = pcall(vim.api.nvim_buf_get_lines, buf, start_row, end_row, false)
   if not ok then return result end
 
-  local wrap = require('nvim_config.rendermark.wrap')
+  local table_state = require('nvim_config.rendermark.table_state')
   -- Table rows the wrap has not drawn (off screen) carry no image at all.
-  local table_rows = wrap.table_source_rows(buf, start_row, end_row)
+  local table_rows = table_state.table_source_rows(buf, start_row, end_row)
   for i, line in ipairs(lines) do
     local row0 = start_row + i - 1
-    local table_images = wrap.table_row(buf, row0)
+    local table_images = table_state.table_row(buf, row0)
     if table_images then
       for _, image in ipairs(table_images) do result[#result + 1] = vim.deepcopy(image) end
     elseif not table_rows[row0] then
@@ -182,7 +182,7 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
       local row0 = mark[2]
       local col0 = mark[3]
       local details = mark[4] or {}
-      if wrap.table_row(buf, row0) or table_rows[row0] then goto continue_mark end
+      if table_state.table_row(buf, row0) or table_rows[row0] then goto continue_mark end
       if row0 and details.ns_id ~= deps.image_ns() and details.virt_text ~= nil then
         local text = M.virt_text_to_plain(details.virt_text)
         if M.line_has_image_link(text) then

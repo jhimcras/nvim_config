@@ -2,6 +2,27 @@ local extmarks = require('nvim_config.rendermark.image.extmarks')
 local backend = require('nvim_config.rendermark.image.backend')
 
 describe('image differential updates', function()
+  it('drops nested syncs and recovers after cancelling a failed decoration batch', function()
+    local image, cancelled, calls = {}, 0, 0
+    local api = require('nvim_config.rendermark.image.place').new(image, {
+      backend = {}, decorations = { cancel = function() cancelled = cancelled + 1 end },
+    })
+    image.send_images = api.send_images
+    image._send_images_impl = function()
+      calls = calls + 1
+      image.send_images()
+      error('failed image scan')
+    end
+    assert.has_error(image.send_images)
+    assert.equals(1, calls)
+    assert.equals(1, cancelled)
+    assert.is_false(image._send_images_active)
+    image._send_images_impl = function() calls = calls + 1 end
+    image.send_images()
+    assert.equals(2, calls)
+    assert.equals(1, cancelled)
+  end)
+
   it('reuses unchanged rows, updates changed rows and clears moved or removed marks', function()
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'one', 'two', 'three' })

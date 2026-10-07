@@ -364,3 +364,116 @@ versus baseline 816/820 ms, with no improvement claim. Local logs:
 `/tmp/stage6-unit.log`, `/tmp/stage6-integration.log`, `/tmp/stage6-status-benchmark.log`.
 The graph now has one upward dependency and two cyclic groups, scheduled for
 stages 7 and 8. Independent setup order and plugin lazy callbacks are preserved.
+
+## Stage 7 Markdown wrapping and image decomposition (2026-10-07)
+
+Wrap now owns orchestration/setup in wrap/init, inline collection in inline,
+and table parsing/layout/rendering in table. Shared table_state owns table
+queries and placements; image scan reads it without requiring wrap. The public
+wrap table helpers retain the same references. Read mode and HTML details publish
+synchronous User events instead of requiring wrap. ReadModeChanged carries
+`{ win, buf, active }` after mode options/state are applied; MarkdownDetailsChanged
+carries `{ win, buf }` after HTML repaint. Wrap refreshes that window immediately
+only if it still exists and displays that buffer. Duplicate mode transitions and
+unsuccessful details toggles emit nothing.
+
+Image is split into init, blocks, screen, stub, layout, preview, plantuml and
+place, retaining backend/scan/size/extmarks. Init owns one public API and shared
+state; helper factories receive those references without requiring their parent.
+Placement orchestration delegates window collection, scanning, reservation,
+layout, decoration and payload stages. Reservation changes still defer payloads
+until resync; unchanged payloads/extmarks remain skipped.
+
+Six regression tests cover event timing/targets/duplicates/shared table cleanup,
+reservation deferral/signature skip, and nested/failed image sync recovery.
+Original/extracted function review found no unrelated behavior changes. Full
+integration: 11/11 passed with test-owned local tmux/RPC sockets. The initial
+sandbox-only invocation could not create those sockets; the permitted rerun passed.
+Final full unit suite: exit 0, 531 success lines, 50 summaries, no reported
+failures/errors (`/tmp/stage7-image-review-full-unit.log`). As seen in stage 5,
+the launcher worker printed 22 success lines without a summary; its isolated
+rerun completed all 23 tests with zero failures/errors
+(`/tmp/stage7-launcher-final.log`). The added image fixture initially
+counted unrelated Tree-sitter redraw callbacks; it now captures only image
+resync callbacks. No production change was needed. Existing baseline fake
+launcher-handle cleanup and temporary-file E211 messages remain.
+Graph: 89 modules, 212 local edges, one upward violation and one cyclic group,
+all involving instance_move/plugins/tele and reserved for stage 8.
+
+Benchmarks used isolated XDG config/state/cache/log paths and existing plugin data.
+The first cursor run overlapped HTML/other tests and measured typing/burst 43.153ms;
+a separate sequential HEAD/current pair measured 31.418/22.111ms. Counters matched
+in every run. These timings do not establish a performance improvement. Image
+HEAD/current comparisons likewise retain counts; GUI image output and actual
+external PlantUML rendering remain manual acceptance checks.
+
+### Sequential cursor baseline (stage 6 HEAD)
+
+```text
+lines=5016 window=80x22 visible=1201..1211
+idle         median   0.005 ms  p95   0.010 ms  extmarks/step    0.0  clears/step   0.0
+j/k          median   1.544 ms  p95   2.209 ms  extmarks/step    3.3  clears/step   2.0
+l/h          median   0.141 ms  p95   0.215 ms  extmarks/step    0.0  clears/step   0.0
+typing/key   median   0.610 ms  p95   0.798 ms  extmarks/step    0.0  clears/step   2.0
+typing/burst median  31.418 ms of wrap CPU per 20-key burst
+full         median   6.763 ms  p95   9.229 ms  extmarks/step   45.0  clears/step   3.0
+```
+
+### Sequential cursor after stage 7
+
+```text
+lines=5016 window=80x22 visible=1201..1211
+idle         median   0.004 ms  p95   0.008 ms  extmarks/step    0.0  clears/step   0.0
+j/k          median   1.475 ms  p95   2.343 ms  extmarks/step    3.3  clears/step   2.0
+l/h          median   0.092 ms  p95   0.196 ms  extmarks/step    0.0  clears/step   0.0
+typing/key   median   0.599 ms  p95   0.779 ms  extmarks/step    0.0  clears/step   2.0
+typing/burst median  22.111 ms of wrap CPU per 20-key burst
+full         median   5.304 ms  p95   6.504 ms  extmarks/step   45.0  clears/step   3.0
+```
+
+### HTML after stage 7
+
+```text
+kind,lines,median_ms,p95_ms,full_reads_per_edit,parser_requests_per_edit
+plain,1000,0.068,0.150,1.0,0.0
+plain,10000,0.553,0.594,1.0,0.0
+plain,50000,3.099,6.270,1.0,0.0
+sparse,1000,6.357,7.715,1.0,1.0
+sparse,10000,75.784,87.384,1.0,1.0
+sparse,50000,411.340,452.416,1.0,1.0
+dense,1000,20.124,20.600,1.0,1.0
+dense,10000,225.833,249.586,1.0,1.0
+dense,50000,1175.649,1268.446,1.0,1.0
+```
+
+### Image reapply before stage 7
+
+```text
+{"scenario":"unchanged","ms":810.495118,"calls":{"set":0,"del":0,"redraw":0,"mark":0,"clear":0}}
+{"scenario":"one-image-size-changed","ms":793.62392,"calls":{"set":1000,"del":0,"redraw":1000,"mark":2000,"clear":1000}}
+```
+
+### Image reapply after stage 7
+
+```text
+{"calls":{"clear":0,"set":0,"redraw":0,"mark":0,"del":0},"scenario":"unchanged","ms":786.514982}
+{"calls":{"clear":1000,"set":1000,"redraw":1000,"mark":2000,"del":0},"scenario":"one-image-size-changed","ms":778.1531670000001}
+```
+
+### PlantUML before stage 7
+
+```text
+{"full_reads":1,"scenario":"send_images-cold","ms_per_call":3.714582,"iterations":1}
+{"full_reads":0,"scenario":"send_images-unchanged","ms_per_call":0.09689693000000001,"iterations":200}
+{"full_reads":0,"scenario":"cursor-unchanged","ms_per_call":0.002554916,"iterations":500}
+{"full_reads":100,"scenario":"send_images-edited","ms_per_call":0.7740575,"iterations":100}
+```
+
+### PlantUML after stage 7
+
+```text
+{"iterations":1,"full_reads":1,"scenario":"send_images-cold","ms_per_call":1.092425}
+{"iterations":200,"full_reads":0,"scenario":"send_images-unchanged","ms_per_call":0.09524257999999999}
+{"iterations":500,"full_reads":0,"scenario":"cursor-unchanged","ms_per_call":0.002559588}
+{"iterations":100,"full_reads":100,"scenario":"send_images-edited","ms_per_call":0.8945039300000001}
+```

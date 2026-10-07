@@ -1106,6 +1106,45 @@ describe('partially visible plantuml block rendering', function()
     return n
   end
 
+  it('waits for reservation resync and skips unchanged payloads and decorations', function()
+    local img, buf, win, store, teardown = setup_e2e(30, 12)
+    scroll(win, 0)
+    local old_schedule = vim.schedule
+    local scheduled, sets = {}, 0
+    local old_set = vim.ui.img.set
+    vim.ui.img.set = function(...)
+      sets = sets + 1
+      return old_set(...)
+    end
+    local image_source = debug.getinfo(img._send_images_impl, 'S').source
+    -- Redraw can also schedule Tree-sitter work; hold only image resyncs.
+    vim.schedule = function(fn)
+      if debug.getinfo(fn, 'S').source == image_source then
+        scheduled[#scheduled + 1] = fn
+      else
+        old_schedule(fn)
+      end
+    end
+    local ok, err = pcall(function()
+      img.send_images()
+      assert.is_nil(buf_image(store))
+      assert.is_true(virt_line_count(img, buf, FENCE) > 0)
+      assert.equals(1, #scheduled)
+      scheduled[1]()
+      assert.is_truthy(buf_image(store))
+      local initial_sets = sets
+      local ns = img.ensure_image_namespace()
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+      img.send_images()
+      assert.equals(initial_sets, sets)
+      assert.equals(1, #scheduled)
+      assert.same(marks, vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true }))
+    end)
+    vim.schedule = old_schedule
+    teardown()
+    assert.is_true(ok, err)
+  end)
+
   it('hides surplus source rows so the footprint matches the fitted image height', function()
     local img, buf, win, store, teardown =
       setup_e2e(30, 12, { data = WIDE_PNG, w = 1200, h = 100 })
