@@ -5,6 +5,15 @@ local api, cmd = vim.api, vim.cmd
 
 local M = {}
 
+local function open_picker(name, ...)
+    require('nvim_config.plugins').load_telescope()
+    return require('nvim_config.plugins.tele.pickers')[name](...)
+end
+
+local function select_instance_target(on_select)
+    open_picker('InstanceTargets', on_select)
+end
+
 local function gui_zoom(dir)  -- dir = 'in' | 'out' | 'reset'
     if vim.g.neopp_channel then
         vim.cmd('NeoppFontZoom ' .. dir)
@@ -116,7 +125,7 @@ function M.setup()
 
     api.nvim_create_user_command('Config', function(opts)
         if opts.args ~= '' then
-            require'nvim_config.plugins.tele'.ConfigFiles(opts.args)
+            open_picker('ConfigFiles', opts.args)
         else
             util_buffer.OpenConfig(opts)
         end
@@ -132,10 +141,10 @@ function M.setup()
         end
     end, { nargs = '?', bang = true, complete = 'file' })
     api.nvim_create_user_command('MoveBufferToInstance', function()
-        require'nvim_config.instance_move'.move('buffer')
+        require'nvim_config.instance.move'.move('buffer', select_instance_target)
     end, {})
     api.nvim_create_user_command('MoveTabToInstance', function()
-        require'nvim_config.instance_move'.move('tab')
+        require'nvim_config.instance.move'.move('tab', select_instance_target)
     end, {})
 
     ut.nnoremap('<c-=>', function() gui_zoom('in') end)
@@ -220,13 +229,13 @@ function M.setup()
     ut.nnoremap('<c-left>', function() require'nvim_config.tabline'.tab_scroll(-vim.v.count1) end)
 
     -- tele
-    ut.nmap('<Leader>ff', function() require'nvim_config.plugins.tele'.Files() end)
-    ut.nmap('<Leader>fb', function() require'nvim_config.plugins.tele'.Buffers() end)
-    ut.nmap('<Leader>fs', function() require'nvim_config.plugins.tele'.Sessions() end)
-    ut.nmap('<Leader>fu', function() require'nvim_config.plugins.tele'.RunLauncher() end)
-    ut.nmap('<Leader>fn', function() require'nvim_config.plugins.tele'.Notes() end)
-    ut.nmap('<Leader>fw', function() require'nvim_config.plugins.tele'.LSPWorkspaceSymbols() end)
-    ut.nmap('<Leader>ft', function() require'nvim_config.plugins.tele'.Tabs() end)
+    ut.nmap('<Leader>ff', function() open_picker('Files') end)
+    ut.nmap('<Leader>fb', function() open_picker('Buffers') end)
+    ut.nmap('<Leader>fs', function() open_picker('Sessions') end)
+    ut.nmap('<Leader>fu', function() open_picker('RunLauncher') end)
+    ut.nmap('<Leader>fn', function() open_picker('Notes') end)
+    ut.nmap('<Leader>fw', function() open_picker('LSPWorkspaceSymbols') end)
+    ut.nmap('<Leader>ft', function() open_picker('Tabs') end)
 end
 
 return M

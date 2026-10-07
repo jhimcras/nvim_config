@@ -152,7 +152,7 @@ local function send(target, paths, kind)
     local ok, chan = pcall(vim.fn.sockconnect, 'pipe', target.address, { rpc = true })
     if not ok or chan <= 0 then warn('대상 프로세스에 연결하지 못했습니다'); return false end
     local sent, result = pcall(vim.rpcrequest, chan, 'nvim_exec_lua',
-        'return require("nvim_config.instance_move").receive(...)', { paths, kind })
+        'return require("nvim_config.instance.move").receive(...)', { paths, kind })
     vim.fn.chanclose(chan)
     if not sent or result ~= true then
         warn('대상 프로세스에서 파일을 열지 못했습니다: ' .. tostring(result))
@@ -161,10 +161,10 @@ local function send(target, paths, kind)
     return true
 end
 
-function M.move(kind)
+function M.move(kind, select_target)
     local buffers, paths = collect(kind)
     if not buffers then return end
-    require'nvim_config.plugins.tele'.InstanceTargets(function(target)
+    select_target(function(target)
         if not target then return end
         confirm_changes(buffers, function(proceed)
             if not proceed or not send(target, paths, kind) then return end

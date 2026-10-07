@@ -477,3 +477,33 @@ dense,50000,1175.649,1268.446,1.0,1.0
 {"iterations":500,"full_reads":0,"scenario":"cursor-unchanged","ms_per_call":0.002559588}
 {"iterations":100,"full_reads":100,"scenario":"send_images-edited","ms_per_call":0.8945039300000001}
 ```
+
+## Stage 8 instance movement and Telescope pickers (2026-10-07)
+
+Instance spawning now lives in instance/init and movement in instance/move.
+All calls/mocks and the remote receive string use `nvim_config.instance.move`;
+the spawn public module remains `nvim_config.instance`. Move receives a target
+selection callback from keymap assembly. The feature no longer requires plugin
+configuration. Telescope setup remains plugins/tele/init; feature pickers live
+in plugins/tele/pickers. Keymap's open_picker loads Telescope before accessing
+the lazy picker module, preserving the native Telescope command and existing UI.
+Pickers do not require the plugin parent.
+
+Unit suite: exit 0, 538 success lines, 52 summaries, zero failures/errors
+(`/tmp/stage8-full-unit.log`). Integration: 11/11 passed
+(`/tmp/stage8-full-integration.log`). Added coverage for target cancellation,
+remote receive path, picker close-before-scheduled-selection, multi-buffer swipe,
+and plugin-load/callback injection order. Saved session/list formats are unchanged.
+Graph: 90 modules, 211 edges, zero upward violations, zero cyclic groups.
+
+Real installed-plugin first-use cases telescope-key, telescope-command, config,
+and move all printed PASS with no error trace. Each used a fresh XDG config/state/
+cache/log root; config/nvim linked to this checkout so Config searches a real
+configuration. The initial Config harness lacked that directory and rg reported
+ENOENT; fixing the harness resolved it without runtime changes. Move opens the
+actual Telescope prompt while stubbing instance.new to prevent external process
+creation, then closes the prompt and checks the source survives cancellation.
+Lazy startup assertions verify both tele setup and picker modules stay unloaded.
+Logs: `/tmp/stage8-lazy-{telescope-key,telescope-command,config,move}.log`.
+The existing baseline InsertEnter plugin errors remain outside this refactor.
+Actual cross-process GUI movement still needs manual acceptance.

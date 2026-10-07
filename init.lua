@@ -33,5 +33,5 @@ require'nvim_config.rendermark'.setup{
     },
 }
 require'nvim_config.keymap'.setup()
-require'nvim_config.instance_move'.setup()
+require'nvim_config.instance.move'.setup()
 require'nvim_config.highlight'.setup()

@@ -11,6 +11,7 @@ for _, name in ipairs {
     assert(not loaded(name), name .. ' loaded at startup')
 end
 assert(not package.loaded['nvim_config.plugins.tele'], 'Telescope config loaded at startup')
+assert(not package.loaded['nvim_config.plugins.tele.pickers'], 'Telescope pickers loaded at startup')
 assert(not package.loaded['cmp'], 'cmp loaded at startup')
 
 local case = vim.env.NVIM_LAZY_TEST
@@ -27,6 +28,19 @@ elseif case == 'config' then
     vim.cmd('Config init')
     assert(loaded('telescope.nvim'))
     assert(vim.bo.filetype == 'TelescopePrompt')
+elseif case == 'move' then
+    local file = vim.fn.tempname() .. '.txt'
+    vim.fn.writefile({ 'move first use' }, file)
+    vim.cmd.edit(file)
+    local source_buf = vim.api.nvim_get_current_buf()
+    require('nvim_config.instance').new = function() error('must not launch during first-use check') end
+    vim.cmd('MoveBufferToInstance')
+    assert(loaded('telescope.nvim'))
+    assert(vim.bo.filetype == 'TelescopePrompt')
+    assert(vim.api.nvim_buf_is_valid(source_buf))
+    require('telescope.actions').close(vim.api.nvim_get_current_buf())
+    assert(vim.api.nvim_buf_is_valid(source_buf))
+    vim.fn.delete(file)
 elseif case == 'insert' then
     local get_clients = vim.lsp.get_clients
     local client = {

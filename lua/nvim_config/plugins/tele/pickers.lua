@@ -6,7 +6,6 @@ local ut = require('nvim_config.util.buffer')
 local pickers, finders, conf, actions, action_state, make_entry
 
 local function load_dependencies()
-    require('nvim_config.plugins').load_telescope()
     pickers = require 'telescope.pickers'
     finders = require 'telescope.finders'
     conf = require 'telescope.config'.values
@@ -28,7 +27,7 @@ function M.InstanceTargets(on_select)
     pickers.new({}, {
         prompt_title = 'Move to Nvim instance',
         finder = finders.new_table {
-            results = require'nvim_config.instance_move'.targets(),
+            results = require'nvim_config.instance.move'.targets(),
             entry_maker = function(target)
                 return { value = target, display = target.display, ordinal = target.display }
             end,
@@ -295,19 +294,6 @@ function M.LSPWorkspaceSymbols()
    require'telescope.builtin'.lsp_dynamic_workspace_symbols {
        fname_width = 120,
    }
-end
-
-function M.setup()
-    require 'telescope'.setup {
-        defaults = {
-            mappings = {
-                i = {
-                    ["<esc>"] = require('telescope.actions').close,
-                },
-            },
-            preview = false,
-        }
-    }
 end
 
 return M
