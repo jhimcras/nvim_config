@@ -296,4 +296,11 @@ function M.LSPWorkspaceSymbols()
    }
 end
 
+function M.LSPDocumentSymbols()
+    load_dependencies()
+    require'telescope.builtin'.lsp_document_symbols {
+       fname_width = 120,
+    }
+end
+
 return M

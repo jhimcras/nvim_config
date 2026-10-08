@@ -236,6 +236,7 @@ function M.setup()
     ut.nmap('<Leader>fn', function() open_picker('Notes') end)
     ut.nmap('<Leader>fw', function() open_picker('LSPWorkspaceSymbols') end)
     ut.nmap('<Leader>ft', function() open_picker('Tabs') end)
+    ut.nmap('<Leader>fo', function() open_picker('LSPDocumentSymbols') end)
 end
 
 return M
