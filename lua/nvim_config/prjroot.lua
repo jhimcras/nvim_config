@@ -6,8 +6,6 @@ M.general_root_markers = {
     '.git',
     'compile_command.json',
     'compile_flags.txt',
-    'README.md',
-    -- 'README.*',     -- Cannot use wildcard nor pattern here
     '.prjroot',
 }
 
