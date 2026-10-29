@@ -167,10 +167,73 @@ vim.api.nvim_create_autocmd('User', {
 
 ### R2 — 이미지 스캔 범위 (Q1: (c)로 확대 결정됨)
 
-- [ ] 사용 현황 조사: 사용자의 노트 폴더에서 위키 이미지·HTML `<img>`·참조형 이미지 사용 빈도를 `grep`으로 센다 (`rg '!\[\[' ~/notes`, `rg '<img ' ~/notes`, `rg '^\[[^]]+\]: .*\.(png|jpg)' ~/notes`)
-- [ ] 조사 결과로 지원 우선순위를 정한다(전부 구현하되 빈도가 높은 문법부터): 위키 이미지, 참조형, HTML `<img>`
-- [ ] 구현 상세는 R6의 "스캔 확대"에서 한다. 이 단계는 조사와 우선순위 기록이다
+- [x] 사용 현황 조사: 사용자의 노트 폴더에서 위키 이미지·HTML `<img>`·참조형 이미지 사용 빈도를 `rg`로 센다
+  - 노트 폴더는 `~/notes`(git 저장소, 커밋 427개)로 확인. `pickers.lua`의 `M.Notes()`가 `cwd = '~/notes/'`로 쓰는 실제 경로이며 `vim.g`에 별도 노트 경로 설정은 없다. 보조로 `~/workspace/keep`(Keep 내보내기 노트)과 `~/workspace/markdown_lsp`(mdloom 문서·테스트)도 센다. `~/workspace` 전체는 llvm-project 등 대용량 저장소가 있어 `rg`가 끝나지 않아 개별 폴더(깊이 6, `target`·`node_modules`·`.git` 제외)로 한정했다
+  - 주의: 코드 스팬·펜스 안의 문법 예시도 한 번 센 원시 수치다(코드 안 제외 필터 없음). 수치는 2026-10-30 기준
+- [x] 조사 결과로 지원 우선순위를 정한다(전부 구현하되 빈도가 높은 문법부터): 아래 "구현 순서" 참고
+- [x] 현재 `scan.lua`·`size.lua` 지원 범위 정리: 아래 "현재 지원 범위" 참고
+- [x] 구현 상세는 R6의 "스캔 확대"에서 한다. 이 단계는 조사와 우선순위 기록이다 (코드 변경 없음)
 - 완료 조건: 조사 수치와 구현 순서가 이 문서에 기록됨.
+
+#### 조사 수치
+
+`~/notes` (전체 파일 251개, 디렉터리 26개, `*.md` 207개; 이미지 파일 3개 = png 2 + svg 1; `rg ... --glob='*.md'` 원시 수치):
+
+| 문법 | 패턴 | 파일 수 | 사용 수 |
+| --- | --- | --- | --- |
+| 표준 `![alt](path)` | `!\[[^]]*\]\([^)]*\)` | 4 | 4 (확장자: png 3, svg 1; http(s) 0) |
+| 위키 `![[...]]` 전체 | `!\[\[[^]]*\]\]` | 0 | 0 (이름형 0 / 경로형 0 / `\|width` 0 / `#anchor` 0) |
+| HTML `<img` | `<img\b` | 0 | 0 (`src` 0, `width`/`height` 0) |
+| 참조형 `![a][r]`·`![r][]`·`![r]` 사용 | `!\[[^]]*\]\[[^]]*\]` | 0 | 0 |
+| 참조 정의줄(이미지 확장자) | `^\[[^]]+\]: .*\.(png\|jpe?g\|gif\|webp\|svg)` | 0 | 0 (이미지가 아닌 정의줄은 1개: `study/vim/Vim.md`의 URL 링크) |
+
+표준 이미지 4개의 내역: 상대 경로 3개(`functor_performance.png`, `Git_Data_Transport_Commands.png`, `tools_overview.svg`, 모두 문서와 같은 폴더에 존재), 절대 경로 예시 1개(`study/Markdown.md`의 `![image](/image.png)`, 파일 없음 = `not_found` 박스가 됨). svg가 1개 있다: rendermark의 `size.lua`는 PNG/JPEG/WebP만 읽으므로(아래 참고) 이 이미지는 `unsupported` 오류 박스가 된다.
+
+보조 범위 (이미지 사용 수는 `*.md` 원시 수치):
+
+| 범위 | md 파일 | 표준 | 위키 | `<img` | 참조형 | 이미지 파일 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `~/notes` | 207 | 4 | 0 | 0 | 0 | 3 (png 2, svg 1) |
+| `~/workspace/keep` | 449 | 27 (모두 `../assets/…` 상대 경로, 확장자 png 13 / jpg 13) | 0 | 0 | 0 | 29 (png 16, jpg 13) |
+| `~/workspace/markdown_lsp` | 41 | 35 | 22 | 14 | 7 | 1 |
+| `~/workspace/nvim_config` | 14 | 7 | 12 | 11 | 5 | 0 |
+| `~/workspace/img_manager` | 27 | 0 | 0 | 11 | 0 | - |
+
+`markdown_lsp`·`nvim_config`·`img_manager`의 위키/`<img`/참조형 수치는 문법을 설명하는 문서, 테스트 픽스처, 이슈 본문의 예시 텍스트이지 노트 사용이 아니다(예: `markdown_lsp/fixtures/{contracts,facts,parser}`, `doc/issues/closed/issue-ref_image_conceal.md`, `issue-image_tilde_path.md`). `image`, `ImageViewer`, `imgtagger`, `myvim`, `reading_manager`는 이미지 문법 사용 0, `neovim_md`·`mindmap`·`bookmarks`는 md 0개.
+
+결론: 사용자의 실제 노트(`~/notes`, `keep`)에는 표준 `![alt](path)`만 있고 위키·HTML·참조형 이미지는 한 번도 쓰이지 않는다. 확대(Q1 (c))는 기존 mdloom 기능 동등성을 위한 것이며 현재 데이터로는 회귀 위험이 없다.
+
+#### 위키 이름형 검색의 규모 위험
+
+| 폴더 | 파일 수 | 디렉터리 수 | 이미지 파일 | 동명 이미지(basename 중복) |
+| --- | --- | --- | --- | --- |
+| `~/notes` | 251 | 26 | 3 | 0 |
+| `~/workspace/keep` | 1075 | 291 | 29 | 0 |
+| `~/workspace/markdown_lsp` | 167 | 42 | 1 | 0 |
+
+노트 폴더는 `.git`·`node_modules`·`target`을 제외해도 파일이 251~1075개, 이미지 3~29개, 동명 이미지 0건이다. `~/notes`에서 이름으로 전체 탐색(`find -name`)은 5 ms 미만이다. 즉 노트 폴더 단위의 이름 검색은 규모 위험이 낮고 모호(동명) 사례도 현재 없다. 위험은 노트 폴더가 아닌 곳(`~/workspace` 같은 상위 폴더나 llvm-project 같은 대형 저장소)을 "워크스페이스 루트"로 잡을 때만 생긴다: 이번 조사에서도 `~/workspace` 전체에 대한 `rg`는 시간 안에 끝나지 않았다. 따라서 이름 검색의 상한(탐색 파일 수 또는 깊이)과 루트 결정(`prjroot` 또는 `.git` 상위 중 노트 쪽)은 R6에서 필수로 정한다.
+
+#### 현재 지원 범위 (`image/scan.lua`, `image/size.lua`, 읽기만 하고 변경 없음)
+
+- 지원 문법: 표준 `![alt](path)`만. 패턴은 `!%[[^%]]*%]%(([^%)%s]+)%)`, 즉 경로에 공백·`)`가 있을 수 없고 `"title"`이 붙은 형태와 `<…>` 감싸기는 인식하지 못한다. 한 줄 여러 개 지원(순서대로 `col0`는 표시 폭 기준, 항목에 `byte_col`/`byte_end_col`)
+- 표 행: `table_state.table_row`/`table_source_rows`로 표 셀의 이미지를 별도 수집(wrap이 그린 행의 항목을 복사), 그리지 않은 표 행은 일반 스캔에서 건너뜀. 표 셀 텍스트는 `wrap/table.lua`가 `scan_markdown_image_text`를 호출
+- 가상 텍스트: 다른 네임스페이스의 extmark `virt_text`/`virt_lines`에 있는 이미지 문법도 스캔(`virtual = true` 항목; 이미지 자신의 `image_ns`는 제외). plantuml 블록 높이를 `source_span_height`로 반영
+- 제외 규칙: 인라인 코드 스팬(`code_spans`, 같은 길이의 백틱 짝)만 제외. **펜스 코드블록(` ``` `) 안의 이미지 문법은 제외하지 않는다**: `scan.lua`·`place.lua`에 펜스 판정이 없다(펜스 판정은 `blocks.lua`의 plantuml 용뿐). R6 체크리스트의 "펜스 코드블록 안은 제외(기존 규칙 유지)"는 사실과 달라서, 펜스 제외는 "유지"가 아니라 신규 구현이 된다
+- 버퍼 조건: filetype `markdown` 또는 확장자 `md`/`markdown`일 때만
+- 경로 해석 `resolve_image_path(buf, raw)`: 빈 문자열이나 `scheme://`는 무시(nil), `%20`을 공백으로, `vim.fn.expand`(`~` 확장), 절대 경로 판정(`is_absolute_path`, Windows 드라이브·`\`·`/` 시작 처리) 후 아니면 문서 폴더 기준(이름 없는 버퍼는 cwd), `:p`로 정규화. 쿼리(`?`)·앵커(`#`) 제거, `<…>` 벗기기, 다른 `%xx` 디코딩은 하지 않는다
+- 항목 오류: 파일이 없으면 `error = 'not_found'`, 크기를 못 읽으면 `error = 'unsupported'`. `source_span_height`는 최소 1
+- 이미지 크기(`size.lua`): 파일 앞 512 KiB만 읽어 PNG(IHDR), JPEG(SOF 마커), WebP(VP8X/VP8/VP8L) 헤더 파싱. GIF·SVG·BMP 등은 `nil`이라 `unsupported`가 된다(GIF는 mdloom 목록의 "PNG/JPEG/GIF/WebP"와 달리 현재 미지원). mtime·크기 기준 캐시. 따라서 `~/notes`의 svg 1개와 위키·HTML 이미지가 gif/svg일 경우 박스로 표시된다
+- 프리필터: `line_has_image_link`가 `text:find('![', 1, true)` 후에야 패턴을 적용
+
+#### 구현 순서 (R6 "스캔 확대"에 적용)
+
+실사용 빈도는 위키·HTML·참조형 모두 0이므로 빈도가 아니라 mdloom 동등성, 기존 코드 재사용도, 위험도 순으로 정한다. 데이터가 생기면 순서를 재검토한다.
+
+1. 공통 기반(표준 문법에도 이득): `resolve_image_path`에 쿼리·앵커 제거와 `<…>` 벗기기 추가, 펜스 코드블록 제외 구현, 라인 프리필터 확장(`![`, `<img`, `[…]:`), GIF 등 지원 형식 결정(svg는 의도적 미지원 후보)
+2. 참조형 `![alt][ref]`·`![ref][]`·`![ref]`: mdloom에서 전용 커밋(be74a94)과 이슈(`issue-ref_image_conceal`)가 있어 사용 이력이 가장 확실하고, 같은 문서 내 정의 줄 해석만 필요해 비용·위험이 작다. 정의 줄 conceal 포함
+3. HTML `<img src>`: 한 줄 속성 파싱으로 끝나고 `width`/`height` 반영 여부만 정하면 된다
+4. 위키 경로형 `![[dir/name.png]]`·`![[name.png|300]]`·`![[name.png#…]]`: 문서 폴더 기준 해석이라 `resolve_image_path` 재사용, 폭 옵션 파싱만 추가
+5. 위키 이름형 `![[name.png]]`: 파일 시스템 검색, 캐시, 모호성 처리가 필요해 가장 복잡하고 가장 위험하므로 마지막. 위 수치상 노트 폴더 규모에서는 문제가 없지만 루트 결정과 상한을 먼저 확정한다
 
 ### R3 — 공급자 API와 다이어그램 항목 처리 (image/init.lua, place.lua, diagram.lua)
 
@@ -307,7 +370,7 @@ mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원
 | 선행: coderunner, mdloom 작업 | 부분 완료 | 2026-10-30 | coderunner: C0~C8 완료, C9는 Linux 자동 검증만 완료(Windows/GUI/mdloom 실환경·수동 시나리오 미검증, 이슈 유지). mdloom(`lsp-scope` 브랜치, master 미병합): L0~L5 완료, L6 부분 완료(구현 후 문서 대조 필요), L7 검증·L8 마무리 대기 |
 | R0 기준선 | 부분 완료 | 2026-10-30 | 기준 수치: 전체 스펙 696 통과/0 실패/0 오류(69 파일), rendermark 259 통과/0/0(13 파일). 벤치(5회 중앙값, 1,000회): 변경 없음 680.0 ms·호출 전부 0, 이미지 하나 변경 690.8 ms·set 1000/mark 2000/clear 1000/redraw 1000. 미완: 수동 동작 캡처(사용자 확인 필요), 무관 변경 분리 커밋(사용자 판단) |
 | R1 임시 우회 제거 | 완료(GUI 중복 확인은 R8) | 2026-10-30 | 임시 우회 4곳 제거, mdloom 경로를 `vim.g.mdloom_dir`로 설정화, `complete/{image,link}`·`actions`·`rename`과 스펙 3개 삭제, cmp 소스 제거 확정. 전체 스펙 66개 파일 통과 681/0/0(696 − 삭제 스펙 18 + 신규 3). 완료 조건 grep 결과 없음. mdloom 확인: 체크아웃 `lsp-scope`에 그리기 코드 없음(`editors/nvim`은 `init.lua`뿐), 단 master에는 아직 `image.lua`·`images.lua` 등이 남아 있어 병합 전 master 사용 시 중복 그리기 |
-| R2 스캔 범위 결정 | 대기 | | |
+| R2 스캔 범위 결정 | 완료 | 2026-10-30 | 노트 폴더 `~/notes`(md 207개) 조사: 표준 `![]()` 4개(png 3, svg 1)뿐이고 위키·HTML `<img>`·참조형 사용은 0(`keep`도 표준 27개뿐, 이미지 확장자 png/jpg). 구현 순서: 공통 기반(경로 쿼리·앵커/`<>`, 펜스 제외, 프리필터) → 참조형 → HTML → 위키 경로형 → 위키 이름형. 이름 검색 규모 위험은 노트 폴더에선 낮음(파일 251~1075, 이미지 3~29, 동명 0). 이상 징후: `scan.lua`에 펜스 코드블록 제외가 없어 R6의 "기존 규칙 유지"는 신규 구현이고, `size.lua`는 GIF·SVG 미지원 |
 | R3 공급자 API·diagram.lua | 대기 | | |
 | R4 glue·사용자 설정 | 대기 | | |
 | R5 인접 내보낸 이미지 정책 | 대기 | | |
