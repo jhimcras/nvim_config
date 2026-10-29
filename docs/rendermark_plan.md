@@ -235,32 +235,40 @@ vim.api.nvim_create_autocmd('User', {
 4. 위키 경로형 `![[dir/name.png]]`·`![[name.png|300]]`·`![[name.png#…]]`: 문서 폴더 기준 해석이라 `resolve_image_path` 재사용, 폭 옵션 파싱만 추가
 5. 위키 이름형 `![[name.png]]`: 파일 시스템 검색, 캐시, 모호성 처리가 필요해 가장 복잡하고 가장 위험하므로 마지막. 위 수치상 노트 폴더 규모에서는 문제가 없지만 루트 결정과 상한을 먼저 확정한다
 
+R3 후속 메모 (R2 기록 정정): R2의 "펜스 판정은 `blocks.lua`의 plantuml 용뿐"이던 코드는 R3에서 `blocks.lua`와 함께 삭제됐다. 이제 `image/` 안에는 펜스 판정이 전혀 없으므로 위 1번의 "펜스 코드블록 제외"는 재사용 없이 `scan.lua`에 새로 구현해야 한다(공급자 항목의 `start_row/end_row`는 다이어그램 블록만 알려주므로 일반 코드블록 판정에는 쓸 수 없다). `scan.lua`의 `source_span_height`는 R3부터 `deps.diagram_block_span`(공급자 항목)으로 얻는다.
+
 ### R3 — 공급자 API와 다이어그램 항목 처리 (image/init.lua, place.lua, diagram.lua)
 
 구현:
-- [ ] `image/init.lua`: `set_diagram_source(source)`, `refresh(buf)`, `clear_diagram_source()` 추가. `refresh`는 해당 버퍼의 캐시(`block_cache`)를 무효화하고 `M.send_images()`를 예약
-- [ ] `image/plantuml.lua` → `image/diagram.lua` 개명(`git mv`) 후 정리:
-  - [ ] 제거: `plantuml_resolve_command`, `plantuml_jar`, `plantuml_run`, 임시 디렉터리·잡 관리·`plantuml_ensure_render`·`plantuml_sanitize_error`, 환경변수 `RENDERMARK_PLANTUML_JAR`/`PLANTUML_JAR`/`vim.g.rendermark_plantuml_jar`, "PlantUML disabled" 알림
-  - [ ] 유지·재작성: `collect_plantuml_images(buf, result, errors)` → `collect_diagram_images(buf, result, errors)`:
+- [x] `image/init.lua`: `set_diagram_source(source)`, `refresh(buf)`, `clear_diagram_source()` 추가. `refresh`는 해당 버퍼의 캐시(`block_cache`)를 무효화하고 `M.send_images()`를 예약
+  - 완료(2026-10-30): `set_diagram_source(source)`는 `items`(필수)·`request_live`(선택) 타입을 `vim.validate`로 검사하고 저장한 뒤 전체 `refresh()`, `clear_diagram_source()`도 같다. `refresh(buf)`는 버퍼(생략하면 전체)의 항목 캐시를 지우고 `schedule_image_sync()`(기존 WinScrolled 등과 같은 합쳐지는 예약 경로)로 `send_images`를 예약한다. 로드되지 않았거나 잘못된 버퍼여도 오류 없음
+- [x] `image/plantuml.lua` → `image/diagram.lua` 개명(`git mv`) 후 정리:
+  - [x] 제거: `plantuml_resolve_command`, `plantuml_jar`, `plantuml_run`, 임시 디렉터리·잡 관리·`plantuml_ensure_render`·`plantuml_sanitize_error`, 환경변수 `RENDERMARK_PLANTUML_JAR`/`PLANTUML_JAR`/`vim.g.rendermark_plantuml_jar`, "PlantUML disabled" 알림
+  - [x] 유지·재작성: `collect_plantuml_images(buf, result, errors)` → `collect_diagram_images(buf, result, errors)`:
     - 공급자 `items(buf)`를 호출. 항목마다 활성 블록 여부 판정(`plantuml_active_block`와 동일 로직)
     - 비활성 + `status == 'ready'`(또는 stale이지만 path 존재) → 기존과 같은 이미지 항목을 `result`에 추가(`row`, `col`, `end_col`, `path`, `source_width/height`는 `read_image_size`, `source_span_height = end_row - start_row + 1`, `plantuml = true`→`diagram = true`, `plantuml_end_row`→`diagram_end_row`, `virtual = false`)
     - 비활성 + `status == 'failed'` → `errors`에 `{buf, row = end_row, msg = error}`
     - 비활성 + `none`/`pending` → 아무것도 그리지 않음(소스 그대로)
     - 활성 블록: 미리보기 흐름은 기존 `plantuml_debounce_active` 구조를 유지하되 렌더 호출만 `source.request_live(buf, row)`(400ms 디바운스)로 바꾼다. 항목이 `ready`면 `plantuml_open_split/float`(→ `diagram_open_split/float`)로 표시
     - `conceallevel < 2`이면 창 옵션을 올리는 기존 동작 유지
-  - [ ] 버퍼 정리(`plantuml_cleanup_buf`)에서 임시 폴더·잡 정리를 제거하고 타이머·float 정리만 남긴다
-  - [ ] 상태 이름 `plantuml_states` → `diagram_states`, 창 변수 `rendermark_plantuml_preview_*` → `rendermark_diagram_preview_*` (preview.lua 281~304행, place.lua 15행의 `rendermark_plantuml_preview_source` 포함)
-- [ ] `image/blocks.lua`: `plantuml_find_blocks`/`markdown_plantuml_block_height`를 사용하는 곳을 공급자 항목으로 교체
+  - [x] 버퍼 정리(`plantuml_cleanup_buf`)에서 임시 폴더·잡 정리를 제거하고 타이머·float 정리만 남긴다
+  - [x] 상태 이름 `plantuml_states` → `diagram_states`, 창 변수 `rendermark_plantuml_preview_*` → `rendermark_diagram_preview_*` (preview.lua 281~304행, place.lua 15행의 `rendermark_plantuml_preview_source` 포함)
+    - 완료. 설계 선택: (1) 활성 블록 판정은 `diagram.lua`의 `diagram_active_block`에 그대로 두고(`plantuml_active_block`과 같은 로직, 포커스가 미리보기 창이면 그 블록 유지, 읽기 모드면 없음) 공급자 항목 목록을 입력으로 받는다. (2) 활성 블록에서 `ready`는 `stale`이어도 미리보기를 연다(코드를 고치는 동안 미리보기가 닫혔다 열리는 깜박임이 없다). `status == 'none'` 또는 `ready`+`stale`이면 `request_live`를 400ms 디바운스로 요청하고(편집마다 타이머를 다시 건다), 같은 `changedtick`·블록은 요청이 수락된 뒤 다시 요청하지 않는다(공급자 반환이 false면 다음에 다시 시도). `pending`은 공급자가 이미 렌더 중이라 요청하지 않고 `failed`는 같은 텍스트로 재시도하지 않는다. (3) 비활성 블록은 `status == 'ready'` 또는 `pending`+`stale`(+path)일 때 이미지를 그린다(`failed`는 path가 있어도 오류 줄만). 크기를 못 읽는 형식(SVG)은 소스를 그대로 둔다. (4) 항목 형식 점검: `coderunner.provider.diagrams`의 필드(`start_row/end_row/key/lang/path/format/stale/status/error`)와 `request_live(buf, row) -> boolean`을 코드로 확인했고 rendermark는 coderunner를 require하지 않는다(D3). `key`는 블록 식별자(렌더 키 아님)라 디바운스 중복 판정에는 `changedtick`+`start_row`를 쓴다
+- [x] `image/blocks.lua`: `plantuml_find_blocks`/`markdown_plantuml_block_height`를 사용하는 곳을 공급자 항목으로 교체
   - `preview.lua` 107행(`block_h`), 152~153행(코드블록 회피), `scan.lua`의 `deps.markdown_plantuml_block_height`(init.lua 60행) → 공급자 항목의 `end_row - start_row + 1`을 조회하는 함수 `diagram_block_span(buf, row)`로 교체
   - `blocks.lua` 삭제. `block_cache`는 공급자 항목 캐시로 개명(편집 틱 기준 무효화는 `refresh`로 대체)
-- [ ] `place.lua`:
-  - [ ] 73~81행: `CollectImages`가 `collect_markdown_images`와 `collect_diagram_images`를 병합하도록 이름 변경(`plantuml_errors` → `diagram_errors`)
-  - [ ] 231행 `img.plantuml` → `img.diagram`, 360~363행 `plantuml_end_row` → `diagram_end_row`
-  - [ ] 604~607행 오류 virt_lines `[plantuml: ...]` → `[diagram: ...]`
-  - [ ] 640행 `ctx.plantuml_errors` 이름 변경
-- [ ] `deco.lua` 31행: 코드블록 장식 비활성 언어 목록(`plantuml`, `puml`, `uml`)을 하드코딩에서 **공급자가 아는 언어**로 바꿀지 결정. 기본: 장식은 활성 블록이 아닌 이미지 대체 블록에서 conceal로 가려지므로 그대로 두되 목록을 설정화(`opts.diagram.disable_deco_langs`, 기본 `{plantuml, puml, uml}` + glue가 렌더러 `match`로 확장)
-- [ ] 설정 키(Q4): `opts.diagram.preview`를 읽고 `opts.plantuml.preview`는 별칭으로 한 번 경고 후 수용(`vim.notify_once`)
-- [ ] 스펙 추가 `tests/spec/rendermark/image/diagram_spec.lua` (가짜 공급자 사용):
+  - 완료: `blocks.lua` 삭제, `scan.lua`의 dep 이름은 `diagram_block_span`, `preview.lua` 107행·코드블록 회피는 `diagram_block_span`/`diagram_items`, `cursor_active_block_sig`도 `diagram_items` 사용. `stable_hash`는 `blocks.lua`에 같이 있던 함수라 `image/hash.lua`로 옮김(`place.lua`·`preview.lua` 사용). 캐시 `block_cache` → `item_cache`: 문서는 "편집 틱 기준 무효화는 `refresh`로 대체"라고 했지만 위험 6절(편집 직후 항목이 이전 위치)을 막기 위해 **`changedtick` 키와 `refresh`를 둘 다 유지**했다. 편집 뒤 첫 조회는 항상 공급자를 다시 호출하므로 잘못된 행에 그릴 일이 없고, 틱이 같을 때(커서·스크롤·변경 없는 `send_images`)는 공급자를 부르지 않는다. 비용: 편집당 공급자 호출 1회. `refresh`는 틱이 같은 상태에서 상태(pending→ready)가 바뀐 경우를 위해 필요
+- [x] `place.lua`:
+  - [x] 73~81행: `CollectImages`가 `collect_markdown_images`와 `collect_diagram_images`를 병합하도록 이름 변경(`plantuml_errors` → `diagram_errors`)
+  - [x] 231행 `img.plantuml` → `img.diagram`, 360~363행 `plantuml_end_row` → `diagram_end_row`
+  - [x] 604~607행 오류 virt_lines `[plantuml: ...]` → `[diagram: ...]`
+  - [x] 640행 `ctx.plantuml_errors` 이름 변경
+  - `CollectImages`는 이미 두 수집을 병합하고 있어 이름(`collect_diagram_images`, `diagram_errors`)만 바꿨다. 오류 줄은 `[diagram: <msg>]`
+- [x] `deco.lua` 31행: 코드블록 장식 비활성 언어 목록(`plantuml`, `puml`, `uml`)을 하드코딩에서 **공급자가 아는 언어**로 바꿀지 결정. 기본: 장식은 활성 블록이 아닌 이미지 대체 블록에서 conceal로 가려지므로 그대로 두되 목록을 설정화(`opts.diagram.disable_deco_langs`, 기본 `{plantuml, puml, uml}` + glue가 렌더러 `match`로 확장)
+  - 완료: `deco.lua` 기본값에 `diagram.disable_deco_langs = { plantuml, puml, uml }`를 두고 `code.disable`은 제거했다(참조는 `deco.lua` 한 곳뿐이었음). 사용자 목록은 기본 목록을 대체한다(`tbl_deep_extend`가 리스트를 통째로 바꿈) — 렌더러 언어와의 합치기는 R4 glue 몫. 스펙: `deco_spec`에 설정 반영 케이스 추가
+- [x] 설정 키(Q4): `opts.diagram.preview`를 읽고 `opts.plantuml.preview`는 별칭으로 한 번 경고 후 수용(`vim.notify_once`)
+  - 완료: `diagram.preview`가 우선, `plantuml.preview`가 있으면 `vim.notify_once` 경고 후 값이 없을 때 대신 사용. 주의: `init.lua`의 사용자 설정은 R4에서 바꾸므로(지시) 그때까지 시작할 때 경고가 한 번 뜬다
+- [x] 스펙 추가 `tests/spec/rendermark/image/diagram_spec.lua` (가짜 공급자 사용):
   - 항목 `ready` → 이미지 항목이 `result`에 들어가고 `source_span_height`가 블록 높이와 같다
   - 항목 `failed` → 오류 virt_line, `none` → 아무것도 없음, `pending` → 없음
   - 활성 블록(커서가 블록 안) → 해당 항목은 `result`에서 빠지고 미리보기만 열림. `request_live`가 400ms 디바운스로 한 번만 호출
@@ -268,9 +276,13 @@ vim.api.nvim_create_autocmd('User', {
   - `refresh(buf)` → 다음 `send_images`에서 새 항목 반영, 변경 없는 버퍼는 `vim.ui.img.set` 재호출 없음
   - 블록 위치가 편집으로 이동 → 공급자가 바뀐 위치를 돌려주면 새 위치로 그림
   - 공급자가 예외를 던져도 렌더링이 중단되지 않음(`pcall`)
-- [ ] 기존 스펙 갱신: plantuml 실행에 의존하던 스펙(`image/init_spec`의 plantuml 관련)은 가짜 공급자로 재작성, 삭제된 기능(`plantuml_resolve_command` 등)의 스펙 삭제
-- [ ] 성능: `benchmark_image_reapply.lua`가 기준선(R0)과 같은 호출 수를 유지하는지, `docs/plantuml_scan_performance.md`의 시나리오를 공급자 기반으로 다시 측정
-- 완료 조건: 위 스펙 통과, 벤치 호출 수 회귀 없음, `grep -rn "plantuml_run\|plantuml_resolve\|plantuml_find_blocks\|PLANTUML_JAR" lua` 결과 없음.
+  - 완료: `tests/spec/rendermark/image/diagram_spec.lua` 19개(위 7개 시나리오 + stale/SVG/유효하지 않은 항목/`request_live` 예외/preview 숨김/타 버퍼 캐시/잘못된 버퍼 refresh/설정 별칭). 가짜 공급자는 `tests/spec/rendermark/image/helpers.lua`(`fence_source`). 테스트 사이에 이전 인스턴스의 예약된 동기화가 다음 테스트의 창에 미리보기를 여는 오염이 있어 `after_each`에서 이벤트 루프를 한 번 비운다
+- [x] 기존 스펙 갱신: plantuml 실행에 의존하던 스펙(`image/init_spec`의 plantuml 관련)은 가짜 공급자로 재작성, 삭제된 기능(`plantuml_resolve_command` 등)의 스펙 삭제
+  - 실행·`plantuml_resolve_command` 등에 의존한 스펙은 애초에 없었다(`init_spec`은 `collect_plantuml_images`를 스텁하거나 블록 스캔 함수를 직접 호출). 변경: `cursor_active_block_sig`(3)와 `compute_preview_placement`(3)는 가짜 공급자를 등록하고 `diagram_block_span`을 스텁하도록 재작성, e2e 스텁은 `collect_diagram_images`/`diagram` 필드로 개명, 설정 스펙은 `diagram.preview`로 변경. **삭제한 스펙**(`init_spec`의 `PlantUML scan cache`, 3개 중 2개): `shares one full read across block and height queries until editing or cleanup`(공급자 호출 횟수를 세는 `asks the provider once per changedtick and once per refresh`로 대체), `keeps unfinished fence heights without rendering unfinished blocks`(펜스 스캔이 공급자 몫이 되어 삭제; 닫히지 않은 펜스 처리는 coderunner `blocks_spec`가 맡음). 나머지 1개(`does not query block heights for decoration text...`)는 `diagram_block_span` 기준으로 이름만 바꿔 유지. 신규: `gives no block span outside the provider items`
+- [x] 성능: `benchmark_image_reapply.lua`가 기준선(R0)과 같은 호출 수를 유지하는지, `docs/plantuml_scan_performance.md`의 시나리오를 공급자 기반으로 다시 측정
+  - 벤치(`benchmark_image_reapply.lua`, 스텁 이름 `collect_diagram_images`로 수정, 5회): 변경 없음 중앙값 671.3 ms(667.2~680.1), 너비 변경 680.1 ms(675.4~685.1). R0(680.0 / 690.8 ms) 대비 회귀 없음. 호출 수는 R0와 동일(변경 없음 set/mark/clear/redraw/del 0, 너비 변경 set 1000/mark 2000/clear 1000/redraw 1000/del 0)
+  - `docs/plantuml_scan_performance.md`에 "After R3" 절을 추가해 공급자 기반으로 다시 측정(`benchmark_plantuml_scan.lua`는 `BENCH_PROVIDER=1`로 가짜 공급자 등록, 공급자 호출 수 보고): 변경 없는 `send_images`·커서 서명 때 공급자 호출 0, 편집당 1회, 전체 버퍼 읽기 0
+- 완료 조건(충족, 2026-10-30): 위 스펙 통과, 벤치 호출 수 회귀 없음, `grep -rn "plantuml_run\|plantuml_resolve\|plantuml_find_blocks\|PLANTUML_JAR" lua` 결과 없음.
 
 ### R4 — glue (nvim_config/markdown.lua)와 사용자 설정
 
@@ -371,7 +383,7 @@ mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원
 | R0 기준선 | 부분 완료 | 2026-10-30 | 기준 수치: 전체 스펙 696 통과/0 실패/0 오류(69 파일), rendermark 259 통과/0/0(13 파일). 벤치(5회 중앙값, 1,000회): 변경 없음 680.0 ms·호출 전부 0, 이미지 하나 변경 690.8 ms·set 1000/mark 2000/clear 1000/redraw 1000. 미완: 수동 동작 캡처(사용자 확인 필요), 무관 변경 분리 커밋(사용자 판단) |
 | R1 임시 우회 제거 | 완료(GUI 중복 확인은 R8) | 2026-10-30 | 임시 우회 4곳 제거, mdloom 경로를 `vim.g.mdloom_dir`로 설정화, `complete/{image,link}`·`actions`·`rename`과 스펙 3개 삭제, cmp 소스 제거 확정. 전체 스펙 66개 파일 통과 681/0/0(696 − 삭제 스펙 18 + 신규 3). 완료 조건 grep 결과 없음. mdloom 확인: 체크아웃 `lsp-scope`에 그리기 코드 없음(`editors/nvim`은 `init.lua`뿐), 단 master에는 아직 `image.lua`·`images.lua` 등이 남아 있어 병합 전 master 사용 시 중복 그리기 |
 | R2 스캔 범위 결정 | 완료 | 2026-10-30 | 노트 폴더 `~/notes`(md 207개) 조사: 표준 `![]()` 4개(png 3, svg 1)뿐이고 위키·HTML `<img>`·참조형 사용은 0(`keep`도 표준 27개뿐, 이미지 확장자 png/jpg). 구현 순서: 공통 기반(경로 쿼리·앵커/`<>`, 펜스 제외, 프리필터) → 참조형 → HTML → 위키 경로형 → 위키 이름형. 이름 검색 규모 위험은 노트 폴더에선 낮음(파일 251~1075, 이미지 3~29, 동명 0). 이상 징후: `scan.lua`에 펜스 코드블록 제외가 없어 R6의 "기존 규칙 유지"는 신규 구현이고, `size.lua`는 GIF·SVG 미지원 |
-| R3 공급자 API·diagram.lua | 대기 | | |
+| R3 공급자 API·diagram.lua | 완료 | 2026-10-30 | `set_diagram_source`/`clear_diagram_source`/`refresh` 추가, `plantuml.lua`→`diagram.lua`(실행·캐시·임시 폴더·잡·jar·환경변수·"PlantUML disabled" 제거, `collect_diagram_images`), `blocks.lua` 삭제(`diagram_items`/`diagram_block_span`, `stable_hash`→`hash.lua`), place/preview/창 변수/오류 줄 개명, `deco`의 `diagram.disable_deco_langs`, `diagram.preview` 우선·`plantuml.preview` 경고 별칭. 신규 `diagram_spec` 19개 + `deco_spec` 1개, `init_spec` 재작성(스펙 2개 삭제). 전체 701 통과/0/0(67 파일, 종료 코드 0; R1 681 + 20), `tests/spec/rendermark` 260/0/0(11 파일). 벤치(5회 중앙값): 변경 없음 671.3 ms·호출 전부 0, 너비 변경 680.1 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0 680.0/690.8 ms, 같은 호출 수). `grep plantuml_run\|plantuml_resolve\|plantuml_find_blocks\|PLANTUML_JAR lua` 결과 없음. 한계: `init.lua`의 `plantuml.preview` 사용자 설정은 R4까지 경고 한 번 발생, 닫히지 않은 펜스의 높이 예약은 이제 공급자(coderunner 파서)가 정한다 |
 | R4 glue·사용자 설정 | 대기 | | |
 | R5 인접 내보낸 이미지 정책 | 대기 | | |
 | R6 동등성 점검 | 대기 | | |
