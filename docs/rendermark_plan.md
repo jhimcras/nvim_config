@@ -286,13 +286,21 @@ R3 후속 메모 (R2 기록 정정): R2의 "펜스 판정은 `blocks.lua`의 pla
 
 ### R4 — glue (nvim_config/markdown.lua)와 사용자 설정
 
-- [ ] `lua/nvim_config/markdown.lua` 신규: 4.2절의 연결. coderunner가 없으면(`pcall(require, ...)` 실패) 공급자를 등록하지 않는다
-- [ ] 렌더러 `match` 언어와 rendermark의 `disable_deco_langs` 동기화: glue가 coderunner 설정에서 렌더러 언어 목록을 읽어 `diagram.disable_deco_langs`에 합친다 (coderunner API 필요: `runner.renderer_langs()` — coderunner 작업에서 제공. 없으면 이 항목은 보류하고 기본 목록만 사용)
-- [ ] `init.lua`에 `require'nvim_config.markdown'.setup()` 추가 (rendermark, coderunner 설정 이후 순서)
-- [ ] `init.lua`의 `rendermark.setup{ plantuml = { preview = ... } }`를 `diagram = { preview = ... }`로 변경 (Q4)
-- [ ] coderunner `renderers.plantuml` 설정을 사용자 `init.lua`에 추가하고 `render_on_open = true`(coderunner_plan Q8)로 기존 "열면 보이는 plantuml 블록이 자동 렌더되는" 경험을 유지
-- [ ] 스펙 `tests/spec/markdown_glue_spec.lua`: 가짜 coderunner 모듈로 (a) 이벤트 `CodeRunnerDiagrams` → `image.refresh` 호출 (b) coderunner 부재 시 오류 없음 (c) 이벤트의 `buf`가 로드되지 않은 버퍼여도 오류 없음
+- [x] `lua/nvim_config/markdown.lua` 신규: 4.2절의 연결. coderunner가 없으면(`pcall(require, ...)` 실패) 공급자를 등록하지 않는다
+  - 완료(2026-10-30): `setup()`은 augroup `nvim_config_markdown`을 `clear`로 만든 뒤(중복 호출 안전) coderunner를 `pcall(require)`하고, 있으면 `image.set_diagram_source{ items = runner.diagrams, request_live = runner.request_live }`와 `User CodeRunnerDiagrams` → `image.refresh(args.data.buf)`를 등록한다. 이벤트 `data.buf`가 숫자가 아니면 무시하고, 로드되지 않았거나 없는 버퍼는 `image.refresh`가 이미 안전하다(스펙으로 확인). 실제 이름은 의사코드와 같다: `coderunner.diagrams(buf)`, `coderunner.request_live(buf, row)`(`init.lua`가 `provider.lua`로 위임), 이벤트 `CodeRunnerDiagrams`의 `data = { buf = buf }`(`render.lua` `event`)
+- [x] 렌더러 `match` 언어와 rendermark의 `disable_deco_langs` 동기화
+  - 완료(2026-10-30): 문서가 가정한 `runner.renderer_langs()`는 coderunner에 **없다**. 대신 공개 API `coderunner.resolve(workspace, false)`(전역 + 이미 로드된 워크스페이스 설정을 병합, 신뢰 프롬프트 없음)의 `renderers[*].match`를 읽는다. glue는 `M.deco_langs()`(기본 `plantuml, puml, uml` + 렌더러 `match`를 소문자·중복 제거·정렬해 합침)를 제공하고 `init.lua`가 `rendermark.setup{ diagram = { disable_deco_langs = ... } }`에 넘긴다. 시점: `deco.setup`이 목록을 한 번만 읽고(`tbl_deep_extend`가 리스트를 통째로 대체) glue의 `setup()`은 rendermark 설정 뒤에 오므로, 목록은 `rendermark.setup` **인자를 만들 때**(coderunner 설정 뒤, rendermark 설정 앞) 계산한다. 한계: 이후에 로드되는 워크스페이스 렌더러의 언어는 따라가지 않는다(이미지가 대체하는 블록의 코드 배경 장식만 남는 외관 문제). rendermark의 기본 목록이 glue에 한 벌 더 있다(`default_deco_langs`)
+- [x] `init.lua`에 `require'nvim_config.markdown'.setup()` 추가 (rendermark, coderunner 설정 이후 순서)
+- [x] `init.lua`의 `rendermark.setup{ plantuml = { preview = ... } }`를 `diagram = { preview = ... }`로 변경 (Q4)
+  - 완료: 헤드리스 기동에서 별칭 경고가 사라졌고 출력이 없다
+- [x] coderunner `renderers.plantuml` 설정을 사용자 `init.lua`에 추가하고 `render_on_open = true`(coderunner_plan Q8)로 기존 "열면 보이는 plantuml 블록이 자동 렌더되는" 경험을 유지
+  - `renderers.plantuml`(`match = { plantuml, puml }`, `formats = { png, svg }`, stdin/stdout)과 `render_on_open = true`는 coderunner 작업에서 이미 `init.lua`에 있었다. R4에서 `cmd`만 `plantuml_cmd()`로 바꿨다: 이전 rendermark와 같은 규칙으로 `vim.g.rendermark_plantuml_jar` → `RENDERMARK_PLANTUML_JAR` → `PLANTUML_JAR`의 jar가 읽히고 `java`가 PATH에 있으면 `java -jar <jar> -t{format} -pipe`, 아니면 PATH의 `plantuml` 래퍼(`plantuml -t{format} -pipe`). 값은 시작할 때 한 번 정해진다(이전 rendermark는 실행마다 조회). 이 개발 환경에서는 `/usr/bin/plantuml` 래퍼가 없는 `/usr/bin/java`(깨진 링크)를 쓰므로 `PATH=~/.local/jdk-21/bin:$PATH PLANTUML_JAR=/usr/share/java/plantuml/plantuml.jar`가 있어야 동작한다
+  - **coderunner 결함 수정(별도 커밋)**: 실제 plantuml로 확인하다가 `output = 'stdout'` 렌더러의 stdout이 UTF-8 정리(`clean_utf8`)를 거쳐 PNG가 깨지는 것(1499 → 1795 바이트)을 발견했다(SVG만 우연히 멀쩡). `formats[1]`이 png인 위 설정과 rendermark(PNG/JPEG/WebP만 크기 읽기)에는 치명적이라 렌더러 stdout은 원시 바이트로 두도록 `exec.run_step`/`command.run`을 고쳤다(`raw_stdout`; 러너 stdout·stderr는 그대로 정리). 스펙: `command_spec`에 1개
+- [x] 스펙 `tests/spec/markdown_glue_spec.lua`: 가짜 coderunner 모듈로 (a) 이벤트 `CodeRunnerDiagrams` → `image.refresh` 호출 (b) coderunner 부재 시 오류 없음 (c) 이벤트의 `buf`가 로드되지 않은 버퍼여도 오류 없음
+  - 완료: 9개(가짜 모듈 주입 7 — 등록·전달, 이벤트 → refresh, 부재, 잘못된 버퍼(실제 `image.refresh`), 숫자 아닌 buf, 중복 `setup`, `deco_langs` 2 — + 실제 coderunner·rendermark 통합 1: 가짜 렌더러(원시 PNG를 echo)로 `request_live` → 렌더 완료 이벤트 → glue의 `refresh`가 항목 캐시를 비워 `collect_diagram_images`가 `ready` 이미지 항목을 돌려줌)
+- [ ] neopp GUI(또는 `RENDERMARK_IMG_STUB=1`)에서 plantuml 블록이 이미지로 대체되고 저장 시 갱신되는지 통합 확인 (헤드리스 불가, R8 수동 항목)
 - 완료 조건: 스펙 통과. 실제 coderunner가 있으면 plantuml 블록이 렌더된 이미지로 표시되고 저장 시 갱신된다 (coderunner 작업 C8 이후 통합 확인).
+  - 확인한 것(2026-10-30): 스펙 통과, 실제 `init.lua`로 헤드리스 기동이 출력 없이 끝남, 같은 `init.lua`에서 실제 plantuml로 `request_live` → 유효한 PNG(1499 바이트) `ready`. 확인하지 못한 것(`[ ]`로 R8에 남김): neopp GUI/`RENDERMARK_IMG_STUB`에서 블록이 이미지로 대체되는 모습, 저장 시 갱신(`auto_render`)과 화면 반영, 활성 블록 미리보기 split, 그리기 쪽 이벤트 연쇄의 실사용 지연
 
 ### R5 — 인접 내보낸 이미지 정책 (Q3)
 
@@ -384,7 +392,7 @@ mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원
 | R1 임시 우회 제거 | 완료(GUI 중복 확인은 R8) | 2026-10-30 | 임시 우회 4곳 제거, mdloom 경로를 `vim.g.mdloom_dir`로 설정화, `complete/{image,link}`·`actions`·`rename`과 스펙 3개 삭제, cmp 소스 제거 확정. 전체 스펙 66개 파일 통과 681/0/0(696 − 삭제 스펙 18 + 신규 3). 완료 조건 grep 결과 없음. mdloom 확인: 체크아웃 `lsp-scope`에 그리기 코드 없음(`editors/nvim`은 `init.lua`뿐), 단 master에는 아직 `image.lua`·`images.lua` 등이 남아 있어 병합 전 master 사용 시 중복 그리기 |
 | R2 스캔 범위 결정 | 완료 | 2026-10-30 | 노트 폴더 `~/notes`(md 207개) 조사: 표준 `![]()` 4개(png 3, svg 1)뿐이고 위키·HTML `<img>`·참조형 사용은 0(`keep`도 표준 27개뿐, 이미지 확장자 png/jpg). 구현 순서: 공통 기반(경로 쿼리·앵커/`<>`, 펜스 제외, 프리필터) → 참조형 → HTML → 위키 경로형 → 위키 이름형. 이름 검색 규모 위험은 노트 폴더에선 낮음(파일 251~1075, 이미지 3~29, 동명 0). 이상 징후: `scan.lua`에 펜스 코드블록 제외가 없어 R6의 "기존 규칙 유지"는 신규 구현이고, `size.lua`는 GIF·SVG 미지원 |
 | R3 공급자 API·diagram.lua | 완료 | 2026-10-30 | `set_diagram_source`/`clear_diagram_source`/`refresh` 추가, `plantuml.lua`→`diagram.lua`(실행·캐시·임시 폴더·잡·jar·환경변수·"PlantUML disabled" 제거, `collect_diagram_images`), `blocks.lua` 삭제(`diagram_items`/`diagram_block_span`, `stable_hash`→`hash.lua`), place/preview/창 변수/오류 줄 개명, `deco`의 `diagram.disable_deco_langs`, `diagram.preview` 우선·`plantuml.preview` 경고 별칭. 신규 `diagram_spec` 19개 + `deco_spec` 1개, `init_spec` 재작성(스펙 2개 삭제). 전체 701 통과/0/0(67 파일, 종료 코드 0; R1 681 + 20), `tests/spec/rendermark` 260/0/0(11 파일). 벤치(5회 중앙값): 변경 없음 671.3 ms·호출 전부 0, 너비 변경 680.1 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0 680.0/690.8 ms, 같은 호출 수). `grep plantuml_run\|plantuml_resolve\|plantuml_find_blocks\|PLANTUML_JAR lua` 결과 없음. 한계: `init.lua`의 `plantuml.preview` 사용자 설정은 R4까지 경고 한 번 발생, 닫히지 않은 펜스의 높이 예약은 이제 공급자(coderunner 파서)가 정한다 |
-| R4 glue·사용자 설정 | 대기 | | |
+| R4 glue·사용자 설정 | 완료(GUI 확인은 R8) | 2026-10-30 | `nvim_config/markdown.lua`(`setup`, `deco_langs`), `init.lua`(`diagram.preview`, `disable_deco_langs`, `plantuml_cmd()`, `markdown.setup()`), `tests/spec/markdown_glue_spec.lua` 9개. `renderer_langs()`는 coderunner에 없어 `coderunner.resolve` 사용. 실제 plantuml로 PNG 렌더 확인 중 coderunner가 stdout 렌더러 출력을 UTF-8 정리해 PNG를 깨뜨리는 결함 발견·수정(`raw_stdout`, 스펙 1개). 전체 `bash run_tests.sh` 종료 코드 0, 실패·오류 0(스펙 줄 기준 R3 697 → 708). 한계: 워크스페이스 전용 렌더러 언어는 `disable_deco_langs`에 반영되지 않음, plantuml 명령은 시작 시 한 번 결정 |
 | R5 인접 내보낸 이미지 정책 | 대기 | | |
 | R6 동등성 점검 | 대기 | | |
 | R7 정리 | 대기 | | |
