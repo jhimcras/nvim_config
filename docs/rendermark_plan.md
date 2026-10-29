@@ -46,7 +46,7 @@ rendermark 이미지 모듈 구성 (`lua/nvim_config/rendermark/image/`, 합계 
 - `rendermark/complete/{image,link}.lua`: nvim-cmp 소스. 작업 트리에서 이미 등록 해제
 - `rendermark/actions.lua`, `rendermark/rename.lua`: markdown-oxide 전용 보정(파일 생성 액션, rename). mdloom 연결로 바뀐 지금 `on_attach`가 호출되지 않는다.
 - 테스트: `tests/spec/rendermark/{image/init_spec,image/diff_spec,table_image_spec,events_spec,actions_spec,rename_spec,complete/image_spec,...}.lua`
-- 성능 기준: `docs/image_reapply_performance.md`, `tests/manual/benchmark_image_reapply.lua`, `docs/plantuml_scan_performance.md`
+- 성능 기준: `docs/image_reapply_performance.md`, `tests/manual/benchmark_image_reapply.lua`, `docs/image_scan_performance.md`
 
 ## 3. 결정이 필요한 항목
 
@@ -279,9 +279,9 @@ R3 후속 메모 (R2 기록 정정): R2의 "펜스 판정은 `blocks.lua`의 pla
   - 완료: `tests/spec/rendermark/image/diagram_spec.lua` 19개(위 7개 시나리오 + stale/SVG/유효하지 않은 항목/`request_live` 예외/preview 숨김/타 버퍼 캐시/잘못된 버퍼 refresh/설정 별칭). 가짜 공급자는 `tests/spec/rendermark/image/helpers.lua`(`fence_source`). 테스트 사이에 이전 인스턴스의 예약된 동기화가 다음 테스트의 창에 미리보기를 여는 오염이 있어 `after_each`에서 이벤트 루프를 한 번 비운다
 - [x] 기존 스펙 갱신: plantuml 실행에 의존하던 스펙(`image/init_spec`의 plantuml 관련)은 가짜 공급자로 재작성, 삭제된 기능(`plantuml_resolve_command` 등)의 스펙 삭제
   - 실행·`plantuml_resolve_command` 등에 의존한 스펙은 애초에 없었다(`init_spec`은 `collect_plantuml_images`를 스텁하거나 블록 스캔 함수를 직접 호출). 변경: `cursor_active_block_sig`(3)와 `compute_preview_placement`(3)는 가짜 공급자를 등록하고 `diagram_block_span`을 스텁하도록 재작성, e2e 스텁은 `collect_diagram_images`/`diagram` 필드로 개명, 설정 스펙은 `diagram.preview`로 변경. **삭제한 스펙**(`init_spec`의 `PlantUML scan cache`, 3개 중 2개): `shares one full read across block and height queries until editing or cleanup`(공급자 호출 횟수를 세는 `asks the provider once per changedtick and once per refresh`로 대체), `keeps unfinished fence heights without rendering unfinished blocks`(펜스 스캔이 공급자 몫이 되어 삭제; 닫히지 않은 펜스 처리는 coderunner `blocks_spec`가 맡음). 나머지 1개(`does not query block heights for decoration text...`)는 `diagram_block_span` 기준으로 이름만 바꿔 유지. 신규: `gives no block span outside the provider items`
-- [x] 성능: `benchmark_image_reapply.lua`가 기준선(R0)과 같은 호출 수를 유지하는지, `docs/plantuml_scan_performance.md`의 시나리오를 공급자 기반으로 다시 측정
+- [x] 성능: `benchmark_image_reapply.lua`가 기준선(R0)과 같은 호출 수를 유지하는지, `docs/image_scan_performance.md`의 시나리오를 공급자 기반으로 다시 측정
   - 벤치(`benchmark_image_reapply.lua`, 스텁 이름 `collect_diagram_images`로 수정, 5회): 변경 없음 중앙값 671.3 ms(667.2~680.1), 너비 변경 680.1 ms(675.4~685.1). R0(680.0 / 690.8 ms) 대비 회귀 없음. 호출 수는 R0와 동일(변경 없음 set/mark/clear/redraw/del 0, 너비 변경 set 1000/mark 2000/clear 1000/redraw 1000/del 0)
-  - `docs/plantuml_scan_performance.md`에 "After R3" 절을 추가해 공급자 기반으로 다시 측정(`benchmark_plantuml_scan.lua`는 `BENCH_PROVIDER=1`로 가짜 공급자 등록, 공급자 호출 수 보고): 변경 없는 `send_images`·커서 서명 때 공급자 호출 0, 편집당 1회, 전체 버퍼 읽기 0
+  - `docs/image_scan_performance.md`에 "After R3" 절을 추가해 공급자 기반으로 다시 측정(`benchmark_image_scan.lua`는 `BENCH_PROVIDER=1`로 가짜 공급자 등록, 공급자 호출 수 보고): 변경 없는 `send_images`·커서 서명 때 공급자 호출 0, 편집당 1회, 전체 버퍼 읽기 0
 - 완료 조건(충족, 2026-10-30): 위 스펙 통과, 벤치 호출 수 회귀 없음, `grep -rn "plantuml_run\|plantuml_resolve\|plantuml_find_blocks\|PLANTUML_JAR" lua` 결과 없음.
 
 ### R4 — glue (nvim_config/markdown.lua)와 사용자 설정
@@ -354,7 +354,7 @@ mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원
 R6-A에서 정한 공통 기반 규칙:
 - 링크 문법(`scan.lua` `find_image_links`): `![alt](dest)` 의 dest는 `path`, `<path with spaces>`, 균형 잡힌 괄호를 가진 경로, 뒤에 `"t"`/`'t'`/`(t)` title. 빈 경로·닫히지 않은 `<`·공백 포함 맨 경로는 이미지가 아님. 프리필터는 줄에 `![`가 있는지 평문 `find`(함수 맨 앞)
 - 경로(`resolve_image_path`): `<…>` 벗기기 → 후보 `[그대로, ?#제거, %xx 디코딩, 둘 다]` 중 실제 있는 파일을 첫 번째로 채택, 하나도 없으면 마지막(제거+디코딩)을 돌려줌(파일 확인은 후보가 둘 이상일 때만). `scheme://`는 nil, `~`는 `os_homedir()`
-- 펜스 제외(`image/docindex.lua`): treesitter 없이 줄 단위 상태. 여는 줄은 앞에 공백·`>` 뒤 ``` 3개 이상 또는 `~~~` 3개 이상(백틱 펜스의 info string에 백틱이 있으면 펜스 아님), 닫는 줄은 같은 문자·같거나 더 긴 길이·뒤에 공백만, 닫히지 않으면 문서 끝까지. 목록 마커와 같은 줄의 펜스(`- ```lua`)는 인식하지 않음. 버퍼 전체를 한 번 읽어 {펜스 구간, 정의}를 `changedtick`별로 캐시하고 줄 조회는 이진 탐색. **스캔한 줄에 `![`가 있을 때만** 만들므로 이미지가 없는 문서는 비용 0. 적용 대상은 버퍼 줄 스캔뿐: 다른 네임스페이스의 virt_text/virt_lines는 제외하지 않음(다이어그램 블록 행에 붙은 `source_span_height` 경로가 의존). 비용은 `docs/plantuml_scan_performance.md`의 "After R6-A": 이미지가 보이는 문서의 편집당 +0.3 ms(3000줄)·+0.8 ms(8000줄), 스크롤·커서·변경 없는 `send_images`는 증가 없음
+- 펜스 제외(`image/docindex.lua`): treesitter 없이 줄 단위 상태. 여는 줄은 앞에 공백·`>` 뒤 ``` 3개 이상 또는 `~~~` 3개 이상(백틱 펜스의 info string에 백틱이 있으면 펜스 아님), 닫는 줄은 같은 문자·같거나 더 긴 길이·뒤에 공백만, 닫히지 않으면 문서 끝까지. 목록 마커와 같은 줄의 펜스(`- ```lua`)는 인식하지 않음. 버퍼 전체를 한 번 읽어 {펜스 구간, 정의}를 `changedtick`별로 캐시하고 줄 조회는 이진 탐색. **스캔한 줄에 `![`가 있을 때만** 만들므로 이미지가 없는 문서는 비용 0. 적용 대상은 버퍼 줄 스캔뿐: 다른 네임스페이스의 virt_text/virt_lines는 제외하지 않음(다이어그램 블록 행에 붙은 `source_span_height` 경로가 의존). 비용은 `docs/image_scan_performance.md`의 "After R6-A": 이미지가 보이는 문서의 편집당 +0.3 ms(3000줄)·+0.8 ms(8000줄), 스크롤·커서·변경 없는 `send_images`는 증가 없음
 - 참조형: 정의는 `^ {0,3}[label]: dest [title]` 한 줄(라벨 `^`로 시작하는 각주 제외, 이후 쓰레기 문자가 있으면 정의 아님), 라벨은 공백 정규화+소문자(비ASCII는 `vim.fn.tolower`). `line_has_image_link(text, buf)`는 `buf`가 있을 때만 참조형을 셈(wrap이 이미지 줄을 감싸지 않게 하기 위함). 항목에 `ref_label`, `raw_path`는 정의의 목적지
 - R6-B 연결점: 새 문법의 줄 프리필터는 `find_image_links` 맨 앞의 `![` 조기 종료와 `collect_markdown_images`의 `line:find('![', 1, true)` 조건 두 곳에 `<img`를 더하면 된다. 펜스 제외는 같은 조건 안에서 이미 적용됨
 
@@ -378,16 +378,22 @@ R6-B에서 정한 규칙 (HTML `<img>`·위키 이미지, 2026-10-30):
   - [x] 위키 `![[name.png]]`, `![[dir/name.png]]`, `![[name.png|300]]`(너비), `![[name.png#...]]`는 무시: 경로형은 문서 폴더 기준, 이름형은 위 Q1 규칙의 이름 검색. 검색은 비동기·캐시(파일 감시 없이 `BufEnter`/저장 시 무효화), 결과 없음/모호는 오류 박스(`not_found`/`ambiguous`) (R6-B)
   - [x] 경로 규칙은 기존 `resolve_image_path`를 공유: `%20`(및 `%xx`), `~`, `<…>` 감싸기, 쿼리·앵커 제거 (R6-A)
   - [x] 코드 스팬·펜스 코드블록 안의 이미지 문법은 제외 (R6-A: 코드 스팬은 기존, 펜스는 신규 `docindex.lua`)
-  - [x] 성능: 문서 스캔 비용이 늘지 않도록 줄 단위 프리필터(`![`, `<img`, `[…]:`)를 유지하고 `docs/image_reapply_performance.md` 벤치를 다시 측정 — R6-A(`![`와 참조형)와 R6-B(`<img`·위키)의 측정은 `docs/plantuml_scan_performance.md` "After R6-A"·"After R6-B". 이미지 없는 문서(HTML 텍스트 줄 포함)는 불변, `benchmark_image_reapply`(5회) 호출 수 불변
+  - [x] 성능: 문서 스캔 비용이 늘지 않도록 줄 단위 프리필터(`![`, `<img`, `[…]:`)를 유지하고 `docs/image_reapply_performance.md` 벤치를 다시 측정 — R6-A(`![`와 참조형)와 R6-B(`<img`·위키)의 측정은 `docs/image_scan_performance.md` "After R6-A"·"After R6-B". 이미지 없는 문서(HTML 텍스트 줄 포함)는 불변, `benchmark_image_reapply`(5회) 호출 수 불변
 - 완료 조건: 표의 모든 행에 "동등" 또는 "의도적 미지원(사유)"이 기록됨.
 
 ### R7 — 정리
 
-- [ ] `docs/` 문서 갱신: rendermark 이미지·다이어그램 설명(있다면)과 `docs/coderunner.md`와의 경계 설명. `README.md`의 기능 목록 갱신
-- [ ] 이슈 `issue-rendermark_all_drawing.md`의 "확인 필요" 항목 닫기
-- [ ] `tests/manual/`의 plantuml 관련 수동 스크립트·벤치 정리 (`benchmark_plantuml_scan.lua` 등 사용 여부 확인)
-- [ ] 죽은 코드 점검: `grep -rn "plantuml" lua tests docs init.lua` 결과가 의도된 것(호환 별칭, 문서의 과거 설명)만 남는지
-- [ ] `docs/plantuml_scan_performance.md`는 과거 측정 기록으로 보존하고 머리말에 "plantuml 실행은 coderunner로 이동" 메모 추가
+- [x] `docs/` 문서 갱신: rendermark 이미지·다이어그램 설명(있다면)과 `docs/coderunner.md`와의 경계 설명. `README.md`의 기능 목록 갱신
+  - 신규 `docs/rendermark_image.md`(비슷한 문서 없었음): 공급자 계약, glue, 설정 키 3개, 지원 문법·경로 규칙·위키 이름 검색, 크기 형식(PNG/JPEG/WebP/GIF, SVG 미지원), 스텁 환경변수. `docs/coderunner.md`: rendermark와의 경계 문장 2곳 갱신, 낡은 "병행 기간" 서술 정정, `raw_stdout` 설명 추가. `README.md`: rendermark 행에서 없어진 링크 이동·이미지 완성 기능 제거, 새 문법·스텁·문서 링크 추가, coderunner·glue 행 추가, 하단 설명의 actions/rename/completion 서술 정정
+- [x] 이슈 `issue-rendermark_all_drawing.md`의 "확인 필요" 항목 닫기
+  - 3개 항목 `[x]`로 닫고 "3. 작업 노트" 추가(R0~R7 요약, R8 수동 확인 대기). R8 수동 확인이 남아 있어 `closed/`로는 옮기지 않음(`.issues/`는 git 제외)
+- [x] `tests/manual/`의 plantuml 관련 수동 스크립트·벤치 정리 (`benchmark_image_scan.lua` 등 사용 여부 확인)
+  - `benchmark_plantuml_scan.lua` -> `benchmark_image_scan.lua`(`git mv`), `plantuml_scan_performance.md` -> `image_scan_performance.md`. 스크립트는 공급자·Markdown/HTML/위키 이미지 스캔을 재므로 plantuml 이름이 맞지 않았다. 참조(docs, 스크립트 머리말·네임스페이스, 닫힌 이슈 2개, 이 문서)를 모두 갱신하고 `BENCH_PROVIDER=1 BENCH_IMAGES=1`로 실행 확인. `module_refactoring.md`의 `#### plantuml_scan` 소제목은 당시 출력 기록의 라벨이라 그대로 둠. `coderunner_smoke.lua`는 coderunner용 수동 스크립트라 변경 없음
+- [x] 죽은 코드 점검: `grep -rn "plantuml" lua tests docs init.lua` 결과가 의도된 것(호환 별칭, 문서의 과거 설명)만 남는지
+  - 남은 것: 호환 별칭 `plantuml.preview`(`image/init.lua`, `diagram_spec`), 펜스 언어 기본값 `plantuml/puml/uml`(`deco.lua`, `markdown.lua`, 관련 스펙), 스펙의 ```plantuml 펜스 픽스처, 사용자 `init.lua`의 coderunner `renderers.plantuml`·`plantuml_cmd()`, 과거 기록 문서, 외부 플러그인 `plantuml-previewer.vim`(`plugins.lua`, 별개 기능). 정리한 것: `rendermark/init.lua`의 낡은 "markdown-oxide go-to-definition" 주석(`link.setup` 호출 주석 포함; 모듈은 이미 없음), `backend.lua` 주석의 옛 플러그인 환경변수 이름(`grep -ri mdloom lua/nvim_config/rendermark` 비움 — 이슈 완료 기준), `module_refactoring.md`의 삭제된 코드 서술에 "later removed" 주석. `grep -rn "markdown-oxide\|markdown_oxide" lua tests init.lua` 결과 없음. 고아 점검(`image/` 모듈 14개의 `require` 호출처, rendermark 함수 정의의 참조 수)에서 R1~R6이 만든 고아 없음
+- [x] `docs/image_scan_performance.md`는 과거 측정 기록으로 보존하고 머리말에 "plantuml 실행은 coderunner로 이동" 메모 추가
+  - 개명 경위와 함께 머리말에 메모 추가, 본문 측정은 그대로
+- 완료 조건: grep 결과가 의도된 것만 남음 (충족). 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 801·803, 두 번 실행)
 
 ### R8 — 통합 검증
 
@@ -431,7 +437,7 @@ R6-B에서 정한 규칙 (HTML `<img>`·위키 이미지, 2026-10-30):
 | R2 스캔 범위 결정 | 완료 | 2026-10-30 | 노트 폴더 `~/notes`(md 207개) 조사: 표준 `![]()` 4개(png 3, svg 1)뿐이고 위키·HTML `<img>`·참조형 사용은 0(`keep`도 표준 27개뿐, 이미지 확장자 png/jpg). 구현 순서: 공통 기반(경로 쿼리·앵커/`<>`, 펜스 제외, 프리필터) → 참조형 → HTML → 위키 경로형 → 위키 이름형. 이름 검색 규모 위험은 노트 폴더에선 낮음(파일 251~1075, 이미지 3~29, 동명 0). 이상 징후: `scan.lua`에 펜스 코드블록 제외가 없어 R6의 "기존 규칙 유지"는 신규 구현이고, `size.lua`는 GIF·SVG 미지원 |
 | R3 공급자 API·diagram.lua | 완료 | 2026-10-30 | `set_diagram_source`/`clear_diagram_source`/`refresh` 추가, `plantuml.lua`→`diagram.lua`(실행·캐시·임시 폴더·잡·jar·환경변수·"PlantUML disabled" 제거, `collect_diagram_images`), `blocks.lua` 삭제(`diagram_items`/`diagram_block_span`, `stable_hash`→`hash.lua`), place/preview/창 변수/오류 줄 개명, `deco`의 `diagram.disable_deco_langs`, `diagram.preview` 우선·`plantuml.preview` 경고 별칭. 신규 `diagram_spec` 19개 + `deco_spec` 1개, `init_spec` 재작성(스펙 2개 삭제). 전체 701 통과/0/0(67 파일, 종료 코드 0; R1 681 + 20), `tests/spec/rendermark` 260/0/0(11 파일). 벤치(5회 중앙값): 변경 없음 671.3 ms·호출 전부 0, 너비 변경 680.1 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0 680.0/690.8 ms, 같은 호출 수). `grep plantuml_run\|plantuml_resolve\|plantuml_find_blocks\|PLANTUML_JAR lua` 결과 없음. 한계: `init.lua`의 `plantuml.preview` 사용자 설정은 R4까지 경고 한 번 발생, 닫히지 않은 펜스의 높이 예약은 이제 공급자(coderunner 파서)가 정한다 |
 | R4 glue·사용자 설정 | 완료(GUI 확인은 R8) | 2026-10-30 | `nvim_config/markdown.lua`(`setup`, `deco_langs`), `init.lua`(`diagram.preview`, `disable_deco_langs`, `plantuml_cmd()`, `markdown.setup()`), `tests/spec/markdown_glue_spec.lua` 9개. `renderer_langs()`는 coderunner에 없어 `coderunner.resolve` 사용. 실제 plantuml로 PNG 렌더 확인 중 coderunner가 stdout 렌더러 출력을 UTF-8 정리해 PNG를 깨뜨리는 결함 발견·수정(`raw_stdout`, 스펙 1개). 전체 `bash run_tests.sh` 종료 코드 0, 실패·오류 0(스펙 줄 기준 R3 697 → 708). 한계: 워크스페이스 전용 렌더러 언어는 `disable_deco_langs`에 반영되지 않음, plantuml 명령은 시작 시 한 번 결정 |
-| R5 인접 내보낸 이미지 정책 | 완료(GUI 확인은 R8) | 2026-10-30 | `diagram.lua`의 `diagram_exported_below`(블록 다음 빈 줄 0~1개 + 문단, 펜스·빈 줄에서 끝, 코드 스팬·원격 링크 제외), 옵션 `diagram.hide_when_exported`(기본 true), 판정은 `changedtick` 항목 캐시에 저장. 스펙 +15(전체 `bash run_tests.sh` 종료 0, 실패·오류 0, 스펙 줄 725). 벤치: `benchmark_image_reapply`(5회, `collect_diagram_images` 스텁이라 호출 수 불변) 변경 없음 670.0~693.5 ms·호출 전부 0, 너비 변경 677.6~701.9 ms·set 1000/mark 2000/clear 1000/redraw 1000; `benchmark_plantuml_scan` 편집당 `send_images` 0.28 → 0.40 ms(블록 10개, 읽기는 블록당 31줄), 나머지 시나리오 불변·전체 읽기 0. 한계: 내보낸 이미지가 오래된 경우의 표시는 진단 몫(Q3) |
+| R5 인접 내보낸 이미지 정책 | 완료(GUI 확인은 R8) | 2026-10-30 | `diagram.lua`의 `diagram_exported_below`(블록 다음 빈 줄 0~1개 + 문단, 펜스·빈 줄에서 끝, 코드 스팬·원격 링크 제외), 옵션 `diagram.hide_when_exported`(기본 true), 판정은 `changedtick` 항목 캐시에 저장. 스펙 +15(전체 `bash run_tests.sh` 종료 0, 실패·오류 0, 스펙 줄 725). 벤치: `benchmark_image_reapply`(5회, `collect_diagram_images` 스텁이라 호출 수 불변) 변경 없음 670.0~693.5 ms·호출 전부 0, 너비 변경 677.6~701.9 ms·set 1000/mark 2000/clear 1000/redraw 1000; `benchmark_image_scan` 편집당 `send_images` 0.28 → 0.40 ms(블록 10개, 읽기는 블록당 31줄), 나머지 시나리오 불변·전체 읽기 0. 한계: 내보낸 이미지가 오래된 경우의 표시는 진단 몫(Q3) |
 | R6 동등성 점검 | 완료(GUI 확인은 R8) | 2026-10-30 | R6-A: 동등성 표 확정(서브 이슈 S1~S3), 공통 기반(`%xx`·쿼리·앵커·`<…>`·title·tilde, 펜스 제외 `docindex.lua`), 참조형 이미지, GIF 크기, provider 오류 내성, 스텁 환경변수 값. 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 R5 725 → 759~762, 3회 실행에서 일부 기존 spec 출력 줄이 빠져 실행마다 ±3 변동하나 실패·오류는 0; 신규 `scan_spec` 39). 벤치: `benchmark_image_reapply`(5회) 변경 없음 중앙값 681.3 ms·호출 전부 0, 너비 변경 686.8 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0와 같음); 스캔은 이미지가 보이는 문서의 편집당 +0.3 ms(3000줄)·+0.8 ms(8000줄), 이미지 없는 문서·스크롤·커서·변경 없는 `send_images`는 불변. R6-B: HTML `<img src>`(크기 속성 반영, 여러 줄 태그 미지원), 위키 이미지(경로형·이름형, `wikisearch.lua` 비동기 색인·캐시·`ambiguous` 박스), 프리필터 `has_image_candidate`. 신규 `html_wiki_spec` 38개, 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 802). 벤치: `benchmark_image_reapply`(5회) 변경 없음 중앙값 673.6 ms·호출 전부 0, 너비 변경 682.2 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0와 같음); 이미지 없는 문서(HTML 텍스트 줄 포함) 불변, 이미지당 `send_images` 비용은 문법과 무관(약 0.06 ms) |
-| R7 정리 | 대기 | | |
+| R7 정리 | 완료 | 2026-10-30 | `docs/rendermark_image.md` 신설(공급자 계약·glue·설정 키·이미지 문법·경로·위키 검색·크기 형식·스텁), README·`coderunner.md`(`raw_stdout` 포함) 갱신, 낡은 주석 정정, 벤치·성능 문서를 `*_image_scan*`로 개명하고 머리말 메모, 이슈 "확인 필요" 닫기와 작업 노트 추가(closed 이동은 R8 후). grep 점검 결과는 호환 별칭·언어 기본값·픽스처·coderunner 렌더러 설정·과거 기록만 남음. 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 801~803) |
 | R8 통합 검증 | 대기 | | |
