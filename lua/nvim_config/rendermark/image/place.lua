@@ -10,6 +10,10 @@ function Module.new(M, state)
   local clear_all_images = backend.clear_all_images
   local notify_redraw = backend.notify_redraw
   local emit_band_rows = state.emit_band_rows
+  -- Per window so splits don't collide. Size is excluded so a re-fit updates in place instead of blinking.
+  local function ImageId(payload_buf, win, image)
+    return 'buf:' .. payload_buf .. ':win:' .. win .. ':' .. image.row .. ':' .. image.col .. ':' .. stable_hash(image.path)
+  end
   local function resolve_preview_source(win)
     local ok_source, source_meta = pcall(function()
       return vim.w[win].rendermark_diagram_preview_source
@@ -281,20 +285,28 @@ function Module.new(M, state)
       visible_span = math.min(math.max(1, source_span_height or 1), virt_h)
       local text_left_cell = math.floor(text_left_px / math.max(1, cell_w))
       local label = { source_span = visible_span, virt_h = virt_h }
-      if M._stub_active then
-        -- One box per image at its text-relative offset.
-        local stub_boxes = {}
-        for _, layout in ipairs(layouts) do
-          local path = layout.image.path or layout.image.raw_path or '?'
-          stub_boxes[#stub_boxes + 1] = {
+      -- One box per image at its text-relative offset: the stub's placeholder, and for
+      -- an image the provider refused the error text (same reserved rows, so the
+      -- reservation does not change when an image turns into its failure box).
+      local boxes = nil
+      for _, layout in ipairs(layouts) do
+        local image = layout.image
+        layout.id = ImageId(image.payload_buf or info.buf, info.win, image)
+        local failed = backend.is_failed(layout.id, image.path, layout.display_width_px, layout.display_height_px)
+        if M._stub_active or failed then
+          local path = image.path or image.raw_path or '?'
+          boxes = boxes or {}
+          boxes[#boxes + 1] = {
             name = vim.fn.fnamemodify(path, ':t'),
             w_px = layout.display_width_px or 0,
             h_px = layout.display_height_px or 0,
             start_cell = math.max(0, layout.grid_col - text_left_cell),
+            error_text = failed and M.image_error_text({
+              error = 'display_failed', raw_path = image.raw_path or image.path }) or nil,
           }
         end
-        label.boxes = stub_boxes
       end
+      label.boxes = boxes
       if text_layout then
         -- Slots: leading, the gap after each image, and the trailing slot.
         local text_right_cell = math.floor(layout_text_right_px / math.max(1, cell_w))
@@ -380,9 +392,7 @@ function Module.new(M, state)
         end
       end
       payload[#payload + 1] = {
-        -- Per-window id so splits don't collide. Size is excluded so a re-fit
-        -- updates in place instead of blinking.
-        id = 'buf:' .. payload_buf .. ':win:' .. info.win .. ':' .. image.row .. ':' .. image.col .. ':' .. stable_hash(image.path),
+        id = layout.id,
         buf = payload_buf,
         row = image.row,
         col = image.col,
@@ -563,8 +573,8 @@ function Module.new(M, state)
     for buf, reservations in pairs(image_reservations) do
       for _, reservation in pairs(reservations) do
         local label = reservation.label
-        if M._stub_active and label and not reservation.above then
-          -- Box over the concealed rows + virt_lines; allocation unchanged.
+        if label and label.boxes and not reservation.above then
+          -- Stub box or display-failure text over the concealed rows + virt_lines; allocation unchanged.
           local span = math.max(1, label.source_span or 1)
           state.stub_source_rows[buf] = state.stub_source_rows[buf] or {}
           for r = reservation.row, reservation.row + span - 1 do
@@ -612,18 +622,9 @@ function Module.new(M, state)
 
   end
 
-  function api._send_images_impl()
-    if not backend.img_available() then return end
-
-    local enabled = vim.g.neopp_images_enabled
-    if enabled == false then
-      M.clear_image_extmarks()
-      state.reservation_sig = ''
-      clear_all_images()
-      notify_redraw()
-      return
-    end
-
+  -- One layout + decoration + payload pass. Returns whether the reservation changed
+  -- and whether the provider refused an image just now.
+  local function SyncPass()
     decorations.begin()
     local payload = {}
     local cell_w = tonumber(vim.g.neopp_cell_width_px) or 10
@@ -646,13 +647,34 @@ function Module.new(M, state)
 
     if decorations.apply(M.ensure_image_namespace()) then backend.mark_changed() end
 
+    local refused = false
     if reservation_changed then
       -- virt_lines changes shift rows: drop images and resync once layout settles.
       state.reservation_sig = new_reservation_sig
       clear_all_images()
     else
-      apply_payload(payload)
+      refused = apply_payload(payload)
     end
+    return reservation_changed, refused
+  end
+
+  function api._send_images_impl()
+    if not backend.img_available() then return end
+
+    local enabled = vim.g.neopp_images_enabled
+    if enabled == false then
+      M.clear_image_extmarks()
+      state.reservation_sig = ''
+      clear_all_images()
+      backend.forget_failures()
+      notify_redraw()
+      return
+    end
+
+    local reservation_changed, refused = SyncPass()
+    -- A refused image keeps its reserved rows (the signature ignores it); a second
+    -- pass swaps the blank rows for the failure box. Nothing is asked of the provider again.
+    if refused then reservation_changed = SyncPass() end
 
     if reservation_changed then
       vim.schedule(function()

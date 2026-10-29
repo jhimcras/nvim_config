@@ -105,6 +105,10 @@ function M.image_error_text(image)
   if image.error == 'ambiguous' then
     return ' [neopp: image name is ambiguous: ' .. (image.raw_path or image.path or '') .. ']'
   end
+  -- Not a scan error: the provider refused the image (backend `is_failed`).
+  if image.error == 'display_failed' then
+    return ' [neopp: image display failed: ' .. (image.raw_path or image.path or '') .. ']'
+  end
   return ' [neopp: image unsupported: ' .. (image.raw_path or image.path or '') .. ']'
 end
 
@@ -272,9 +276,9 @@ function M.handle_safestate()
   end
 end
 
--- Whether a cursor is on a stub image source row in any window ('' without stub).
+-- Whether a cursor is on a stub or failure-box source row in any window ('' without either).
 function M.stub_cursor_sig()
-  if not M._stub_active then return '' end
+  if not M._stub_active and next(state.stub_source_rows) == nil then return '' end
   local parts = {}
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if vim.api.nvim_win_is_valid(win) then

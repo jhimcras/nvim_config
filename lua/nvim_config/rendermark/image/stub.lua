@@ -88,7 +88,7 @@ function Module.new(M, state)
     return rows
   end
 
-  -- Pure: lay boxes { name, w_px, h_px, start_cell } into virt_h rows of chunks.
+  -- Pure: lay boxes { name, w_px, h_px, start_cell, error_text? } into virt_h rows of chunks.
   -- Overlapping boxes are bumped right.
   function api.build_stub_box_rows(boxes, virt_h, cell_w)
     virt_h = math.max(1, virt_h or 1)
@@ -98,6 +98,18 @@ function Module.new(M, state)
 
     local prepared = {}
     for _, b in ipairs(boxes) do
+      if b.error_text then
+        -- Display failure: the error text (same wording and highlight as the
+        -- not_found box) in the first reserved row; the rest stays blank.
+        local text = b.error_text:gsub('^%s+', '')
+        prepared[#prepared + 1] = {
+          start_cell = math.max(0, b.start_cell or 0),
+          box_w = vim.fn.strdisplaywidth(text),
+          text_by_row = { [virt_h > 1 and 1 or 0] = text },
+          hl = 'WarningMsg',
+        }
+        goto continue_box
+      end
       local name = b.name or '?'
       local size = string.format('%dx%dpx  (%d rows)', b.w_px or 0, b.h_px or 0, virt_h)
       -- Width follows the image, not the label; floored so borders render.
@@ -126,6 +138,7 @@ function Module.new(M, state)
         box_w = box_w,
         text_by_row = text_by_row,
       }
+      ::continue_box::
     end
 
     table.sort(prepared, function(a, b) return a.start_cell < b.start_cell end)
@@ -143,11 +156,11 @@ function Module.new(M, state)
         local text = p.text_by_row[v]
         if text and #text > 0 then
           if p.col > col then
-            chunks[#chunks + 1] = { string.rep(' ', p.col - col), hl }
+            chunks[#chunks + 1] = { string.rep(' ', p.col - col), p.hl or hl }
             col = p.col
           end
-          chunks[#chunks + 1] = { text, hl }
-          col = col + #text
+          chunks[#chunks + 1] = { text, p.hl or hl }
+          col = col + vim.fn.strdisplaywidth(text)
         end
       end
       rows[v] = chunks
@@ -266,7 +279,8 @@ function Module.new(M, state)
       })
     end
     local virt_lines = {}
-    for v = 0, virt_h - 1 do
+    -- A carried reservation (closed folds) can exceed the image: still emit all of it.
+    for v = 0, math.max(virt_h, reserve_h) - 1 do
       if v == 0 then
         overlay(row, rows[v])
       elseif v <= reserve_h - 1 then
