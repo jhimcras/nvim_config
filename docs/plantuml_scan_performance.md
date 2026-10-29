@@ -79,3 +79,42 @@ After R5 (exported-image check, `diagram.hide_when_exported`), same workload,
 send_images (0.28-0.30) and cursor signature (0.003) are unchanged: the
 verdict is cached with the items of the tick. Full buffer reads and provider
 calls stay at 0 / 0 / 0 / 100 as above.
+
+## After R6-A: document index for image scanning (2026-10-30)
+
+The image scan now skips fenced code blocks and resolves reference images
+(`![alt][ref]`, `![ref][]`, `![ref]`), which both need facts about the whole
+document: fence rows and `[label]: path` definitions. `image/docindex.lua`
+builds them in one line pass (`nvim_buf_get_lines(0, -1)` plus two plain
+`find`s per line), cached per buffer by changedtick, and only when a scanned
+line contains `![` (a buffer without images never builds it). Scrolling,
+cursor moves and unchanged `send_images` reuse the cached index.
+
+Same script, 3 runs each against the HEAD snapshot (`IMAGE_BENCH_BASELINE`),
+ms per call. `BENCH_IMAGES=1` puts 5 image links (one a reference image) in the
+viewport, a fenced block every 50 lines and a definition on the last line;
+`BENCH_LINES` sets the size.
+
+| Workload | Scenario | Before | After |
+| --- | --- | ---: | ---: |
+| 3000 lines, no images | cold / unchanged / edited | 0.25-0.30 / 0.09-0.10 / 0.09 | 0.28-0.31 / 0.08 / 0.07-0.08 |
+| 3000 lines, images | cold | 0.66-0.83 | 1.48-1.52 |
+| 3000 lines, images | unchanged send_images | 0.30-0.32 | 0.30-0.31 |
+| 3000 lines, images | send_images after each edit | 0.28-0.31 | 0.59-0.60 |
+| 8000 lines, images | cold | 0.67-0.81 | 2.11-2.14 |
+| 8000 lines, images | unchanged send_images | 0.31-0.32 | 0.30-0.34 |
+| 8000 lines, images | send_images after each edit | 0.29-0.30 | 1.10-1.23 |
+
+The cost is one index build per edit of a document that has an image in view
+(about 0.1 ms per 1000 lines, after the 30 ms TextChanged debounce), none per
+scroll or cursor move, and none for documents without images. The "full
+reads" column of the script is 1 (cold) / 100 (edited) for the image
+workloads, which is exactly this index. `benchmark_image_reapply.lua` stubs the
+scan, so it only guards the call counts: 5 runs, median unchanged 681.3 ms
+(664.3-695.9), one-image-size-changed 686.8 ms (678.2-702.3), call counts
+identical to R0 (unchanged 0/0/0/0/0; changed set 1000, mark 2000, clear 1000,
+redraw 1000, del 0).
+
+```sh
+BENCH_IMAGES=1 BENCH_LINES=8000 nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
+```

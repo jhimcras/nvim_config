@@ -319,33 +319,54 @@ R3 후속 메모 (R2 기록 정정): R2의 "펜스 판정은 `blocks.lua`의 pla
 
 mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원을 대조한다. "없음"이면 이 단계에서 구현하거나 의도적으로 포기한다고 기록한다.
 
-| 기능 | mdloom 플러그인 | rendermark 현재 | 조치 |
-| --- | --- | --- | --- |
-| 이미지 자리 예약(virtual lines) | 예 | 예 (`place.lua` 예약) | 없음 |
-| 이미지가 그려지는 동안 소스 숨김, 커서가 올라오면 노출 (커밋 f660eb8) | 예 | 확인 필요 (`deco.lua`/conceal) | 대조 후 보완 |
-| 한 줄 여러 이미지 나란히, 폭 초과 시 줄바꿈 (f8fca98) | 예 | 예 (`layout.lua` `layout_image_line`) | 동작 대조 (테스트 케이스 이식) |
-| 참조형 이미지 `![a][r]` 사용 위치마다 표시, 정의 conceal (be74a94) | 예 | 아니오 | R6 스캔 확대로 구현 (Q1 (c)) |
-| 위키 이미지 `![[x.png]]` | 예 | 아니오 | R6 스캔 확대로 구현 |
-| HTML `<img src>` | 예 | 아니오 | R6 스캔 확대로 구현 |
-| 틸드 `~` 경로(`~/img.png`) (이슈 image_tilde_path) | 예 | 예 (`vim.fn.expand` 사용) | 스펙으로 확인 |
-| 경로의 `%20`·공백 | 서버가 해석 | `%20` 치환 예 | 스펙 확인 |
-| 표 안 이미지 | 아니오 | 예 (`table_image_spec`) | 없음 |
-| neopp 임시 id/path API 지원, 기본 bytes API(PNG만) | 예 | 확인 필요 (`backend.lua`) | 대조 |
-| 이미지 일부만 보일 때 숨김(기본 API는 자르기 불가) | 예 | 확인 필요 | 대조 |
-| 스크롤·창 크기·분할·접기·편집에 따른 갱신, 닫힌 창 ID 제거 | 예 | 예 | 없음 |
-| 스텁(텍스트 박스) 표시 | `MDLOOM_IMG_STUB` | `RENDERMARK_IMG_STUB`/`vim.g.rendermark_img_stub` | 환경변수 이름이 다름 — 문서화 |
-| 이미지 크기 읽기 형식 | PNG/JPEG/GIF/WebP | `size.lua` | 대조 |
-| 확대 미리보기 창(`MdloomOpenImage`) | 예 | `RendermarkPreviewShow/Hide/Toggle`(다이어그램 미리보기) | 일반 이미지 미리보기가 필요한지 결정. 필요하면 기능 추가(작은 작업) |
+판정(R6-A, 2026-10-30): 각 행은 "동등" / "보완 완료" / "의도적 미지원(사유)" / "서브 이슈(사유)" 중 하나다. 위키·HTML 행은 R6-B에서 닫는다.
 
-- [ ] 위 "확인 필요" 항목을 코드와 실행으로 확인하고 표를 갱신
-- [ ] 필요한 보완을 별도 서브 이슈로 분리해 진행(이 문서에서는 목록만 유지)
+| 기능 | mdloom 플러그인 | rendermark 현재 | 판정 |
+| --- | --- | --- | --- |
+| 이미지 자리 예약(virtual lines)과 소스 불변 | 예 | `place.lua` `remember_image_reservation`. 그리기는 extmark뿐이라 버퍼 내용·modified 불변 | **동등** |
+| 이미지가 그려지는 동안 소스 숨김, 커서가 올라오면 노출 (f660eb8) | 커서 행의 conceal extmark를 빼서 노출 | 소스 범위에 `conceal=''` extmark(우선순위 250), 다이어그램은 `conceal_lines`+`conceal`. 커서 행 노출은 nvim의 `concealcursor`(기본 빈 값)가 맡고, 스텁은 커서 행에 박스를 안 그림(`cursor_rows_for`). 읽기 모드는 `concealcursor='nvic'`라 항상 숨김. 스펙 추가: `scan_spec`(conceal 범위, `concealcursor` 빈 값) | **동등** (구현 방식이 다름: 플러그인이 extmark를 빼는 대신 nvim 옵션에 위임) |
+| 한 줄 여러 이미지 나란히 (f8fca98) | 나란히, 폭 초과 시 다음 band로 줄바꿈 | 나란히 배치는 같음(`layout_image_line`, 스펙 이식: 4개 한 줄 → `dest_x_px` 증가·`dest_y_px` 동일). 폭을 넘으면 **줄바꿈 대신 한 band 안에서 모두 축소**(기존 `layout_image_line fit` 스펙이 이 동작을 고정) | 나란히: **동등** / 폭 초과: **서브 이슈 S1** (설계 차이, 공간 예약 계약에 걸려 사용자 결정 필요) |
+| 참조형 이미지 `![a][r]`·`![r][]`·`![r]` 사용 위치마다 표시 (be74a94) | 예 | **구현 완료**(R6-A): `docindex.lua`(정의 수집, 변경 틱 캐시) + `scan.lua`. 사용 위치마다 표시, 대소문자·공백 무시, 첫 정의 우선, 정의 없으면 표시 안 함, 단축형 `![r]`은 정의가 있을 때만, 펜스 안 정의 무시 | **보완 완료** |
+| 참조형의 정의 줄 conceal | 플러그인은 안 함 | be74a94의 결론: `[ref]` 라벨 conceal은 nvim 번들 `markdown_inline` 쿼리 몫이고 플러그인이 conceal을 덧씌우면 사용자 treesitter 설정과 충돌. 정의 줄은 그대로 둔다(텍스트 conceal은 빈 행을 남기고 `conceal_lines`는 행 배치를 바꿔 공간 예약 계약을 건드림). 사용 위치 `![a][r]` 전체는 일반 이미지처럼 conceal | **의도적 미지원**(사유: 위) |
+| 위키 이미지 `![[x.png]]` | 예 | 아니오 | R6-B |
+| HTML `<img src>` | 예 | 아니오 | R6-B |
+| 틸드 `~` 경로 (이슈 image_tilde_path) | 예 | `resolve_image_path`가 `~`/`~/…`를 `os_homedir()`로 확장(`$VAR`만 `expand`). `vim.fn.expand`는 `?`·`#`를 glob/버퍼 이름으로 풀어 쿼리·앵커와 충돌해 교체 | **보완 완료** (스펙 추가) |
+| 경로의 `%20`·공백·쿼리·앵커·`<…>` | 서버(URI)가 해석 | `%20`만 치환하던 것을 `%xx` 전체 디코딩, `?query`/`#anchor` 제거, `<…>` 벗기기로 확대. 실제 파일이 그 문자를 포함하면 있는 그대로의 이름이 우선(`C#.png`, `100%25.png`). 표준 `![alt](path "title")`, `<path with spaces>`, 괄호가 균형 잡힌 경로 인식. Windows 드라이브 `C:`는 영향 없음(`://`만 원격으로 판정) | **보완 완료** (스펙 추가) |
+| 표 안 이미지 | 아니오 | 예 (`table_image_spec`) | **동등** (rendermark 우위) |
+| neopp 임시 id/path API | 예 | `backend.lua` `vim.ui.img.set(id, path, opts)`에 경로·원본 크기·`clip_*`·`dest_*_px`·`zindex` 전달, neopp가 늦게 붙어도 `NeoppReady`에서 초기화 | **동등** |
+| 기본 bytes API(PNG만) | 예 | 없음. nvim 0.11에는 `vim.ui.img`가 없고 rendermark는 neopp 계약(경로+클리핑)만 쓴다 | **의도적 미지원**(사유: neopp 전용 계약) |
+| 이미지 일부만 보일 때 | 기본 API는 자르기 불가라 숨김, neopp는 클리핑 | neopp 클리핑만 존재(자르기 가능하므로 숨길 필요 없음). 스크롤로 앵커가 화면 위로 나가도 footprint 규칙으로 예약·클리핑 유지(`partially visible …` 스펙) | **동등** |
+| 스크롤·창 크기·분할·접기·편집 갱신, 닫힌 창 ID 제거, 버퍼 삭제 정리 | 예 | 예 (`same buffer in multiple windows`, `BufUnload`의 `clear_images_for_buf`/`diagram_cleanup_buf`/`docindex.forget`) | **동등** |
+| provider 오류 후 재시도 억제 | 오류 시 빈 예약 제거, 같은 리비전은 재시도 안 함 | 이전: `set` 예외가 `send_images`까지 전파돼 동기화마다 반복. **보완**: `backend.lua`가 `set`/`del`을 `pcall`로 감싸 경고 한 번(`notify_once`), 같은 항목은 바뀔 때까지 재시도 안 함. 빈 예약은 남음(예약은 공간 계약이라 건드리지 않음) | 재시도 억제: **보완 완료** (스펙 추가) / 빈 예약 제거: **서브 이슈 S3** |
+| provider 미구비/불완전 시 SafeState 오류 없음 | 예 | 이전: `del`이 없는 provider에서 오류. **보완**: `del` 부재 허용, `vim.ui.img = {}`는 `img_available`이 막아 무동작 | **보완 완료** (스펙 추가) |
+| `conceallevel < 1`이면 2로 | 이미지 창에서 올림 | `wrap.apply`가 마크다운 창의 `conceallevel < 2`를 2로 올리고 `disable`에서 복원, 다이어그램 창은 `diagram.lua`도 올림. wrap을 끈 창은 올리지 않음(wrap이 마크다운 창의 소유자) | **동등** |
+| 스텁(텍스트 박스) 표시 | `MDLOOM_IMG_STUB=1` | `RENDERMARK_IMG_STUB=1` 또는 `vim.g.rendermark_img_stub`, `vim.ui.img`가 없을 때만 설치. 이전엔 `RENDERMARK_IMG_STUB=0`도 켜졌음 → `''`/`0`/`'0'`은 끔으로 **보완**. `backend.lua` 주석에 이름·의미를 적음(사용자 문서는 R7 README). 스텁은 공간 할당을 바꾸지 않음(메모리 `project_stub_allocation_render_separation`) | **보완 완료** (스펙 추가), 환경변수 이름은 다름(`MDLOOM_` → `RENDERMARK_`) |
+| 이미지 크기 읽기 형식 | PNG/JPEG/GIF/WebP | `size.lua`: PNG/JPEG/WebP에 **GIF(87a/89a) 추가**. SVG·BMP는 `unsupported` 박스(rendermark가 래스터만 그림, `~/notes`의 svg 1개가 해당) | GIF: **보완 완료** (스펙 추가) / SVG 등: **의도적 미지원**(사유: neopp가 그릴 수 없음) |
+| 서버 응답 경합(오래된 응답 거부) | 예 | 서버 응답을 쓰지 않음 | **의도적 미지원**(사유: 해당 없음) |
+| 이미지 소스 범위 밖: 펜스 코드블록 안 이미지 문법 제외 | 서버가 제외 | 이전엔 제외 없음 | **보완 완료**(R6-A, 아래 규칙) |
+| 확대 미리보기 창 `MdloomOpenImage` | 예 | 다이어그램 활성 블록 미리보기만 있음(`RendermarkPreviewShow/Hide/Toggle`) | **서브 이슈 S2** (일반 이미지 확대 보기, 구현하지 않음) |
+
+서브 이슈 목록(이 문서에서는 목록만 유지, 구현하지 않음):
+- S1 한 줄 이미지가 폭을 넘을 때의 동작: 현재는 한 band에서 축소(이미지가 매우 작아질 수 있음). mdloom처럼 다음 band로 줄바꿈하려면 `layout_image_line`의 반환 높이와 예약 행 수(`ReserveRow`)가 바뀌어 neopp와의 공간 할당 계약과 `layout_image_line fit` 스펙을 함께 바꿔야 함. 사용자 결정 필요
+- S2 일반 이미지 확대 미리보기(`MdloomOpenImage` 동등): 이미지 위에서 부르는 명령으로 float/split에 원본 크기 표시. `diagram` 미리보기(`preview.lua`)를 재사용할 수 있는지 먼저 검토
+- S3 provider 오류 시 빈 예약 제거: `set` 실패를 `send_images`에 되돌려 해당 이미지의 예약·conceal을 빼고 같은 리비전은 다시 안 그림. 현재는 경고 한 번 + 예약 유지(소스는 숨겨진 채 빈 공간)
+
+R6-A에서 정한 공통 기반 규칙:
+- 링크 문법(`scan.lua` `find_image_links`): `![alt](dest)` 의 dest는 `path`, `<path with spaces>`, 균형 잡힌 괄호를 가진 경로, 뒤에 `"t"`/`'t'`/`(t)` title. 빈 경로·닫히지 않은 `<`·공백 포함 맨 경로는 이미지가 아님. 프리필터는 줄에 `![`가 있는지 평문 `find`(함수 맨 앞)
+- 경로(`resolve_image_path`): `<…>` 벗기기 → 후보 `[그대로, ?#제거, %xx 디코딩, 둘 다]` 중 실제 있는 파일을 첫 번째로 채택, 하나도 없으면 마지막(제거+디코딩)을 돌려줌(파일 확인은 후보가 둘 이상일 때만). `scheme://`는 nil, `~`는 `os_homedir()`
+- 펜스 제외(`image/docindex.lua`): treesitter 없이 줄 단위 상태. 여는 줄은 앞에 공백·`>` 뒤 ``` 3개 이상 또는 `~~~` 3개 이상(백틱 펜스의 info string에 백틱이 있으면 펜스 아님), 닫는 줄은 같은 문자·같거나 더 긴 길이·뒤에 공백만, 닫히지 않으면 문서 끝까지. 목록 마커와 같은 줄의 펜스(`- ```lua`)는 인식하지 않음. 버퍼 전체를 한 번 읽어 {펜스 구간, 정의}를 `changedtick`별로 캐시하고 줄 조회는 이진 탐색. **스캔한 줄에 `![`가 있을 때만** 만들므로 이미지가 없는 문서는 비용 0. 적용 대상은 버퍼 줄 스캔뿐: 다른 네임스페이스의 virt_text/virt_lines는 제외하지 않음(다이어그램 블록 행에 붙은 `source_span_height` 경로가 의존). 비용은 `docs/plantuml_scan_performance.md`의 "After R6-A": 이미지가 보이는 문서의 편집당 +0.3 ms(3000줄)·+0.8 ms(8000줄), 스크롤·커서·변경 없는 `send_images`는 증가 없음
+- 참조형: 정의는 `^ {0,3}[label]: dest [title]` 한 줄(라벨 `^`로 시작하는 각주 제외, 이후 쓰레기 문자가 있으면 정의 아님), 라벨은 공백 정규화+소문자(비ASCII는 `vim.fn.tolower`). `line_has_image_link(text, buf)`는 `buf`가 있을 때만 참조형을 셈(wrap이 이미지 줄을 감싸지 않게 하기 위함). 항목에 `ref_label`, `raw_path`는 정의의 목적지
+- R6-B 연결점: 새 문법의 줄 프리필터는 `find_image_links` 맨 앞의 `![` 조기 종료와 `collect_markdown_images`의 `line:find('![', 1, true)` 조건 두 곳에 `<img`를 더하면 된다. 펜스 제외는 같은 조건 안에서 이미 적용됨
+
+- [x] 위 "확인 필요" 항목을 코드와 실행으로 확인하고 표를 갱신 (R6-A: 위키·HTML 행은 R6-B)
+- [x] 필요한 보완을 별도 서브 이슈로 분리해 진행(이 문서에서는 목록만 유지): 작은 보완(GIF 크기, 틸드·`%xx`·쿼리·앵커·`<…>`, provider 오류 내성, 스텁 환경변수 값)은 R6-A에서 구현, 큰 것은 S1~S3
 - [ ] 스캔 확대 (Q1 (c)): `scan.lua`와 `table_state` 연동에 다음을 추가한다. 스펙은 mdloom 원본 `images_unit.lua`·`images.lua`(`git show before-lsp-scope:editors/nvim/tests/images_unit.lua`) 케이스를 이식한다
-  - [ ] HTML `<img src="…" width=…>`: `src` 해석(로컬만), `width`/`height` 속성이 있으면 표시 크기에 반영 여부 결정, 코드 안·주석 안은 제외, 같은 줄 여러 개
-  - [ ] 참조형 `![alt][ref]`, `![ref][]`, `![ref]`: 같은 문서의 정의 줄 `[ref]: path "title"`만 해석(대소문자 무시, 공백 정규화), 사용 위치마다 표시, 정의 줄은 conceal(neovim 번들 `markdown_inline` 쿼리 conceal, 커밋 be74a94 참고), 정의가 없으면 표시하지 않음
-  - [ ] 위키 `![[name.png]]`, `![[dir/name.png]]`, `![[name.png|300]]`(너비), `![[name.png#...]]`는 무시: 경로형은 문서 폴더 기준, 이름형은 위 Q1 규칙의 이름 검색. 검색은 비동기·캐시(파일 감시 없이 `BufEnter`/저장 시 무효화), 결과 없음/모호는 오류 박스(`not_found`)
-  - [ ] 경로 규칙은 기존 `resolve_image_path`를 공유: `%20`, `~`, `<…>` 감싸기, 쿼리·앵커 제거
-  - [ ] 코드 스팬·펜스 코드블록 안의 이미지 문법은 제외(기존 규칙 유지)
-  - [ ] 성능: 문서 스캔 비용이 늘지 않도록 줄 단위 프리필터(`![`, `<img`, `[…]:`)를 유지하고 `docs/image_reapply_performance.md` 벤치를 다시 측정
+  - [ ] HTML `<img src="…" width=…>`: `src` 해석(로컬만), `width`/`height` 속성이 있으면 표시 크기에 반영 여부 결정, 코드 안·주석 안은 제외, 같은 줄 여러 개 — **R6-B**
+  - [x] 참조형 `![alt][ref]`, `![ref][]`, `![ref]`: 같은 문서의 정의 줄 `[ref]: path "title"`만 해석(대소문자 무시, 공백 정규화), 사용 위치마다 표시, 정의가 없으면 표시하지 않음 (R6-A). 정의 줄 conceal은 표에 적은 대로 의도적 미지원
+  - [ ] 위키 `![[name.png]]`, `![[dir/name.png]]`, `![[name.png|300]]`(너비), `![[name.png#...]]`는 무시: 경로형은 문서 폴더 기준, 이름형은 위 Q1 규칙의 이름 검색. 검색은 비동기·캐시(파일 감시 없이 `BufEnter`/저장 시 무효화), 결과 없음/모호는 오류 박스(`not_found`) — **R6-B**
+  - [x] 경로 규칙은 기존 `resolve_image_path`를 공유: `%20`(및 `%xx`), `~`, `<…>` 감싸기, 쿼리·앵커 제거 (R6-A)
+  - [x] 코드 스팬·펜스 코드블록 안의 이미지 문법은 제외 (R6-A: 코드 스팬은 기존, 펜스는 신규 `docindex.lua`)
+  - [ ] 성능: 문서 스캔 비용이 늘지 않도록 줄 단위 프리필터(`![`, `<img`, `[…]:`)를 유지하고 `docs/image_reapply_performance.md` 벤치를 다시 측정 — R6-A 부분 완료(`![`와 참조형, 측정은 `docs/plantuml_scan_performance.md` "After R6-A"), `<img`·위키는 **R6-B**에서 마저 측정
 - 완료 조건: 표의 모든 행에 "동등" 또는 "의도적 미지원(사유)"이 기록됨.
 
 ### R7 — 정리
@@ -399,6 +420,6 @@ mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원
 | R3 공급자 API·diagram.lua | 완료 | 2026-10-30 | `set_diagram_source`/`clear_diagram_source`/`refresh` 추가, `plantuml.lua`→`diagram.lua`(실행·캐시·임시 폴더·잡·jar·환경변수·"PlantUML disabled" 제거, `collect_diagram_images`), `blocks.lua` 삭제(`diagram_items`/`diagram_block_span`, `stable_hash`→`hash.lua`), place/preview/창 변수/오류 줄 개명, `deco`의 `diagram.disable_deco_langs`, `diagram.preview` 우선·`plantuml.preview` 경고 별칭. 신규 `diagram_spec` 19개 + `deco_spec` 1개, `init_spec` 재작성(스펙 2개 삭제). 전체 701 통과/0/0(67 파일, 종료 코드 0; R1 681 + 20), `tests/spec/rendermark` 260/0/0(11 파일). 벤치(5회 중앙값): 변경 없음 671.3 ms·호출 전부 0, 너비 변경 680.1 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0 680.0/690.8 ms, 같은 호출 수). `grep plantuml_run\|plantuml_resolve\|plantuml_find_blocks\|PLANTUML_JAR lua` 결과 없음. 한계: `init.lua`의 `plantuml.preview` 사용자 설정은 R4까지 경고 한 번 발생, 닫히지 않은 펜스의 높이 예약은 이제 공급자(coderunner 파서)가 정한다 |
 | R4 glue·사용자 설정 | 완료(GUI 확인은 R8) | 2026-10-30 | `nvim_config/markdown.lua`(`setup`, `deco_langs`), `init.lua`(`diagram.preview`, `disable_deco_langs`, `plantuml_cmd()`, `markdown.setup()`), `tests/spec/markdown_glue_spec.lua` 9개. `renderer_langs()`는 coderunner에 없어 `coderunner.resolve` 사용. 실제 plantuml로 PNG 렌더 확인 중 coderunner가 stdout 렌더러 출력을 UTF-8 정리해 PNG를 깨뜨리는 결함 발견·수정(`raw_stdout`, 스펙 1개). 전체 `bash run_tests.sh` 종료 코드 0, 실패·오류 0(스펙 줄 기준 R3 697 → 708). 한계: 워크스페이스 전용 렌더러 언어는 `disable_deco_langs`에 반영되지 않음, plantuml 명령은 시작 시 한 번 결정 |
 | R5 인접 내보낸 이미지 정책 | 완료(GUI 확인은 R8) | 2026-10-30 | `diagram.lua`의 `diagram_exported_below`(블록 다음 빈 줄 0~1개 + 문단, 펜스·빈 줄에서 끝, 코드 스팬·원격 링크 제외), 옵션 `diagram.hide_when_exported`(기본 true), 판정은 `changedtick` 항목 캐시에 저장. 스펙 +15(전체 `bash run_tests.sh` 종료 0, 실패·오류 0, 스펙 줄 725). 벤치: `benchmark_image_reapply`(5회, `collect_diagram_images` 스텁이라 호출 수 불변) 변경 없음 670.0~693.5 ms·호출 전부 0, 너비 변경 677.6~701.9 ms·set 1000/mark 2000/clear 1000/redraw 1000; `benchmark_plantuml_scan` 편집당 `send_images` 0.28 → 0.40 ms(블록 10개, 읽기는 블록당 31줄), 나머지 시나리오 불변·전체 읽기 0. 한계: 내보낸 이미지가 오래된 경우의 표시는 진단 몫(Q3) |
-| R6 동등성 점검 | 대기 | | |
+| R6 동등성 점검 | R6-A 완료, R6-B 대기 | 2026-10-30 | R6-A: 동등성 표 확정(서브 이슈 S1~S3), 공통 기반(`%xx`·쿼리·앵커·`<…>`·title·tilde, 펜스 제외 `docindex.lua`), 참조형 이미지, GIF 크기, provider 오류 내성, 스텁 환경변수 값. 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 R5 725 → 759~762, 3회 실행에서 일부 기존 spec 출력 줄이 빠져 실행마다 ±3 변동하나 실패·오류는 0; 신규 `scan_spec` 39). 벤치: `benchmark_image_reapply`(5회) 변경 없음 중앙값 681.3 ms·호출 전부 0, 너비 변경 686.8 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0와 같음); 스캔은 이미지가 보이는 문서의 편집당 +0.3 ms(3000줄)·+0.8 ms(8000줄), 이미지 없는 문서·스크롤·커서·변경 없는 `send_images`는 불변. 남음(R6-B): HTML `<img>`, 위키 이미지(경로형·이름형) |
 | R7 정리 | 대기 | | |
 | R8 통합 검증 | 대기 | | |
