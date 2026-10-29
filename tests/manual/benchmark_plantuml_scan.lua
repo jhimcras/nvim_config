@@ -1,5 +1,7 @@
 -- nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
 -- Set IMAGE_BENCH_BASELINE to a snapshot root to compare the same workload.
+-- Set BENCH_PROVIDER=1 to register a fake diagram provider with 10 ready blocks
+-- (5 inside the headless viewport); without it no provider is registered.
 vim.opt.rtp:prepend(vim.fn.getcwd())
 if vim.env.IMAGE_BENCH_BASELINE then vim.opt.rtp:prepend(vim.env.IMAGE_BENCH_BASELINE) end
 vim.g.is_testing = true
@@ -13,10 +15,36 @@ local buf = vim.api.nvim_get_current_buf()
 vim.bo[buf].filetype = 'markdown'
 local lines = {}
 for i = 1, 3000 do lines[i] = 'plain markdown line ' .. i end
+local blocks = { 10, 30, 50, 70, 90, 400, 800, 1200, 1600, 2000 }
+if vim.env.BENCH_PROVIDER then
+  for _, row in ipairs(blocks) do
+    lines[row + 1] = '```plantuml'
+    lines[row + 5] = '```'
+  end
+end
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 local ns = vim.api.nvim_create_namespace('plantuml-scan-benchmark')
 for row = 0, 59 do
   vim.api.nvim_buf_set_extmark(buf, ns, row, 0, { virt_text = { { '•', 'Comment' } } })
+end
+local provider_calls = 0
+if vim.env.BENCH_PROVIDER then
+  -- 100x50 PNG header: enough for the size reader.
+  local png = vim.fn.tempname() .. '.png'
+  local f = assert(io.open(png, 'wb'))
+  f:write(string.char(137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 100, 0, 0, 0, 50))
+  f:close()
+  image.set_diagram_source({
+    items = function()
+      provider_calls = provider_calls + 1
+      local items = {}
+      for _, row in ipairs(blocks) do
+        items[#items + 1] = { start_row = row, end_row = row + 4, key = 'k' .. row, lang = 'plantuml',
+          path = png, format = 'png', stale = false, status = 'ready' }
+      end
+      return items
+    end,
+  })
 end
 local full_reads = 0
 local get_lines = vim.api.nvim_buf_get_lines
@@ -25,12 +53,13 @@ vim.api.nvim_buf_get_lines = function(b, first, last, ...)
   return get_lines(b, first, last, ...)
 end
 local function run(label, action, iterations)
-  full_reads = 0
+  full_reads, provider_calls = 0, 0
   collectgarbage('collect')
   local start = vim.uv.hrtime()
   for _ = 1, iterations do action() end
   print(vim.json.encode({ scenario = label, iterations = iterations,
-    ms_per_call = (vim.uv.hrtime() - start) / 1e6 / iterations, full_reads = full_reads }))
+    ms_per_call = (vim.uv.hrtime() - start) / 1e6 / iterations, full_reads = full_reads,
+    provider_calls = provider_calls }))
 end
 run('send_images-cold', image.send_images, 1)
 run('send_images-unchanged', image.send_images, 200)

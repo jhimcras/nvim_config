@@ -24,7 +24,7 @@ img.collect_markdown_images = function()
     path = '/tmp/benchmark-' .. i .. '.png', source_width = i == 1 and width or 100, source_height = 18 } end
   return images
 end
-img.collect_plantuml_images = function() end
+img.collect_diagram_images = function() end
 for _ = 1, 5 do img.send_images(); vim.wait(1) end
 local function run(label, change)
   for k in pairs(counts) do counts[k] = 0 end
