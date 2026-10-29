@@ -162,7 +162,7 @@ local function render_range(buf, first, last, width, cursor_row, images_active)
         if lnum + 1 ~= cursor_row and not in_code[lnum] and not in_table[lnum]
             and not html.is_hidden(buf, lnum) then
             local text = vim.api.nvim_buf_get_lines(buf, lnum, lnum + 1, false)[1]
-            if image and text and image.line_has_image_link(text) then
+            if image and text and image.line_has_image_link(text, buf) then
                 -- handled by rendermark.image
             elseif text and #text > 0 then
                 local indent = M.compute_indent(text)

@@ -67,8 +67,8 @@ function M.scan_markdown_image_text(buf, row0, text, result, opts)
 end
 
 -- True if `text` contains a markdown image link.
-function M.line_has_image_link(text)
-  return image_scan.line_has_image_link(text)
+function M.line_has_image_link(text, buf)
+  return image_scan.line_has_image_link(text, buf)
 end
 
 function M.virt_text_to_plain(virt_text)
@@ -223,7 +223,7 @@ local function get_image_anchor_sig()
         for i, line in ipairs(lines) do
           local row = start_row + i - 1
           local key = tostring(buf) .. ':' .. tostring(row)
-          if not seen[key] and image_scan.line_has_image_link(line) then
+          if not seen[key] and image_scan.line_has_image_link(line, buf) then
             seen[key] = true
             parts[#parts + 1] = key .. '=' .. M.image_anchor_extmark_sig(buf, row, row + 1)
           end
@@ -409,6 +409,7 @@ function M._init()
     { group = autocmd_group, callback = function(args)
       M.clear_images_for_buf(args.buf)
       M.diagram_cleanup_buf(args.buf)
+      require('nvim_config.rendermark.image.docindex').forget(args.buf)
     end })
 
   vim.api.nvim_create_autocmd('SafeState', { group = autocmd_group, callback = M.handle_safestate })

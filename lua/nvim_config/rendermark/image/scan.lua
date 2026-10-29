@@ -1,4 +1,5 @@
 local M = {}
+local docindex = require('nvim_config.rendermark.image.docindex')
 
 -- Prefix test, not equality with ':p': on Windows ':p' normalizes slashes.
 function M.is_absolute_path(path, is_windows)
@@ -8,17 +9,56 @@ function M.is_absolute_path(path, is_windows)
   return path:sub(1, 1) == '/'
 end
 
-function M.resolve_image_path(buf, raw_path)
-  if raw_path == '' or raw_path:match('^%a[%w+.-]*://') then return nil end
-  raw_path = raw_path:gsub('%%20', ' ')
-  local expanded = vim.fn.expand(raw_path)
-  if M.is_absolute_path(expanded, vim.fn.has('win32') == 1) then
-    return vim.fn.fnamemodify(expanded, ':p')
-  end
+local function percent_decode(s)
+  return (s:gsub('%%(%x%x)', function(hex) return string.char(tonumber(hex, 16)) end))
+end
 
+-- `~` and `~/…` (vim.fn.expand would also glob '?' and '#').
+local function expand_home(path)
+  if path:find('^~[/\\]') or path == '~' then
+    local home = vim.uv.os_homedir()
+    if home then return home .. path:sub(2) end
+  elseif path:find('^%$') then
+    return vim.fn.expand(path)
+  end
+  return path
+end
+
+local function absolutize(buf, path)
+  path = expand_home(path)
+  if M.is_absolute_path(path, vim.fn.has('win32') == 1) then
+    return vim.fn.fnamemodify(path, ':p')
+  end
   local name = vim.api.nvim_buf_get_name(buf)
   local base = name ~= '' and vim.fn.fnamemodify(name, ':p:h') or vim.fn.getcwd()
-  return vim.fn.fnamemodify(base .. '/' .. expanded, ':p')
+  return vim.fn.fnamemodify(base .. '/' .. path, ':p')
+end
+
+-- Absolute file path of a markdown image destination, nil for empty or remote
+-- (`scheme://`) ones. `<…>` wrapping is dropped. '?query', '#anchor' and
+-- '%xx' escapes (%20 included) are not part of the file name, but a file that
+-- really has such characters wins: the as-written name is tried first and the
+-- others only when it does not exist.
+function M.resolve_image_path(buf, raw_path)
+  raw_path = raw_path:match('^<(.*)>$') or raw_path
+  if raw_path == '' or raw_path:match('^%a[%w+.-]*://') then return nil end
+  local seen, variants = {}, {}
+  local function add(path)
+    if not seen[path] then seen[path] = true; variants[#variants + 1] = path end
+  end
+  local bare = raw_path:match('^[^?#]+') or raw_path
+  add(raw_path)
+  add(bare)
+  add(percent_decode(raw_path))
+  add(percent_decode(bare))
+  -- Most likely intent when nothing exists: no query/anchor, escapes decoded.
+  local best = variants[#variants]
+  if #variants == 1 then return absolutize(buf, best) end
+  for _, variant in ipairs(variants) do
+    local path = absolutize(buf, variant)
+    if vim.uv.fs_stat(path) then return path end
+  end
+  return absolutize(buf, best)
 end
 
 local function add_markdown_image_link(deps, buf, row0, col0, end_col, raw, result, extra)
@@ -74,29 +114,104 @@ local function in_code_span(spans, pos)
   return false
 end
 
--- Image links outside inline code, as { s, e, raw } (1-based bytes).
-local function find_image_links(text)
-  local links, spans = {}, nil
+-- Destination of an inline link; `pos` is just after the '('. Accepts
+-- `path`, `<path with spaces>`, balanced parentheses in a bare path and an
+-- optional "title" / 'title' / (title). Returns the raw destination and the
+-- index of the closing ')', or nil.
+local function inline_destination(text, pos)
+  pos = text:find('[^ \t]', pos) or #text + 1
+  local raw
+  if text:sub(pos, pos) == '<' then
+    local close = text:find('>', pos + 1, true)
+    if not close then return nil end
+    raw, pos = text:sub(pos + 1, close - 1), close + 1
+  else
+    local depth, i = 0, pos
+    while i <= #text do
+      local c = text:byte(i)
+      if c == 32 or c == 9 then break end
+      if c == 40 then
+        depth = depth + 1
+      elseif c == 41 then
+        if depth == 0 then break end
+        depth = depth - 1
+      end
+      i = i + 1
+    end
+    raw, pos = text:sub(pos, i - 1), i
+  end
+  if raw == '' then return nil end
+  local after = text:find('[^ \t]', pos) or #text + 1
+  local opener = text:sub(after, after)
+  if after > pos and (opener == '"' or opener == "'" or opener == '(') then
+    local close = text:find(opener == '(' and ')' or opener, after + 1, true)
+    if not close then return nil end
+    pos = text:find('[^ \t]', close + 1) or #text + 1
+  else
+    pos = after
+  end
+  if text:sub(pos, pos) ~= ')' then return nil end
+  return raw, pos
+end
+
+-- Image links outside inline code, as { s, e, raw, ref } (1-based bytes; `ref`
+-- is the label of a reference image). `![alt](path "title")` always counts.
+-- `![alt][ref]`, `![ref][]` and `![ref]` count only when `defs` (label ->
+-- destination, or a function returning it) defines the label.
+local function find_image_links(text, defs)
+  local links = {}
+  if not text:find('![', 1, true) then return links end
+  local spans = nil
   local search_at = 1
   while search_at <= #text do
-    local s, e, raw = text:find('!%[[^%]]*%]%(([^%)%s]+)%)', search_at)
+    local s, bracket_end, alt = text:find('!%[([^%]]*)%]', search_at)
     if not s then break end
-    spans = spans or code_spans(text)
-    -- A link inside inline code is literal text.
-    if not in_code_span(spans, s) then links[#links + 1] = { s, e, raw } end
-    search_at = e + 1
+    local e, raw, ref
+    local following = text:sub(bracket_end + 1, bracket_end + 1)
+    if following == '(' then
+      local dest, close = inline_destination(text, bracket_end + 2)
+      if dest then e, raw = close, dest end
+    elseif defs then
+      if following == '[' then
+        local label, after = text:match('^%[([^%]]*)%]()', bracket_end + 1)
+        if label then ref, e = label ~= '' and label or alt, after - 1 end
+      else
+        ref, e = alt, bracket_end
+      end
+      if ref then
+        if type(defs) == 'function' then defs = defs() or {} end
+        raw = defs[docindex.normalize_label(ref)]
+        if not raw then e, ref = nil, nil end
+      end
+    end
+    if e then
+      spans = spans or code_spans(text)
+      -- A link inside inline code is literal text.
+      if not in_code_span(spans, s) then links[#links + 1] = { s, e, raw, ref } end
+      search_at = e + 1
+    else
+      search_at = s + 2
+    end
   end
   return links
 end
 
 M.find_image_links = find_image_links
 
+-- Reference definitions of `buf`, as a lazy getter for find_image_links.
+function M.buf_defs(buf)
+  return function()
+    local ok, index = pcall(docindex.get, buf)
+    return ok and index.defs or nil
+  end
+end
+
 function M.scan_markdown_image_text(deps, buf, row0, text, result, opts)
   if type(text) ~= 'string' or text == '' then return end
   opts = opts or {}
   local base_col = math.max(0, tonumber(opts.base_col) or 0)
   local virtual = opts.virtual == true
-  for _, link in ipairs(find_image_links(text)) do
+  for _, link in ipairs(find_image_links(text, M.buf_defs(buf))) do
     local s, e, raw = link[1], link[2], link[3]
 
     local prefix = text:sub(1, s - 1)
@@ -119,14 +234,16 @@ function M.scan_markdown_image_text(deps, buf, row0, text, result, opts)
         byte_end_col = e,
       }
     end
+    if link[4] then extra.ref_label = link[4] end
     add_markdown_image_link(deps, buf, row0, col0, col0 + math.max(1, match_width), raw, result, extra)
   end
 end
 
-function M.line_has_image_link(text)
+-- `buf` lets `![ref]` forms count when the document defines the label.
+function M.line_has_image_link(text, buf)
   -- Plain '![' prefilter: the pattern alone tries a match at every byte.
   return type(text) == 'string' and text:find('![', 1, true) ~= nil
-    and #find_image_links(text) > 0
+    and #find_image_links(text, buf and M.buf_defs(buf)) > 0
 end
 
 function M.virt_text_to_plain(virt_text)
@@ -173,7 +290,9 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
     local table_images = table_state.table_row(buf, row0)
     if table_images then
       for _, image in ipairs(table_images) do result[#result + 1] = vim.deepcopy(image) end
-    elseif not table_rows[row0] then
+    elseif not table_rows[row0] and line:find('![', 1, true)
+        and not docindex.in_fence(docindex.get(buf), row0) then
+      -- Fenced code is literal text; the document is indexed once per tick.
       M.scan_markdown_image_text(deps, buf, row0, line, result, { base_col = 0 })
     end
   end

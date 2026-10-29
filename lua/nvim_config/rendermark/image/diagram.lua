@@ -68,7 +68,7 @@ function Module.new(M, state)
       while lines[i] and not lines[i]:match('^%s*$')
           and not lines[i]:match('^%s*```') and not lines[i]:match('^%s*~~~') do
         if lines[i]:find('![', 1, true) then
-          for _, link in ipairs(scan.find_image_links(lines[i])) do
+          for _, link in ipairs(scan.find_image_links(lines[i], scan.buf_defs(buf))) do
             -- Remote links are never drawn, so they cannot stand in for the block.
             if scan.resolve_image_path(buf, link[3]) then verdict = true; break end
           end
