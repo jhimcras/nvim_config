@@ -337,7 +337,7 @@ mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원
 | 기본 bytes API(PNG만) | 예 | 없음. nvim 0.11에는 `vim.ui.img`가 없고 rendermark는 neopp 계약(경로+클리핑)만 쓴다 | **의도적 미지원**(사유: neopp 전용 계약) |
 | 이미지 일부만 보일 때 | 기본 API는 자르기 불가라 숨김, neopp는 클리핑 | neopp 클리핑만 존재(자르기 가능하므로 숨길 필요 없음). 스크롤로 앵커가 화면 위로 나가도 footprint 규칙으로 예약·클리핑 유지(`partially visible …` 스펙) | **동등** |
 | 스크롤·창 크기·분할·접기·편집 갱신, 닫힌 창 ID 제거, 버퍼 삭제 정리 | 예 | 예 (`same buffer in multiple windows`, `BufUnload`의 `clear_images_for_buf`/`diagram_cleanup_buf`/`docindex.forget`) | **동등** |
-| provider 오류 후 재시도 억제 | 오류 시 빈 예약 제거, 같은 리비전은 재시도 안 함 | 이전: `set` 예외가 `send_images`까지 전파돼 동기화마다 반복. **보완**: `backend.lua`가 `set`/`del`을 `pcall`로 감싸 경고 한 번(`notify_once`), 같은 항목은 바뀔 때까지 재시도 안 함. 빈 예약은 남음(예약은 공간 계약이라 건드리지 않음) | 재시도 억제: **보완 완료** (스펙 추가) / 빈 예약 제거: **서브 이슈 S3** |
+| provider 오류 후 재시도 억제 | 오류 시 빈 예약 제거, 같은 리비전은 재시도 안 함 | 이전: `set` 예외가 `send_images`까지 전파돼 동기화마다 반복. **보완**: `backend.lua`가 `set`/`del`을 `pcall`로 감싸 경고 한 번(`notify_once`), 같은 항목은 바뀔 때까지 재시도 안 함. **S3(사용자 결정 (c), R9)**: 빈 예약을 제거하는 대신 예약 행 수를 그대로 두고 그 자리에 `[neopp: image display failed: …]` 오류 문구를 그린다(소스는 숨겨진 채). 재시도 단위는 경로·mtime·크기·표시 크기 | 재시도 억제: **보완 완료** (스펙 추가) / 빈 예약: **구현 완료(사용자 결정 (c))** — 의도적 차이: mdloom은 예약을 빼지만 rendermark는 유지해 스크롤 안정성(`project_reservation_scroll_stability`)을 지킨다 |
 | provider 미구비/불완전 시 SafeState 오류 없음 | 예 | 이전: `del`이 없는 provider에서 오류. **보완**: `del` 부재 허용, `vim.ui.img = {}`는 `img_available`이 막아 무동작 | **보완 완료** (스펙 추가) |
 | `conceallevel < 1`이면 2로 | 이미지 창에서 올림 | `wrap.apply`가 마크다운 창의 `conceallevel < 2`를 2로 올리고 `disable`에서 복원, 다이어그램 창은 `diagram.lua`도 올림. wrap을 끈 창은 올리지 않음(wrap이 마크다운 창의 소유자) | **동등** |
 | 스텁(텍스트 박스) 표시 | `MDLOOM_IMG_STUB=1` | `RENDERMARK_IMG_STUB=1` 또는 `vim.g.rendermark_img_stub`, `vim.ui.img`가 없을 때만 설치. 이전엔 `RENDERMARK_IMG_STUB=0`도 켜졌음 → `''`/`0`/`'0'`은 끔으로 **보완**. `backend.lua` 주석에 이름·의미를 적음(사용자 문서는 R7 README). 스텁은 공간 할당을 바꾸지 않음(메모리 `project_stub_allocation_render_separation`) | **보완 완료** (스펙 추가), 환경변수 이름은 다름(`MDLOOM_` → `RENDERMARK_`) |
@@ -349,7 +349,7 @@ mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원
 서브 이슈 목록:
 - S1 한 줄 이미지가 폭을 넘을 때의 동작 — **의도적 유지(사용자 결정 2026-10-30, 닫힘)**: 현재처럼 한 band에서 모두 축소한다(이미지가 매우 작아질 수 있음). mdloom처럼 다음 band로 줄바꿈하려면 `layout_image_line`의 반환 높이와 예약 행 수(`ReserveRow`)가 바뀌어 neopp와의 공간 할당 계약과 `layout_image_line fit` 스펙을 함께 바꿔야 하므로 "기존 rendermark 방식으로" 두기로 했다. 코드 변경 없음. 폭이 모자라 작게 보이는 이미지는 S2의 `:RendermarkImageOpen`으로 크게 볼 수 있다
 - S2 일반 이미지 확대 미리보기(`MdloomOpenImage` 동등) — **구현 완료(R9)**: `:RendermarkImageOpen`, 새 탭에 창에 꽉 차게 표시
-- S3 provider 오류 시 빈 예약 제거: `set` 실패를 `send_images`에 되돌려 해당 이미지의 예약·conceal을 빼고 같은 리비전은 다시 안 그림. 현재는 경고 한 번 + 예약 유지(소스는 숨겨진 채 빈 공간)
+- S3 provider 오류 시 빈 예약 — **구현 완료(사용자 결정 (c), R9)**: `set` 실패(예외 또는 `false` 반환)를 `send_images`에 되돌리되 예약·conceal은 빼지 않고(예약 행 수 불변) 그 자리에 기존 오류 박스와 같은 문구·강조(`WarningMsg`)의 `[neopp: image display failed: …]`를 그린다. 같은 리비전은 다시 안 그리고 항목이 바뀌면 재시도. 설계와 검증은 R9 절 "S3 구현"
 
 R6-A에서 정한 공통 기반 규칙:
 - 링크 문법(`scan.lua` `find_image_links`): `![alt](dest)` 의 dest는 `path`, `<path with spaces>`, 균형 잡힌 괄호를 가진 경로, 뒤에 `"t"`/`'t'`/`(t)` title. 빈 경로·닫히지 않은 `<`·공백 포함 맨 경로는 이미지가 아님. 프리필터는 줄에 `![`가 있는지 평문 `find`(함수 맨 앞)
@@ -379,7 +379,7 @@ R6-B에서 정한 규칙 (HTML `<img>`·위키 이미지, 2026-10-30):
   - [x] 경로 규칙은 기존 `resolve_image_path`를 공유: `%20`(및 `%xx`), `~`, `<…>` 감싸기, 쿼리·앵커 제거 (R6-A)
   - [x] 코드 스팬·펜스 코드블록 안의 이미지 문법은 제외 (R6-A: 코드 스팬은 기존, 펜스는 신규 `docindex.lua`)
   - [x] 성능: 문서 스캔 비용이 늘지 않도록 줄 단위 프리필터(`![`, `<img`, `[…]:`)를 유지하고 `docs/image_reapply_performance.md` 벤치를 다시 측정 — R6-A(`![`와 참조형)와 R6-B(`<img`·위키)의 측정은 `docs/image_scan_performance.md` "After R6-A"·"After R6-B". 이미지 없는 문서(HTML 텍스트 줄 포함)는 불변, `benchmark_image_reapply`(5회) 호출 수 불변
-- 완료 조건: 표의 모든 행에 "동등", "의도적 미지원(사유)" 또는 사용자 결정(의도적 유지·conceal 하지 않음)이 기록됨. 열린 항목은 S3 하나(사용자가 설명을 요청한 상태라 손대지 않음).
+- 완료 조건: 표의 모든 행에 "동등", "의도적 미지원(사유)" 또는 사용자 결정(의도적 유지·conceal 하지 않음)이 기록됨. 열린 항목 없음(S1 의도적 유지, S2·S3 구현 완료 — R9).
 
 ### R7 — 정리
 
@@ -470,16 +470,17 @@ PATH=~/.local/jdk-21/bin:$PATH PLANTUML_JAR=/usr/share/java/plantuml/plantuml.ja
 - [ ] M12 R0 에 남은 "기존 동작 캡처": (i) 비활성 plantuml 블록이 이미지로 대체되는지 (M5), (ii) 커서 진입 시 미리보기 split (M5), (iii) `RENDERMARK_IMG_STUB=1`로 텍스트 박스 (준비 2). 회귀 비교가 필요하면 R0 기준 코드를 별도 작업 트리로 연다: `git worktree add ../nvim_before 07ab9fa`, `mkdir -p /tmp/xdg_before && ln -sfn $PWD/../nvim_before /tmp/xdg_before/nvim && XDG_CONFIG_HOME=/tmp/xdg_before RENDERMARK_IMG_STUB=1 nvim tests/manual/rendermark_manual.md` (그 시점 코드는 rendermark 가 plantuml 을 직접 실행하고 `RENDERMARK_PLANTUML_JAR`/`PLANTUML_JAR`를 읽는다). 비교 후 `git worktree remove ../nvim_before`
 - [ ] M13 R4 의 neopp GUI 통합 확인: M5 가 곧 그 확인이다(plantuml 블록 대체, 저장 시 갱신, 미리보기 split, 이벤트 연쇄의 지연 체감). 저장 후 이미지가 바뀌기까지 체감 지연이 있으면 시간을 적는다
 - [ ] M14 (j, R9) 이미지 확대 보기 `:RendermarkImageOpen`(Markdown 버퍼의 `<leader>i`): 샘플 "(j)" 절 "세 개" 줄에서 커서를 빨강/파랑/초록 링크 위에 두고 실행하면 새 탭이 열리고 그 이미지가 창에 꽉 차게(종횡비 유지, 가운데; 240x120·120x120·160x80 모두 확대) 보인다. 링크 사이 공백에서는 가까운 이미지가 열린다. 참조형·HTML·위키 줄에서도 열리고, 없는 파일·SVG·이미지 없는 줄에서는 탭 없이 알림만 뜬다. (c) 의 렌더된 plantuml 블록 안에서는 렌더 이미지가 열린다. 창 크기를 바꾸면(GUI 창 크기, `<C-w>v` 등) 이미지가 다시 맞춰지고, 다른 탭으로 갔다 오면 이미지가 사라졌다 돌아오며 문서 탭의 이미지는 영향이 없다. `q`/`<Esc>` 로 탭이 닫히고 원래 탭으로 돌아오며 이미지가 남지 않는다. 스텁(`RENDERMARK_IMG_STUB=1`)에서는 같은 자리에 `img: <파일>` 박스가 보인다
+- [ ] M15 (k, S3) 표시 실패: 샘플 "(k)" 절의 `rm_corrupt.png`(PNG 헤더 160x80만 있고 본문 없음)는 크기가 읽혀 자리(1행 + 가상 4줄)가 예약된다. neopp 가 `vim.ui.img.set` 에서 실패하면(neopp 구현에 달림) 그 자리는 비어 있지 않고 첫 가상 줄에 `[neopp: image display failed: rendermark_manual_assets/rm_corrupt.png]` 경고가 보이며, "뒤 글" 줄의 위치가 실패 전후로 변하지 않고 스크롤(`<C-e>`/`<C-y>`)이 떨리지 않는다. 한 줄 여러 개 예에서는 빨강·초록은 정상으로 그려지고 손상 이미지 자리에만 경고가 뜬다. 같은 파일을 정상 PNG 로 바꿔 저장하면(mtime 변경) 경고가 사라지고 이미지가 같은 행 수로 그려진다. neopp 가 손상 파일을 받아들이면 스텁(`RENDERMARK_IMG_STUB=1`)에서 `:lua vim.ui.img.set = function() error('boom') end` 후 `:vsplit` 으로 실패를 만들어 스텁 박스가 같은 자리에서 경고로 바뀌는지 본다. 경고 알림(`rendermark: vim.ui.img.set failed for …`)은 한 번만 뜬다
 
 수동 확인 결과 (사용자가 채움):
 
 | 항목 | 환경(neopp/스텁/Windows) | 결과 | 메모 |
 | --- | --- | --- | --- |
-| M1~M14 | | | |
+| M1~M15 | | | |
 
 #### 남은 일
 
-- [ ] 수동 확인(M1~M14) 완료 후 진행 기록 갱신
+- [ ] 수동 확인(M1~M15) 완료 후 진행 기록 갱신
 - [ ] 수동 확인 후 이슈 `issue-rendermark_all_drawing.md`를 `closed/`로 이동 (사용자 결정)
 - 완료 조건: 자동 검증 항목이 모두 `[x]`이고(충족), 수동 체크리스트가 사용자 확인으로 모두 `[x]`가 된다.
 
@@ -493,7 +494,7 @@ PATH=~/.local/jdk-21/bin:$PATH PLANTUML_JAR=/usr/share/java/plantuml/plantuml.ja
 | (2) | 참조 정의 줄은 가리지 않고 그대로 둔다 | **계획서 사양 변경**: Q1·R0 목록 4·R2 구현 순서 2·R6 표·R6 체크박스의 "정의 줄 conceal" 요구를 "conceal 하지 않음"으로 정정. 코드 변경 없음(현재 동작이 이미 그렇다) |
 | (3) | S1(한 줄 이미지가 폭을 넘을 때)은 기존 rendermark 방식 유지 | S1을 "의도적 유지"로 닫고 동등성 표 행을 갱신. 코드 변경 없음 |
 | (4) | S2 구현: 일반 이미지 확대 보기 | 아래 |
-| (5) | S3(provider 오류 시 빈 예약 제거)는 사용자가 설명을 요청한 상태 | 건드리지 않음. **열린 상태 유지** |
+| (5) | S3(provider 오류 시 빈 예약 제거)는 사용자가 설명을 요청한 상태 | 처음엔 열린 상태 유지. 이후 사용자 결정 (c): 예약 행 수는 그대로 두고 그 자리에 오류 박스를 그린다 → **구현 완료**(아래 "S3 구현") |
 | (6) | `plantuml-previewer.vim` 미사용 | `plugins.lua`에서 제거(아래) |
 
 **S2 구현 — `:RendermarkImageOpen`** (`image/zoom.lua`, 사용 방법은 [rendermark_image.md](rendermark_image.md))
@@ -506,6 +507,19 @@ PATH=~/.local/jdk-21/bin:$PATH PLANTUML_JAR=/usr/share/java/plantuml/plantuml.ja
 - **본문 경로와 섞지 않음**: `image/zoom.lua`는 `send_images`/payload/예약 extmark를 쓰지 않고 `vim.ui.img.set/del`을 자기 id(`rendermark:zoom:<버퍼>`)로 직접 부른다. 이 id는 `backend`의 live 집합에 없으므로 본문 동기화가 지우거나 다시 올리지 못한다(스펙 `survives a body sync in the zoom tab`). 문서 버퍼에 extmark·`changedtick` 변화가 없다(스펙). 따라서 공간 할당 불변(메모리 `project_stub_allocation_render_separation`)
 - 검증: 신규 `tests/spec/rendermark/image/zoom_spec.lua` 45개(대상 선택·열/가까운 링크, 참조형·HTML·위키·다이어그램, 탭·버퍼 옵션·키맵, 가로·세로·작은 이미지 크기, 닫기·`del`, 탭 이동, 리사이즈, 알림, 명령·키맵 등록, 스텁). 전체 `bash run_tests.sh` 종료 0, 실패·오류 0, `Success` 줄 848(기준 803 + 45). `benchmark_image_reapply` 호출 수 R0와 같음(변경 없음 전부 0, 너비 변경 set 1000/mark 2000/clear 1000/redraw 1000). 실제 `init.lua`+스텁 헤드리스: 명령·`<leader>i` 등록, 스텁 저장소에 756x378 배치, `q`로 정리 확인
 - 한계: 헤드리스라 화면에 그려진 모습(neopp)은 확인하지 못했다(M14). 위키 이름 검색 중이면(첫 스캔) 대상 없음 알림이 나가므로 잠시 뒤 다시 실행한다. 이미지 안에서 확대·이동은 없다(창에 맞춘 고정 배치)
+
+**S3 구현 — 표시 실패 시 예약 유지 + 오류 문구** (사용자 결정 (c), 2026-10-30; `backend.lua`, `place.lua`, `stub.lua`)
+
+- 실패 감지: `backend.apply_payload`가 항목마다 `vim.ui.img.set`을 `pcall`하고 **예외이거나 `false`를 돌려주면 실패**로 기록한다(`nil`/그 밖의 반환은 성공). 실패는 id별로 `{ rev, buf }`를 저장한다. 정상 경로의 호출 수는 그대로이고 실패 id가 없으면 항목당 테이블 조회 한 번뿐이다. `apply_payload`는 새 실패가 있었는지(true)를 돌려준다
+- 리비전과 재시도: `rev` = 경로 + 파일 mtime(초·나노초) + 크기 + 표시 크기(`display_width_px/height_px`). 스크롤·창 높이 변화(클립·위치)는 항목은 바꾸지만 `rev`는 바꾸지 않으므로 **다시 시도하지 않는다**. 파일이 바뀌거나(같은 크기여도 mtime) 표시 크기가 바뀌면 다음 동기화가 다시 시도한다(항목이 같아도). 경고 `notify_once` 메시지에 파일 경로와 원인을 넣어(`rendermark: vim.ui.img.set failed for <path>: <원인>`) 파일마다 한 번 뜬다. 성공하면 기록이 지워진다. 이미지가 화면 밖으로 나갔다 돌아와도 같은 `rev`면 다시 시도하지 않는다(기록은 버퍼가 사라지거나 `delete_image`, 이미지 표시를 껐다 켤 때 지운다). 이전에 성공한 id가 실패로 바뀌면 화면에 남은 옛 이미지를 `del`한다
+- 박스 렌더(재사용): 오류 문구는 `image_error_text`(`display_failed` 종류 추가)로 만들고 강조는 `WarningMsg`로 기존 `not_found`/`unsupported`와 같다. 그리는 경로는 스텁이 쓰는 `build_stub_box_rows` → `draw_stub_footprint_box` → `emit_band_rows`를 그대로 쓴다. 기존 오류 박스(`set_image_error_extmark`)는 예약이 없는 1줄 가상 줄이라 예약 높이를 채울 수 없어서, 예약 행에 얹는 이 경로가 필요했다. `ReserveRow`가 `label.boxes`에 실패한 이미지의 `error_text` 항목을 넣고(스텁이면 나머지는 스텁 박스), `EmitDecorations`가 `label.boxes`가 있으면 이 경로를 쓴다(이전 조건은 `_stub_active`). 문구는 예약 첫 가상 줄(없으면 소스 행 덮어쓰기)에 한 줄이고 나머지 예약 줄은 빈 줄이다. 한 줄 여러 이미지는 이미지마다 자기 `start_cell`에 그린다. 텍스트 행(`text_rows`)과는 기존 병합(`merge_chunk_rows`)을 쓴다
+- 예약 행 수 불변: 실패 상태는 `reserve_h`/`span`/`above` 계산에 들어가지 않고 `ReservationSignature`에도 없다. 박스는 같은 `reserve_h - 1` 개 가상 줄을 채우므로 이미지 ↔ 박스 전환이 `reservation_changed`를 일으키지 않는다(전체 이미지 재전송·`redraw!` 없음). 소스 conceal도 그대로다. `emit_band_rows`가 `virt_h`로만 돌아 닫힌 접기의 이월 예약(`reserve_h > virt_h`)을 줄이던 것을 `max(virt_h, reserve_h)`로 고쳐 박스가 예약보다 줄이 적지 않게 했다
+- 두 번째 패스: 실패는 `set`을 부른 뒤에야 알 수 있고 장식은 그 앞에 그려지므로, `_send_images_impl`이 새 실패가 있으면 같은 호출 안에서 한 번 더 `SyncPass`(스캔·장식·`apply_payload`)를 돌려 빈 예약을 박스로 바꾼다. 두 번째 패스에서는 `set`이 다시 불리지 않는다(같은 `rev`). 새 실패가 있는 동기화에만 비용이 늘고 정상 경로는 그대로다. 항목의 `rev`가 바뀐 경우(재시도)는 첫 패스에서 박스를 그리지 않고 다시 시도해, 성공하면 박스 없이 이미지, 실패하면 두 번째 패스에서 박스가 된다
+- 다이어그램 항목(`diagram = true`): 같은 `ReserveRow`를 지나므로 같은 처리다(블록 높이 예약 안에 문구, 소스 conceal 유지). 렌더 `failed` 상태의 `[diagram: …]` 줄은 이미지가 없는 항목에만 나오므로 겹치지 않는다. 활성 블록 미리보기(`emit_preview_float`)의 실패는 재시도 억제와 경고만 있고 박스는 없다
+- 표 셀 이미지: 표가 셀 공간을 소유하므로(빈 칸 또는 스텁 라벨) 박스는 그리지 않는다. 실패한 이미지만 재시도 억제·경고를 받고 같은 표의 다른 이미지는 영향이 없다(스펙). 접힌 블록 아래에 예약이 붙는 경우(`above`)는 박스 없이 빈 예약이다
+- 스텁: 스텁 박스는 같은 자리에서 오류 문구로 바뀐다(`vim.ui.img.set`을 던지게 감싼 스펙). `stub_cursor_sig`는 스텁이 꺼져 있어도 실패 박스의 소스 행이 있으면 동작해 커서 행에서 소스가 드러난다
+- 검증: 신규 `tests/spec/rendermark/image/display_failure_spec.lua` 17개(예외·`false`·`nil`, 예약 행 수 전후 비교, 처음부터 실패한 경우와 성공 후 실패, 같은 리비전 재시도 없음, 파일·표시 크기 변경 시 재시도, 재시도 성공 시 박스 제거·같은 행 수, 한 줄 여러 이미지, 다이어그램, 스텁, 1행 높이 이미지, 이월 예약, 표 셀, 껐다 켜기). 전체 `bash run_tests.sh` 종료 0, 실패·오류 0, `Success` 줄 863(848 + 17에서 실행마다 ±3 변동). `benchmark_image_reapply`(5회): 변경 없음 set 0·호출 전부 0(중앙값 약 678 ms), 너비 변경 set 1000/mark 2000/clear 1000/redraw 1000/del 0(약 683 ms) — R0와 같음
+- 한계: 표 셀 이미지와 미리보기 float 이미지의 실패는 박스 없이 경고뿐이다. 같은 크기의 파일 내용만 바뀐 경우는(mtime만 변경) 실패한 이미지만 다시 시도하고 성공한 이미지는 기존대로 항목이 같으면 다시 보내지 않는다. neopp의 실제 `set` 실패 조건(손상 PNG 등)은 GUI에서 확인한다(M15)
 
 **플러그인 정리 (6)**
 
@@ -545,4 +559,5 @@ PATH=~/.local/jdk-21/bin:$PATH PLANTUML_JAR=/usr/share/java/plantuml/plantuml.ja
 | R6 동등성 점검 | 완료(GUI 확인은 R8) | 2026-10-30 | R6-A: 동등성 표 확정(서브 이슈 S1~S3), 공통 기반(`%xx`·쿼리·앵커·`<…>`·title·tilde, 펜스 제외 `docindex.lua`), 참조형 이미지, GIF 크기, provider 오류 내성, 스텁 환경변수 값. 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 R5 725 → 759~762, 3회 실행에서 일부 기존 spec 출력 줄이 빠져 실행마다 ±3 변동하나 실패·오류는 0; 신규 `scan_spec` 39). 벤치: `benchmark_image_reapply`(5회) 변경 없음 중앙값 681.3 ms·호출 전부 0, 너비 변경 686.8 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0와 같음); 스캔은 이미지가 보이는 문서의 편집당 +0.3 ms(3000줄)·+0.8 ms(8000줄), 이미지 없는 문서·스크롤·커서·변경 없는 `send_images`는 불변. R6-B: HTML `<img src>`(크기 속성 반영, 여러 줄 태그 미지원), 위키 이미지(경로형·이름형, `wikisearch.lua` 비동기 색인·캐시·`ambiguous` 박스), 프리필터 `has_image_candidate`. 신규 `html_wiki_spec` 38개, 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 802). 벤치: `benchmark_image_reapply`(5회) 변경 없음 중앙값 673.6 ms·호출 전부 0, 너비 변경 682.2 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0와 같음); 이미지 없는 문서(HTML 텍스트 줄 포함) 불변, 이미지당 `send_images` 비용은 문법과 무관(약 0.06 ms) |
 | R7 정리 | 완료 | 2026-10-30 | `docs/rendermark_image.md` 신설(공급자 계약·glue·설정 키·이미지 문법·경로·위키 검색·크기 형식·스텁), README·`coderunner.md`(`raw_stdout` 포함) 갱신, 낡은 주석 정정, 벤치·성능 문서를 `*_image_scan*`로 개명하고 머리말 메모, 이슈 "확인 필요" 닫기와 작업 노트 추가(closed 이동은 R8 후). grep 점검 결과는 호환 별칭·언어 기본값·픽스처·coderunner 렌더러 설정·과거 기록만 남음. 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 801~803) |
 | R8 통합 검증 | 자동 검증 완료, 수동 확인 대기 | 2026-10-30 | 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(`Success` 802 → 읽기 모드 스펙 추가 후 803; R0 696), `tests/spec/rendermark` 352/0/0(R0 259). 벤치 5회 중앙값: 변경 없음 672.0 ms·호출 전부 0, 너비 변경 679.6 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0 680.0/690.8 ms, 호출 수 같음). 스캔 벤치는 R6-B 수치 범위. 실제 `init.lua` 헤드리스 스모크(XDG 격리, 스텁): 경고·오류 없음, plantuml `ready`/`failed`, Markdown 이미지 중복 0, 내보낸 이미지 인접 블록 숨김, 저장 시 갱신, coderunner 없이 Markdown 이미지 정상, mdloom `codeLensProvider` nil. 스펙 추가: 읽기 모드 창은 활성 블록 없음(`diagram_spec`). 발견: mdloom daemon 프로토콜 1 잔존(사용자 세션 종료 후 `mdloom daemon stop`), `mdloom` config.toml 경고 2건, `diagnostics=false`라 진단은 확인 시 임시 활성화 필요. 수동 체크리스트 M1~M13은 R8 절, 샘플은 `tests/manual/rendermark_manual.md`. 이슈는 수동 확인 뒤 사용자가 닫는다 |
-| R9 후속 결정 반영 | 완료(GUI 확인 M14 대기) | 2026-10-30 | 사용자 결정 6건 반영. (1) 크기 속성 유지 기록, (2) 참조 정의 줄 conceal 요구를 "conceal 하지 않음"으로 사양 정정(코드 변경 없음), (3) S1 의도적 유지로 닫음, (4) S2 구현: `:RendermarkImageOpen`(Markdown 버퍼 `<leader>i`), `image/zoom.lua`(본문 경로와 분리, 새 탭에 창 가득 맞춤, 확대 한도 없음), 신규 `zoom_spec` 45개, (5) S3 열린 상태 유지, (6) `plantuml-previewer.vim`·`open-browser.vim` 제거, `plantuml-syntax` 단독 유지. 전체 `bash run_tests.sh` 종료 0, 실패·오류 0, `Success` 848(803 + 45). `benchmark_image_reapply` 호출 수 R0와 같음. 수동 체크리스트에 M14 추가 |
+| R9 후속 결정 반영 | 완료(GUI 확인 M14 대기) | 2026-10-30 | 사용자 결정 6건 반영. (1) 크기 속성 유지 기록, (2) 참조 정의 줄 conceal 요구를 "conceal 하지 않음"으로 사양 정정(코드 변경 없음), (3) S1 의도적 유지로 닫음, (4) S2 구현: `:RendermarkImageOpen`(Markdown 버퍼 `<leader>i`), `image/zoom.lua`(본문 경로와 분리, 새 탭에 창 가득 맞춤, 확대 한도 없음), 신규 `zoom_spec` 45개, (5) S3 열린 상태 유지, (6) `plantuml-previewer.vim`·`open-browser.vim` 제거, `plantuml-syntax` 단독 유지. 전체 `bash run_tests.sh` 종료 0, 실패·오류 0, `Success` 848(803 + 45). `benchmark_image_reapply` 호출 수 R0와 같음. 수동 체크리스트에 M14 추가. 이후 S3 구현(사용자 결정 (c)) 반영 — (5)는 "열린 상태 유지"에서 구현 완료로 바뀜 |
+| S3 표시 실패 시 예약 유지 | 구현 완료(GUI 확인 M15 대기) | 2026-10-30 | 사용자 결정 (c): `vim.ui.img.set` 실패(예외·`false`)해도 예약 행 수는 그대로, 그 자리에 `[neopp: image display failed: …]`(`WarningMsg`, 기존 `image_error_text`·스텁 박스 경로 재사용). 실패는 id별 `rev`(경로·mtime·크기·표시 크기)로 기록해 같은 리비전은 재시도하지 않고 바뀌면 재시도, 새 실패가 있으면 같은 호출에서 한 패스 더 돌려 박스를 그림. 다이어그램 항목도 같은 처리, 표 셀·미리보기 float은 박스 없음. 신규 `display_failure_spec` 17개. 전체 `bash run_tests.sh` 종료 0, 실패·오류 0, `Success` 줄 863(기준 848 + 17, ±3 변동). `benchmark_image_reapply`(5회): 변경 없음 set 0·호출 전부 0, 너비 변경 set 1000/mark 2000/clear 1000/redraw 1000/del 0 유지. 수동 체크리스트에 M15 추가, 샘플 (k) 절과 `rm_corrupt.png` |

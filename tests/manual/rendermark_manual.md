@@ -2,7 +2,7 @@
 
 이 문서는 `docs/rendermark_plan.md` 의 R8 절 체크리스트를 따라 열어 보는 샘플이다.
 각 절 제목의 (a)~(h) 는 체크리스트 항목과 같다. 이미지는 `rendermark_manual_assets/` 의 작은 PNG 를 쓴다
-(빨강 240x120, 파랑 120x120, 초록 160x80). 저장해서 문서를 바꿨다면 `git restore tests/manual/rendermark_manual.md`.
+(빨강 240x120, 파랑 120x120, 초록 160x80, 그리고 (k) 용 손상 PNG `rm_corrupt.png`). 저장해서 문서를 바꿨다면 `git restore tests/manual/rendermark_manual.md`.
 
 ## (a) 표준 이미지: 한 번만 그려진다
 
@@ -136,3 +136,19 @@ HTML: <img src="rendermark_manual_assets/rm_red.png" width="120"> (width 120 이
 오류 알림 확인: ![missing](rendermark_manual_assets/rm_missing.png) (이미지 없음), ![svg](rendermark_manual_assets/rm_bad.svg) (미지원), 이 줄처럼 이미지가 없는 줄 (`no image under the cursor`).
 
 다이어그램은 (c) 의 렌더된 plantuml 블록 안에 커서를 두고 실행한다.
+
+## (k) 표시 실패: 예약 행 유지 + 오류 문구 (M15)
+
+`rm_corrupt.png` 는 PNG 헤더(160x80)만 있고 본문이 없다. 크기는 읽히므로 자리는 예약되지만 그림 데이터가 없어
+neopp 가 `vim.ui.img.set` 에서 실패할 수 있다(실패 여부는 neopp 구현에 달려 있다). 실패하면 예약된 5행은 그대로 두고
+그 첫 줄에 `[neopp: image display failed: rendermark_manual_assets/rm_corrupt.png]` 경고가 보이며 아래 `뒤 글` 의 위치가 변하지 않는다.
+
+앞 글
+![corrupt](rendermark_manual_assets/rm_corrupt.png)
+뒤 글
+
+한 줄에 정상 이미지와 함께: ![r](rendermark_manual_assets/rm_red.png) ![corrupt](rendermark_manual_assets/rm_corrupt.png) ![g](rendermark_manual_assets/rm_green.png)
+
+neopp 가 손상 파일을 받아들이면(실패하지 않으면) 스텁으로 실패를 만든다: `RENDERMARK_IMG_STUB=1 nvim tests/manual/rendermark_manual.md`
+뒤 `:lua vim.ui.img.set = function() error('boom') end` 를 실행하고 `:vsplit` / `<C-w>q` 로 창 크기를 바꾸면(항목이 바뀜) 위 두 줄의
+스텁 박스가 같은 자리에서 경고 문구로 바뀐다.
