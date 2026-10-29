@@ -22,7 +22,7 @@ function Backend.new(host)
   end
 
   -- Text-box stub for terminals without an image provider: RENDERMARK_IMG_STUB=1
-  -- or vim.g.rendermark_img_stub (the old MDLOOM_IMG_STUB). '', '0' and 0 mean off.
+  -- or vim.g.rendermark_img_stub (the stub flag of the former LSP drawing plugin). '', '0' and 0 mean off.
   local function flag_on(flag)
     return flag ~= nil and flag ~= false and flag ~= '' and flag ~= '0' and flag ~= 0
   end

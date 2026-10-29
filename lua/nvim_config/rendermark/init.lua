@@ -17,8 +17,7 @@ function M.setup(opts)
     html.setup()
     wrap.setup(opts) -- soft-wrap + tables
     image.setup(opts)
-    -- Disabled in favor of markdown-oxide's go-to-definition.
-    -- link.setup(opts)
+    -- Link navigation and completion are the markdown LSP's job; rendermark only draws.
     -- Checkbox toggle on <C-Space>.
     checkbox.setup(opts)
 end

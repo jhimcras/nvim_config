@@ -1,4 +1,5 @@
--- nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
+-- nvim --headless -u NONE -l tests/manual/benchmark_image_scan.lua
+-- Measures send_images scan cost (diagram provider items, Markdown/HTML/wiki images); formerly benchmark_plantuml_scan.lua.
 -- Set IMAGE_BENCH_BASELINE to a snapshot root to compare the same workload.
 -- Set BENCH_PROVIDER=1 to register a fake diagram provider with 10 ready blocks
 -- (5 inside the headless viewport); without it no provider is registered.
@@ -50,7 +51,7 @@ if vim.env.BENCH_IMAGES then
   lines[line_count] = '[pic]: ' .. png
 end
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-local ns = vim.api.nvim_create_namespace('plantuml-scan-benchmark')
+local ns = vim.api.nvim_create_namespace('image-scan-benchmark')
 for row = 0, 59 do
   vim.api.nvim_buf_set_extmark(buf, ns, row, 0, { virt_text = { { '•', 'Comment' } } })
 end
