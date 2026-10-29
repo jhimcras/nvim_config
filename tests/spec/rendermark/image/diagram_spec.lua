@@ -327,6 +327,219 @@ describe('rendermark diagram items', function()
     end)
   end)
 
+  -- Q3: a link image right below the block (zero or one blank line) is the
+  -- exported copy of the diagram; it draws, the block keeps its source.
+  describe('exported image below the block', function()
+    local png2, link
+
+    before_each(function()
+      png2 = tmpfile(PNG)
+      link = '![exported](' .. png2 .. ')'
+    end)
+
+    local function below(extra)
+      local lines = vim.list_slice(LINES, 1, END + 1) -- intro .. closing fence
+      vim.list_extend(lines, extra)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    end
+
+    local function stored_paths()
+      local paths = {}
+      for id, entry in pairs(store) do
+        if id:sub(1, 4) == 'buf:' then paths[#paths + 1] = entry.path end
+      end
+      table.sort(paths)
+      return paths
+    end
+
+    it('hides the block image for a link with zero or one blank line between', function()
+      below({ link })
+      assert.equals(0, #(collect()))
+      below({ '', link })
+      assert.equals(0, #(collect()))
+    end)
+
+    it('keeps the block image for two or more blank lines', function()
+      below({ '', '', link })
+      assert.equals(1, #(collect()))
+      below({ '', '', '', link })
+      assert.equals(1, #(collect()))
+    end)
+
+    it('keeps the block image when the next paragraph has no image', function()
+      below({ '', 'plain text', 'more text' })
+      assert.equals(1, #(collect()))
+    end)
+
+    it('looks at the whole paragraph, but not past its end', function()
+      below({ '', 'caption', link })
+      assert.equals(0, #(collect()))
+      below({ '', 'caption', '', link })
+      assert.equals(1, #(collect()))
+    end)
+
+    it('ignores links in code spans, remote links and code fences', function()
+      below({ '', '`' .. link .. '`' })
+      assert.equals(1, #(collect()))
+      below({ '', '![remote](https://example.com/a.png)' })
+      assert.equals(1, #(collect()))
+      below({ '```lua', link, '```' })
+      assert.equals(1, #(collect()))
+    end)
+
+    it('counts an inline link inside the paragraph text', function()
+      below({ 'text ' .. link .. ' text' })
+      assert.equals(0, #(collect()))
+    end)
+
+    it('is not applied when diagram.hide_when_exported is false, and defaults to true', function()
+      below({ link })
+      vim.ui = old_ui -- no image backend: setup only reads the options
+      img.setup({ diagram = { hide_when_exported = false } })
+      assert.equals(1, #(collect()))
+      img.setup({ diagram = { preview = { auto = true } } })
+      assert.equals(0, #(collect()))
+      img.setup({ diagram = { hide_when_exported = false } })
+      img.setup()
+      assert.equals(0, #(collect()))
+    end)
+
+    it('follows edits of the link on the first query after the edit', function()
+      assert.equals(1, #(collect()))
+      vim.api.nvim_buf_set_lines(buf, END + 1, END + 1, false, { link }) -- link right below the fence
+      assert.equals(0, #(collect()))
+      vim.api.nvim_buf_set_lines(buf, END + 1, END + 2, false, { 'no image any more' })
+      assert.equals(1, #(collect()))
+      vim.api.nvim_buf_set_lines(buf, END + 1, END + 1, false, { '', '' }) -- push it out of reach
+      vim.api.nvim_buf_set_lines(buf, END + 3, END + 4, false, { link })
+      assert.equals(1, #(collect()))
+      vim.api.nvim_buf_set_lines(buf, END + 1, END + 2, false, {}) -- one blank line left
+      assert.equals(0, #(collect()))
+      vim.api.nvim_buf_set_lines(buf, END + 1, END + 3, false, {}) -- link deleted
+      assert.equals(1, #(collect()))
+    end)
+
+    it('follows a provider refresh without an edit', function()
+      below({ '', link })
+      collect()
+      img.refresh(buf)
+      assert.equals(0, #(collect()))
+    end)
+
+    it('is fine when the block ends the buffer', function()
+      below({})
+      assert.equals(END + 1, vim.api.nvim_buf_line_count(buf))
+      local result
+      assert.has_no.errors(function() result = collect() end)
+      assert.equals(1, #result)
+      -- ... or a blank line is all that follows.
+      below({ '' })
+      assert.equals(1, #(collect()))
+    end)
+
+    it('reads only the rows after the block, never the whole buffer', function()
+      -- The fake provider reads the whole buffer itself; answer without it.
+      src.items = function()
+        return { { start_row = START, end_row = END, key = 'k', lang = 'plantuml',
+          path = png, format = 'png', stale = false, status = 'ready' } }
+      end
+      below({ '', link })
+      img.refresh(buf)
+      local reads = {}
+      local real = vim.api.nvim_buf_get_lines
+      vim.api.nvim_buf_get_lines = function(b, s, e, strict)
+        reads[#reads + 1] = { b = b, s = s, e = e }
+        return real(b, s, e, strict)
+      end
+      local ok, result = pcall(collect)
+      vim.api.nvim_buf_get_lines = real
+      assert(ok, result)
+      assert.equals(0, #result)
+      assert.equals(1, #reads)
+      assert.same({ buf, END + 1 }, { reads[1].b, reads[1].s })
+      assert.is_true(reads[1].e > 0 and reads[1].e - reads[1].s <= 32)
+      -- Same tick: the verdict is reused, nothing is read.
+      reads = {}
+      vim.api.nvim_buf_get_lines = function(b, s, e, strict)
+        reads[#reads + 1] = { s, e }
+        return real(b, s, e, strict)
+      end
+      ok, result = pcall(collect)
+      vim.api.nvim_buf_get_lines = real
+      assert(ok, result)
+      assert.equals(0, #reads)
+    end)
+
+    it('draws only the link image, with no reservation or conceal for the block', function()
+      below({ '', link })
+      src.item_calls = 0
+      img.refresh(buf)
+      img.send_images()
+      img.send_images()
+      assert.same({ png2 }, stored_paths())
+      local ns = img.ensure_image_namespace()
+      -- Image-namespace marks (conceals, reservations) on the block rows.
+      local function marks_in_block()
+        return #vim.api.nvim_buf_get_extmarks(buf, ns, { START, 0 }, { END, -1 }, {})
+      end
+      assert.equals(0, marks_in_block())
+      assert.is_true(#vim.api.nvim_buf_get_extmarks(buf, ns, { END + 1, 0 }, { -1, -1 }, {}) > 0)
+
+      -- Without the option the block is drawn as well (both images, reservations for both).
+      vim.ui = old_ui
+      img.setup({ diagram = { hide_when_exported = false } })
+      vim.ui = { img = { set = function(id, path, opts) store[id] = { path = path, opts = opts } end,
+        del = function(id) store[id] = nil end, get = function(id) return store[id] end } }
+      img.refresh(buf)
+      img.send_images()
+      img.send_images()
+      assert.same({ png, png2 }, stored_paths())
+      assert.is_true(marks_in_block() > 0)
+    end)
+
+    it('drops the block image and its reservation when a link is added, and restores them when removed', function()
+      local ns = img.ensure_image_namespace()
+      local function marks_in_block()
+        return #vim.api.nvim_buf_get_extmarks(buf, ns, { START, 0 }, { END, -1 }, {})
+      end
+      img.send_images()
+      img.send_images()
+      assert.same({ png }, stored_paths())
+      assert.is_true(marks_in_block() > 0)
+
+      vim.api.nvim_buf_set_lines(buf, END + 1, END + 1, false, { link })
+      img.send_images()
+      img.send_images()
+      assert.same({ png2 }, stored_paths())
+      assert.equals(0, marks_in_block())
+
+      vim.api.nvim_buf_set_lines(buf, END + 1, END + 2, false, {})
+      img.send_images()
+      img.send_images()
+      assert.same({ png }, stored_paths())
+      assert.is_true(marks_in_block() > 0)
+    end)
+
+    it('leaves the active block preview as it was', function()
+      below({ '', link })
+      vim.api.nvim_win_set_cursor(win, { START + 2, 0 })
+      img.refresh(buf)
+      local result = collect()
+      assert.equals(0, #result)
+      local previews = preview_windows()
+      assert.equals(1, #previews)
+      assert.equals(png, previews[1].meta.path)
+    end)
+
+    it('still reports a failed render', function()
+      src.status, src.path, src.error = 'failed', nil, 'boom'
+      below({ '', link })
+      img.refresh(buf)
+      local _, errors = collect()
+      assert.same({ { buf = buf, row = END, msg = 'boom' } }, errors)
+    end)
+  end)
+
   describe('settings', function()
     local old_notify_once
     before_each(function()
