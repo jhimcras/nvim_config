@@ -118,3 +118,45 @@ redraw 1000, del 0).
 ```sh
 BENCH_IMAGES=1 BENCH_LINES=8000 nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
 ```
+
+## After R6-B: `<img` and wiki embeds in the line prefilter (2026-10-30)
+
+The prefilter is now `scan.has_image_candidate` (`![`, or `<` followed by a
+case-insensitive `<img` tag start), used by the scan, `line_has_image_link`
+(wrap, anchor signature) and the exported-image check. `![[` needs no test of its
+own because it contains `![`. Wiki name lookups only start for a bare name that
+is not in the document folder, and then walk the project root once,
+asynchronously (see `docs/rendermark_plan.md`, R6-B rules); the script below only
+uses absolute-path embeds, so it measures the scan, not the walk.
+
+Same script, 3 runs each against the HEAD snapshot of the commit before R6-B
+(`IMAGE_BENCH_BASELINE`), ms per call. `BENCH_IMAGES=1` now also puts 2 HTML
+`<img>` and 2 `![[path]]` lines in the viewport (9 images instead of 5; before
+R6-B those 4 lines are plain text). `BENCH_NOISE=1` makes every 5th line HTML
+text without an image (`<div>`, `<b>`, `<image>`, plus a lone `![`).
+
+| Workload | Scenario | Before | After |
+| --- | --- | ---: | ---: |
+| 3000 lines, no images | cold / unchanged / edited | 0.26-0.32 / 0.08-0.09 / 0.07 | 0.29-0.35 / 0.08 / 0.07 |
+| 3000 lines, HTML text, no image | cold / unchanged / edited | 0.59-0.62 / 0.09-0.10 / 0.36-0.39 | 0.64-0.72 / 0.09-0.10 / 0.37-0.39 |
+| 3000 lines, images | cold | 1.19-1.23 | 1.77-1.84 |
+| 3000 lines, images | unchanged send_images | 0.29-0.30 | 0.56-0.58 |
+| 3000 lines, images | send_images after each edit | 0.58-0.59 | 0.85 |
+| 8000 lines, images | cold | 2.05-2.28 | 2.12-2.47 |
+| 8000 lines, images | unchanged send_images | 0.30 | 0.57-0.59 |
+| 8000 lines, images | send_images after each edit | 1.11-1.20 | 1.35 |
+
+Documents without images cost the same (the extra `<` plain find per line is
+below the noise, also with HTML text on every 5th line). The image workloads
+now draw 9 images instead of 5, so the rise is the per-image cost
+(about 0.06 ms in both: 0.29 / 5 before, 0.56 / 9 after), not the syntaxes or
+the prefilter. `benchmark_image_reapply.lua` stubs the scan, so it only guards
+the call counts: 5 runs, median unchanged 673.6 ms (666.9-704.0),
+one-image-size-changed 682.2 ms (675.5-710.5), call counts identical to R0
+(unchanged 0/0/0/0/0; changed set 1000, mark 2000, clear 1000, redraw 1000,
+del 0).
+
+```sh
+BENCH_NOISE=1 nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
+BENCH_IMAGES=1 BENCH_LINES=8000 nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
+```
