@@ -28,14 +28,9 @@ describe('complete', function()
     it('should attempt to setup cmp', function()
         -- Mock cmp.setup
         local original_cmp = package.loaded['cmp']
-        local original_link_complete = package.loaded['nvim_config.rendermark.complete.link']
-        package.loaded['nvim_config.rendermark.complete.link'] = { new = function() return {} end }
-        local original_image_complete = package.loaded['nvim_config.rendermark.complete.image']
-        package.loaded['nvim_config.rendermark.complete.image'] = { new = function() return {} end }
         local captured_opts
         local bordered_calls = 0
         package.loaded['cmp'] = {
-            register_source = function() end,
             setup = function(opts)
                 captured_opts = opts
                 assert.is_table(opts)
@@ -73,7 +68,5 @@ describe('complete', function()
         
         -- Restore original
         package.loaded['cmp'] = original_cmp
-        package.loaded['nvim_config.rendermark.complete.link'] = original_link_complete
-        package.loaded['nvim_config.rendermark.complete.image'] = original_image_complete
     end)
 end)

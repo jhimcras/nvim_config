@@ -57,7 +57,7 @@ elseif case == 'insert' then
         assert(loaded(name), name .. ' did not load on InsertEnter')
     end
     local cmp = require('cmp')
-    for _, name in ipairs { 'vsnip', 'nvim_lsp', 'nvim_lsp_signature_help', 'markdown_image' } do
+    for _, name in ipairs { 'vsnip', 'nvim_lsp', 'nvim_lsp_signature_help' } do
         local found = false
         for _, source in pairs(cmp.core.sources) do
             if source.name == name then found = true end
