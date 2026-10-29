@@ -21,9 +21,15 @@ function Backend.new(host)
     return self.img_available() and vim.g.neopp_images_enabled ~= false
   end
 
+  -- Text-box stub for terminals without an image provider: RENDERMARK_IMG_STUB=1
+  -- or vim.g.rendermark_img_stub (the old MDLOOM_IMG_STUB). '', '0' and 0 mean off.
+  local function flag_on(flag)
+    return flag ~= nil and flag ~= false and flag ~= '' and flag ~= '0' and flag ~= 0
+  end
+
   local function stub_requested()
-    return (not self.img_available())
-       and (vim.env.RENDERMARK_IMG_STUB or vim.g.rendermark_img_stub)
+    return not self.img_available()
+      and (flag_on(vim.env.RENDERMARK_IMG_STUB) or flag_on(vim.g.rendermark_img_stub))
   end
 
   function self.install_terminal_stub()
@@ -37,6 +43,19 @@ function Backend.new(host)
     host._stub_active = true
   end
 
+  -- A provider that fails (no terminal support) or lacks `del` must not break
+  -- the sync, and a failed entry is not retried until it changes.
+  local function safe_set(id, path, opts)
+    local ok, err = pcall(vim.ui.img.set, id, path, opts)
+    if not ok then
+      vim.notify_once('rendermark: vim.ui.img.set failed: ' .. tostring(err), vim.log.levels.WARN)
+    end
+  end
+
+  local function safe_del(id)
+    if type(vim.ui.img.del) == 'function' then pcall(vim.ui.img.del, id) end
+  end
+
   function self.apply_payload(payload)
     if not self.img_available() then return end
     local next_ids = {}
@@ -48,14 +67,14 @@ function Backend.new(host)
         for k, v in pairs(entry) do
           if k ~= 'id' and k ~= 'path' then opts[k] = v end
         end
-        vim.ui.img.set(id, path, opts)
+        safe_set(id, path, opts)
         state.entries[id] = vim.deepcopy(entry)
         dirty = true
       end
     end
     for id in pairs(state.live_ids) do
       if not next_ids[id] then
-        vim.ui.img.del(id)
+        safe_del(id)
         state.entries[id] = nil
         dirty = true
       end
@@ -68,12 +87,12 @@ function Backend.new(host)
     state.live_ids[id] = nil
     state.entries[id] = nil
     dirty = true
-    if self.img_available() then vim.ui.img.del(id) end
+    if self.img_available() then safe_del(id) end
   end
 
   function self.clear_all_images()
     if not self.img_available() then state.live_ids = {}; state.entries = {}; return end
-    for id in pairs(state.live_ids) do vim.ui.img.del(id); dirty = true end
+    for id in pairs(state.live_ids) do safe_del(id); dirty = true end
     state.live_ids = {}
     state.entries = {}
   end

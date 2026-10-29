@@ -33,6 +33,10 @@ function M.parse_image_size(data)
     return { width = u32be(data, 17), height = u32be(data, 21), format = 'png' }
   end
 
+  if (data:sub(1, 6) == 'GIF87a' or data:sub(1, 6) == 'GIF89a') and #data >= 10 then
+    return { width = u16le(data, 7), height = u16le(data, 9), format = 'gif' }
+  end
+
   if data:sub(1, 2) == '\255\216' then
     local i = 3
     while i + 8 <= #data do
