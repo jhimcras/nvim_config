@@ -1,6 +1,6 @@
 local Module = {}
 
-local stable_hash = require('nvim_config.rendermark.image.blocks').stable_hash
+local stable_hash = require('nvim_config.rendermark.image.hash').stable_hash
 
 function Module.new(M, state)
   local api = {}
@@ -104,7 +104,7 @@ function Module.new(M, state)
     local src_win = ps.win
     local src_buf = ps.buf
     local start_row = ps.start_row
-    local block_h = M.markdown_plantuml_block_height(src_buf, start_row) or 1
+    local block_h = M.diagram_block_span(src_buf, start_row) or 1
     local end_row = start_row + math.max(1, block_h) - 1
 
     local src_w = ps.w
@@ -149,8 +149,8 @@ function Module.new(M, state)
     local function fits_cols(c) return c >= 0 and c + pw <= cols end
     local function fits_rows(r) return r >= 0 and r + ph <= rows end
     local code_obstacles = {}
-    if type(M.plantuml_find_blocks) == 'function' then
-      for _, block in ipairs(M.plantuml_find_blocks(src_buf) or {}) do
+    if type(M.diagram_items) == 'function' then
+      for _, block in ipairs(M.diagram_items(src_buf) or {}) do
         local lines = vim.api.nvim_buf_get_lines(src_buf, block.start_row, block.end_row + 1, false) or {}
         local top, bottom, left, right
         for i, line in ipairs(lines) do
@@ -278,8 +278,8 @@ function Module.new(M, state)
       place = M.compute_preview_placement(ps, image, cell_w, cell_h)
       if not place then
         pcall(function()
-          delete_image(vim.w[info.win].rendermark_plantuml_preview_image_id)
-          delete_image(vim.w[info.win].rendermark_plantuml_preview_legacy_image_id)
+          delete_image(vim.w[info.win].rendermark_diagram_preview_image_id)
+          delete_image(vim.w[info.win].rendermark_diagram_preview_legacy_image_id)
         end)
         if vim.api.nvim_win_is_valid(info.win) then
           pcall(vim.api.nvim_win_close, info.win, true)
@@ -301,8 +301,8 @@ function Module.new(M, state)
     local preview_id = M.preview_image_id(ps, place)
     local legacy_preview_id = M.preview_legacy_image_id(info.buf, image.path, place)
     pcall(function()
-      vim.w[info.win].rendermark_plantuml_preview_image_id = preview_id
-      vim.w[info.win].rendermark_plantuml_preview_legacy_image_id = legacy_preview_id
+      vim.w[info.win].rendermark_diagram_preview_image_id = preview_id
+      vim.w[info.win].rendermark_diagram_preview_legacy_image_id = legacy_preview_id
     end)
 
     payload[#payload + 1] = {

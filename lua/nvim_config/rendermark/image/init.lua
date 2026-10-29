@@ -4,8 +4,9 @@ local util = require('nvim_config.util.cache')
 local image_scan = require('nvim_config.rendermark.image.scan')
 local image_size = require('nvim_config.rendermark.image.size')
 local state = {
-  block_cache = {},
-  plantuml_states = {},
+  item_cache = {},
+  diagram_states = {},
+  diagram_source = nil,
   reservation_sig = '',
   resyncing = false,
   stub_source_rows = {},
@@ -20,7 +21,7 @@ local layout_sig = ''
 local image_sync_pending = false
 local autocmd_group
 local cursor_block_sig
-local plantuml_states = state.plantuml_states
+local diagram_states = state.diagram_states
 local install_terminal_stub = backend.install_terminal_stub
 local notify_redraw = backend.notify_redraw
 
@@ -28,12 +29,11 @@ local function export(functions)
   for name, fn in pairs(functions) do M[name] = fn end
 end
 
-export(require('nvim_config.rendermark.image.blocks').new(M, state))
 export(require('nvim_config.rendermark.image.screen').new(M, state))
 export(require('nvim_config.rendermark.image.stub').new(M, state))
 export(require('nvim_config.rendermark.image.layout').new(M, state))
 export(require('nvim_config.rendermark.image.preview').new(M, state))
-export(require('nvim_config.rendermark.image.plantuml').new(M, state))
+export(require('nvim_config.rendermark.image.diagram').new(M, state))
 export(require('nvim_config.rendermark.image.place').new(M, state))
 
 function M.is_active()
@@ -57,7 +57,7 @@ local function image_scan_deps()
   return {
     read_image_size = M.read_image_size,
     image_ns = function() return state.image_ns end,
-    markdown_plantuml_block_height = M.markdown_plantuml_block_height,
+    diagram_block_span = M.diagram_block_span,
   }
 end
 
@@ -142,7 +142,7 @@ function M.cursor_active_block_sig()
   local win = vim.api.nvim_get_current_win()
   if not vim.api.nvim_win_is_valid(win) then return '' end
   -- In a preview window, mirror the source block's sig to avoid thrashing.
-  for _, st in pairs(plantuml_states) do
+  for _, st in pairs(diagram_states) do
     if st.float and st.float.win == win and st.float.source_win and st.float.block_id then
       return tostring(st.float.source_win) .. '@' .. tostring(st.float.source_buf) .. '=' .. st.float.block_id
     end
@@ -153,7 +153,7 @@ function M.cursor_active_block_sig()
   if vim.bo[buf].filetype ~= 'markdown' and ext ~= 'md' and ext ~= 'markdown' then
     return ''
   end
-  local blocks = M.plantuml_find_blocks(buf)
+  local blocks = M.diagram_items(buf)
   if #blocks == 0 then return '' end
   local row = vim.api.nvim_win_get_cursor(win)[1] - 1
   local id = M.cursor_block_id(row, blocks)
@@ -287,8 +287,48 @@ function M.handle_cursor_moved()
   notify_redraw()
 end
 
+-- Diagram provider: `items(buf)` returns DiagramItem[] (0-based start_row/end_row,
+-- key, lang, path?, format?, stale, status = 'ready'|'pending'|'failed'|'none',
+-- error?) and the optional `request_live(buf, row)` asks for a render of the
+-- block under the cursor. Nothing here knows who the provider is.
+function M.set_diagram_source(source)
+  vim.validate('source', source, 'table')
+  vim.validate('source.items', source.items, 'function')
+  vim.validate('source.request_live', source.request_live, 'function', true)
+  state.diagram_source = source
+  M.refresh()
+end
+
+function M.clear_diagram_source()
+  state.diagram_source = nil
+  M.refresh()
+end
+
+-- The provider's answer for `buf` changed (all buffers when omitted): drop the
+-- cached items and resync on the next loop turn.
+function M.refresh(buf)
+  if buf == nil then
+    for b in pairs(state.item_cache) do state.item_cache[b] = nil end
+  else
+    state.item_cache[buf == 0 and vim.api.nvim_get_current_buf() or buf] = nil
+  end
+  M.schedule_image_sync()
+end
+
+-- `diagram.preview` wins; `plantuml.preview` is a deprecated alias.
+local function preview_option(opts)
+  local preview = opts and opts.diagram and opts.diagram.preview
+  local legacy = opts and opts.plantuml and opts.plantuml.preview
+  if legacy ~= nil then
+    vim.notify_once('rendermark: opts.plantuml.preview is deprecated; use opts.diagram.preview',
+      vim.log.levels.WARN)
+  end
+  if preview == nil then preview = legacy end
+  return preview
+end
+
 function M.setup(opts)
-  state.preview_cfg = state.normalize_preview(opts and opts.plantuml and opts.plantuml.preview)
+  state.preview_cfg = state.normalize_preview(preview_option(opts))
   install_terminal_stub()
   if backend.img_available() then
     M._init()
@@ -310,15 +350,15 @@ function M._init()
   vim.api.nvim_create_user_command('RendermarkPreviewShow', function()
     M._preview_user = true
     M.send_images()
-  end, { desc = 'Show the PlantUML preview for the current block' })
+  end, { desc = 'Show the diagram preview for the current block' })
   vim.api.nvim_create_user_command('RendermarkPreviewHide', function()
     M._preview_user = false
     M.send_images()
-  end, { desc = 'Hide the PlantUML preview' })
+  end, { desc = 'Hide the diagram preview' })
   vim.api.nvim_create_user_command('RendermarkPreviewToggle', function()
     M._preview_user = not M.preview_active()
     M.send_images()
-  end, { desc = 'Toggle the PlantUML preview' })
+  end, { desc = 'Toggle the diagram preview' })
 
   vim.api.nvim_create_autocmd(
     { 'BufEnter', 'BufReadPost', 'FileType' },
@@ -342,7 +382,7 @@ function M._init()
     callback = function(args)
       local closed = tonumber(args.match)
       if not closed then return end
-      for _, st in pairs(plantuml_states) do
+      for _, st in pairs(diagram_states) do
         if st.float and st.float.win == closed then
           if not st.programmatic_close then
             st.dismissed_id = st.float.block_id
@@ -365,7 +405,7 @@ function M._init()
     { 'BufUnload', 'BufDelete', 'BufWipeout' },
     { group = autocmd_group, callback = function(args)
       M.clear_images_for_buf(args.buf)
-      M.plantuml_cleanup_buf(args.buf)
+      M.diagram_cleanup_buf(args.buf)
     end })
 
   vim.api.nvim_create_autocmd('SafeState', { group = autocmd_group, callback = M.handle_safestate })

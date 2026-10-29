@@ -305,7 +305,7 @@ function Module.new(M, state)
     emit_band_rows(buf, ns, row, reserve_h, source_span, virt_h, rows, cursor_rows)
   end
 
-  -- Terminal stub box filling the PlantUML preview float.
+  -- Terminal stub box filling the diagram preview float.
   function api.draw_stub_preview_box(buf, place, path, rect)
     local w = math.max(2, place.width or 2)
     local h = math.max(1, place.height or 1)

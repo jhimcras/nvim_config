@@ -27,8 +27,10 @@ local defaults = {
     code = {
         min_width = 50,
         pad = 1,
-        -- Rendered as images; a background would show through.
-        disable = { 'plantuml', 'puml', 'uml' },
+    },
+    diagram = {
+        -- Fence languages drawn as images; a code-block background would show through.
+        disable_deco_langs = { 'plantuml', 'puml', 'uml' },
     },
     dim_checked_sublist = true,
     -- nvim_set_hl specs, or functions returning one (re-run on ColorScheme).
@@ -401,7 +403,7 @@ local function render_code(buf, node, first, last, cur)
             break
         end
     end
-    if lang and vim.tbl_contains(config.code.disable, lang:lower()) then
+    if lang and vim.tbl_contains(config.diagram.disable_deco_langs, lang:lower()) then
         return r1, r2
     end
 

@@ -3,6 +3,7 @@
 local image = require('nvim_config.rendermark.image')
 local image_backend = require('nvim_config.rendermark.image.backend')
 local util = require('nvim_config.util')
+local H = require('tests.spec.rendermark.image.helpers')
 
 -- Reload the module for fresh module-local state.
 local function fresh_image()
@@ -134,7 +135,10 @@ describe('cursor_block_id', function()
 end)
 
 describe('cursor_active_block_sig', function()
-  it('reflects whether the cursor sits inside a PlantUML block', function()
+  before_each(function() image.set_diagram_source(H.fence_source()) end)
+  after_each(function() image.clear_diagram_source() end)
+
+  it('reflects whether the cursor sits inside a diagram block', function()
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
       'intro',        -- row 0
@@ -169,7 +173,7 @@ describe('cursor_active_block_sig', function()
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
   end)
 
-  it('is empty while focus is in another buffer even if a markdown window cursor is in a PlantUML block', function()
+  it('is empty while focus is in another buffer even if a markdown window cursor is in a diagram block', function()
     local original_win = vim.api.nvim_get_current_win()
     local markdown_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(markdown_buf, 0, -1, false, {
@@ -411,7 +415,7 @@ describe('layout_image_line fit', function()
 end)
 
 describe('compute_preview_placement', function()
-  it('places a PlantUML preview when the fence start is scrolled above the viewport', function()
+  it('places a diagram preview when the fence start is scrolled above the viewport', function()
     local img = fresh_image()
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
@@ -428,13 +432,14 @@ describe('compute_preview_placement', function()
       '```',
     })
 
-    local old_block_height = img.markdown_plantuml_block_height
+    local old_block_height = img.diagram_block_span
+    img.set_diagram_source(H.fence_source())
     local old_screenpos = img.safe_screenpos
     local old_columns = vim.o.columns
     local old_lines = vim.o.lines
     local old_cmdheight = vim.o.cmdheight
 
-    img.markdown_plantuml_block_height = function() return 8 end
+    img.diagram_block_span = function() return 8 end
     img.safe_screenpos = function(_, lnum, col)
       if lnum < 7 then
         return { row = 0, col = 0, curscol = 0, endcol = 0 }
@@ -455,7 +460,7 @@ describe('compute_preview_placement', function()
       source_height = 169,
     }, 10, 18)
 
-    img.markdown_plantuml_block_height = old_block_height
+    img.diagram_block_span = old_block_height
     img.safe_screenpos = old_screenpos
     vim.o.columns = old_columns
     vim.o.lines = old_lines
@@ -472,7 +477,7 @@ describe('compute_preview_placement', function()
     assert.is_false(place.row <= visible_block_bottom and visible_block_top < place.row + place.height)
   end)
 
-  it('does not place a PlantUML preview over another visible PlantUML block', function()
+  it('does not place a diagram preview over another visible diagram block', function()
     local img = fresh_image()
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
@@ -495,13 +500,14 @@ describe('compute_preview_placement', function()
       '```',
     })
 
-    local old_block_height = img.markdown_plantuml_block_height
+    local old_block_height = img.diagram_block_span
+    img.set_diagram_source(H.fence_source())
     local old_screenpos = img.safe_screenpos
     local old_columns = vim.o.columns
     local old_lines = vim.o.lines
     local old_cmdheight = vim.o.cmdheight
 
-    img.markdown_plantuml_block_height = function(_, start_row)
+    img.diagram_block_span = function(_, start_row)
       return start_row == 12 and 5 or 8
     end
     img.safe_screenpos = function(_, lnum, col)
@@ -529,7 +535,7 @@ describe('compute_preview_placement', function()
       source_height = 68,
     }, 10, 18)
 
-    img.markdown_plantuml_block_height = old_block_height
+    img.diagram_block_span = old_block_height
     img.safe_screenpos = old_screenpos
     vim.o.columns = old_columns
     vim.o.lines = old_lines
@@ -566,13 +572,14 @@ describe('compute_preview_placement', function()
       '```',
     })
 
-    local old_block_height = img.markdown_plantuml_block_height
+    local old_block_height = img.diagram_block_span
+    img.set_diagram_source(H.fence_source())
     local old_screenpos = img.safe_screenpos
     local old_columns = vim.o.columns
     local old_lines = vim.o.lines
     local old_cmdheight = vim.o.cmdheight
 
-    img.markdown_plantuml_block_height = function(_, start_row)
+    img.diagram_block_span = function(_, start_row)
       return start_row == 3 and 8 or 5
     end
     img.safe_screenpos = function(_, lnum, col)
@@ -600,7 +607,7 @@ describe('compute_preview_placement', function()
       source_height = 169,
     }, 10, 18)
 
-    img.markdown_plantuml_block_height = old_block_height
+    img.diagram_block_span = old_block_height
     img.safe_screenpos = old_screenpos
     vim.o.columns = old_columns
     vim.o.lines = old_lines
@@ -784,13 +791,13 @@ describe('scan_markdown_image_text', function()
 end)
 
 -- ---------------------------------------------------------------------------
--- PlantUML preview configuration (mode/auto/split) + pure geometry helpers.
+-- Diagram preview configuration (mode/auto/split) + pure geometry helpers.
 -- ---------------------------------------------------------------------------
 
 describe('preview_config (setup normalization)', function()
   local function cfg(opts)
     local img = fresh_image()
-    img.setup({ plantuml = { preview = opts } })
+    img.setup({ diagram = { preview = opts } })
     return img.preview_config()
   end
 
@@ -912,7 +919,7 @@ describe('center_in_rect', function()
 end)
 
 -- ---------------------------------------------------------------------------
--- Partially-visible PlantUML blocks (top fence scrolled above the window).
+-- Partially-visible diagram blocks (top fence scrolled above the window).
 -- ---------------------------------------------------------------------------
 
 describe('offscreen_anchor_grid_row', function()
@@ -981,7 +988,7 @@ describe('offscreen_anchor_grid_row', function()
   end)
 end)
 
-describe('partially visible plantuml block rendering', function()
+describe('partially visible diagram block rendering', function()
   local FENCE = 10       -- 0-based row of '```plantuml'
   local FENCE_END = 16   -- 0-based row of closing '```'
   local CELL_W, CELL_H = 10, 18
@@ -1023,7 +1030,7 @@ describe('partially visible plantuml block rendering', function()
     0, 0, 0, 100,                     -- height = 100
   })
 
-  -- Fresh module with a fake vim.ui.img and a stubbed PlantUML PNG (`dim` overrides).
+  -- Fresh module with a fake vim.ui.img and a stubbed diagram PNG (`dim` overrides).
   local function setup_e2e(outro, height, dim)
     local old_ui = vim.ui
     local old_store = rawget(_G, '__rendermark_image_backend')
@@ -1040,13 +1047,13 @@ describe('partially visible plantuml block rendering', function()
     dim = dim or { data = TALL_PNG, w = 100, h = 600 }
     local buf = make_buf(outro)
     local png = tmpfile(dim.data)
-    img.collect_plantuml_images = function(target, result)
+    img.collect_diagram_images = function(target, result)
       if target ~= buf then return end
       result[#result + 1] = {
         row = FENCE, col = 0, end_col = 12, path = png, raw_path = png,
         source_width = dim.w, source_height = dim.h,
-        source_span_height = FENCE_END - FENCE + 1, plantuml = true,
-        plantuml_end_row = FENCE_END, virtual = false,
+        source_span_height = FENCE_END - FENCE + 1, diagram = true,
+        diagram_end_row = FENCE_END, virtual = false,
       }
     end
     vim.cmd('new')
@@ -1509,13 +1516,13 @@ describe('same buffer in multiple windows', function()
     }
     local buf = make_buf()
     local png = tmpfile(TALL_PNG)
-    img.collect_plantuml_images = function(target, result)
+    img.collect_diagram_images = function(target, result)
       if target ~= buf then return end
       result[#result + 1] = {
         row = FENCE, col = 0, end_col = 12, path = png, raw_path = png,
         source_width = 100, source_height = 600,
-        source_span_height = FENCE_END - FENCE + 1, plantuml = true,
-        plantuml_end_row = FENCE_END, virtual = false,
+        source_span_height = FENCE_END - FENCE + 1, diagram = true,
+        diagram_end_row = FENCE_END, virtual = false,
       }
     end
 
@@ -1550,17 +1557,17 @@ end)
 describe('preview_active (show/hide state machine)', function()
   it('follows the configured auto flag when no override is set', function()
     local img = fresh_image()
-    img.setup({ plantuml = { preview = { auto = true } } })
+    img.setup({ diagram = { preview = { auto = true } } })
     assert.is_true(img.preview_active())
 
     img = fresh_image()
-    img.setup({ plantuml = { preview = { auto = false } } })
+    img.setup({ diagram = { preview = { auto = false } } })
     assert.is_false(img.preview_active())
   end)
 
   it('lets an explicit Show/Hide override win over auto', function()
     local img = fresh_image()
-    img.setup({ plantuml = { preview = { auto = false } } })
+    img.setup({ diagram = { preview = { auto = false } } })
     img._preview_user = true   -- :RendermarkPreviewShow
     assert.is_true(img.preview_active())
     img._preview_user = false  -- :RendermarkPreviewHide
@@ -1570,62 +1577,57 @@ describe('preview_active (show/hide state machine)', function()
   end)
 end)
 
-describe('PlantUML scan cache', function()
-  it('shares one full read across block and height queries until editing or cleanup', function()
+describe('diagram item cache', function()
+  it('asks the provider once per changedtick and once per refresh', function()
     local img = fresh_image()
+    local src = H.fence_source()
+    img.set_diagram_source(src)
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { '```plantuml', 'a -> b', '```' })
-    local original = vim.api.nvim_buf_get_lines
-    local reads = 0
-    vim.api.nvim_buf_get_lines = function(b, first, last, ...)
-      if b == buf and first == 0 and last == -1 then reads = reads + 1 end
-      return original(b, first, last, ...)
-    end
-    local ok, err = pcall(function()
-      assert.equals('a -> b\n', img.plantuml_find_blocks(buf)[1].text)
-      assert.equals(3, img.markdown_plantuml_block_height(buf, 1))
-      img.plantuml_find_blocks(buf)
-      assert.equals(1, reads)
-      vim.api.nvim_buf_set_lines(buf, 1, 2, false, { 'b -> c', 'c -> d' })
-      assert.equals(4, img.markdown_plantuml_block_height(buf, 2))
-      assert.equals('b -> c\nc -> d\n', img.plantuml_find_blocks(buf)[1].text)
-      assert.equals(2, reads)
-      img.plantuml_cleanup_buf(buf)
-      img.plantuml_find_blocks(buf)
-      assert.equals(3, reads)
-    end)
-    vim.api.nvim_buf_get_lines = original
+    assert.equals(1, #img.diagram_items(buf))
+    assert.equals(3, img.diagram_block_span(buf, 1))
+    img.diagram_items(buf)
+    assert.equals(1, src.item_calls)
+    vim.api.nvim_buf_set_lines(buf, 1, 2, false, { 'b -> c', 'c -> d' })
+    assert.equals(4, img.diagram_block_span(buf, 2))
+    assert.equals(2, src.item_calls)
+    img.refresh(buf)
+    img.diagram_items(buf)
+    assert.equals(3, src.item_calls)
+    img.diagram_cleanup_buf(buf)
+    img.diagram_items(buf)
+    assert.equals(4, src.item_calls)
     vim.api.nvim_buf_delete(buf, { force = true })
-    assert.is_true(ok, tostring(err))
   end)
 
-  it('keeps unfinished fence heights without rendering unfinished blocks', function()
+  it('gives no block span outside the provider items', function()
     local img = fresh_image()
+    img.set_diagram_source(H.fence_source())
     local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'intro', '~~~~plantuml', 'a -> b' })
-    assert.equals(2, img.markdown_plantuml_block_height(buf, 2))
-    assert.equals(0, #img.plantuml_find_blocks(buf))
-    assert.is_nil(img.markdown_plantuml_block_height(buf, 0))
-    img.plantuml_cleanup_buf(buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'intro', '```plantuml', 'a -> b', '```' })
+    assert.is_nil(img.diagram_block_span(buf, 0))
+    assert.equals(3, img.diagram_block_span(buf, 3))
+    img.clear_diagram_source()
+    assert.is_nil(img.diagram_block_span(buf, 3))
     vim.api.nvim_buf_delete(buf, { force = true })
   end)
 
-  it('does not query block heights for decoration text without image links', function()
+  it('does not query block spans for decoration text without image links', function()
     local img = fresh_image()
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].filetype = 'markdown'
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'text' })
-    local ns = vim.api.nvim_create_namespace('plantuml-height-query-test')
+    local ns = vim.api.nvim_create_namespace('diagram-height-query-test')
     vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, { virt_text = { { '•', 'Comment' } } })
     local calls = 0
-    img.markdown_plantuml_block_height = function() calls = calls + 1; return 3 end
+    img.diagram_block_span = function() calls = calls + 1; return 3 end
     assert.equals(0, #img.collect_markdown_images(buf, 0, 1))
     assert.equals(0, calls)
     vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, { virt_text = { { '![diagram](/tmp/missing-diagram.png)', 'Comment' } } })
     local images = img.collect_markdown_images(buf, 0, 1)
     assert.equals(1, calls)
     assert.equals(3, images[1].source_span_height)
-    img.plantuml_cleanup_buf(buf)
+    img.diagram_cleanup_buf(buf)
     vim.api.nvim_buf_delete(buf, { force = true })
   end)
 end)

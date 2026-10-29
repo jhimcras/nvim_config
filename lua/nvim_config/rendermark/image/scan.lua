@@ -191,7 +191,7 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
             virtual = true,
             virt_text_pos = details.virt_text_pos,
             virt_text_win_col = details.virt_text_win_col,
-            source_span_height = deps.markdown_plantuml_block_height(buf, row0),
+            source_span_height = deps.diagram_block_span(buf, row0),
           })
         end
       end

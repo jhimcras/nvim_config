@@ -1,7 +1,7 @@
 -- rendermark: markdown rendering.
 --   deco  - headings, breaks, checkboxes, bullets, quotes, code blocks
 --   wrap  - soft-wrap (virtual lines) + pipe tables; drives deco
---   image - inline images and PlantUML previews via neopp
+--   image - inline images and diagram previews via neopp
 
 local M = {}
 

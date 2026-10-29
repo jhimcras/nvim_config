@@ -397,6 +397,20 @@ describe('deco rendering', function()
         end
     end)
 
+    it('takes the blocks left to the image renderer from diagram.disable_deco_langs', function()
+        deco.setup({ diagram = { disable_deco_langs = { 'mermaid' } } })
+        local ok, err = pcall(function()
+            render({ '```mermaid', 'a --> b', '```', 'tail' })
+            for lnum = 0, 2 do
+                assert.equals(0, #marks_on(lnum))
+            end
+            render({ '```plantuml', '@startuml', '@enduml', '```', 'tail' })
+            assert.is_truthy(find(0, function(d) return d.virt_text_pos == 'overlay' end))
+        end)
+        deco.setup({})
+        assert.is_true(ok, tostring(err))
+    end)
+
     it('dims a checked item and its whole sub-tree', function()
         render({ '- [x] done', '  more', '  - sub', 'tail' })
         -- the item's own text (past the checkbox), its lazy continuation and the

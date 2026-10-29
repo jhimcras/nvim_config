@@ -1,6 +1,6 @@
 local Module = {}
 
-local stable_hash = require('nvim_config.rendermark.image.blocks').stable_hash
+local stable_hash = require('nvim_config.rendermark.image.hash').stable_hash
 
 function Module.new(M, state)
   local api = {}
@@ -12,7 +12,7 @@ function Module.new(M, state)
   local emit_band_rows = state.emit_band_rows
   local function resolve_preview_source(win)
     local ok_source, source_meta = pcall(function()
-      return vim.w[win].rendermark_plantuml_preview_source
+      return vim.w[win].rendermark_diagram_preview_source
     end)
     if not (ok_source and type(source_meta) == 'table'
         and source_meta.buf and vim.api.nvim_buf_is_valid(source_meta.buf)
@@ -70,15 +70,15 @@ function Module.new(M, state)
 
   local function CollectImages(buf_ranges)
     local buf_images = {}
-    local plantuml_errors = {}
+    local diagram_errors = {}
     for buf, range in pairs(buf_ranges) do
       if vim.api.nvim_buf_is_valid(buf) then
         buf_images[buf] = M.collect_markdown_images(buf, range.start_row, range.end_row)
-        M.collect_plantuml_images(buf, buf_images[buf], plantuml_errors)
+        M.collect_diagram_images(buf, buf_images[buf], diagram_errors)
       end
     end
 
-    return buf_images, plantuml_errors
+    return buf_images, diagram_errors
   end
 
   local function AddPreviewCarriers(wins)
@@ -228,7 +228,7 @@ function Module.new(M, state)
     do
       local eligible = #line_images > 0
       for _, img in ipairs(line_images) do
-        if img.virtual or not img.byte_col or img.plantuml then eligible = false break end
+        if img.virtual or not img.byte_col or img.diagram then eligible = false break end
       end
       if eligible then
         local imgs = {}
@@ -357,10 +357,10 @@ function Module.new(M, state)
           col = image.byte_col,
           end_col = image.byte_end_col,
         }
-      elseif image.plantuml then
+      elseif image.diagram then
         -- Conceal fence + body so the raw code never shows under the image.
         image_conceals[payload_buf] = image_conceals[payload_buf] or {}
-        local last = math.max(image.row, tonumber(image.plantuml_end_row) or image.row)
+        local last = math.max(image.row, tonumber(image.diagram_end_row) or image.row)
         local block_lines = vim.api.nvim_buf_get_lines(payload_buf, image.row, last + 1, false) or {}
         local keep = visible_span or #block_lines
         for li, line in ipairs(block_lines) do
@@ -544,7 +544,7 @@ function Module.new(M, state)
   end
 
   local function EmitDecorations(ctx)
-    local image_reservations, image_conceals, plantuml_errors, cell_w = ctx.image_reservations, ctx.image_conceals, ctx.plantuml_errors, ctx.cell_w
+    local image_reservations, image_conceals, diagram_errors, cell_w = ctx.image_reservations, ctx.image_conceals, ctx.diagram_errors, ctx.cell_w
     -- Cursor rows per window: the stub skips them so conceal reveals the link.
     -- READ windows are excluded (concealcursor='nvic').
     local function cursor_rows_for(buf)
@@ -601,10 +601,10 @@ function Module.new(M, state)
         end
       end
     end
-    for _, e in ipairs(plantuml_errors) do
+    for _, e in ipairs(diagram_errors) do
       if vim.api.nvim_buf_is_valid(e.buf) then
         pcall(decorations.set, e.buf, state.image_ns, e.row, 0, {
-          virt_lines = { { { ' [plantuml: ' .. e.msg .. ']', 'WarningMsg' } } },
+          virt_lines = { { { ' [diagram: ' .. e.msg .. ']', 'WarningMsg' } } },
           virt_lines_above = false,
         })
       end
@@ -637,7 +637,7 @@ function Module.new(M, state)
       max_rows = max_rows, gap_px = gap_px, zoom_scale = zoom_scale,
     }
     local wins, buf_ranges = VisibleWindows(max_rows)
-    ctx.buf_images, ctx.plantuml_errors = CollectImages(buf_ranges)
+    ctx.buf_images, ctx.diagram_errors = CollectImages(buf_ranges)
     AddPreviewCarriers(wins)
     ctx.image_reservations, ctx.image_conceals, ctx.remember_image_reservation, ctx.reset_carry = NewReservations()
     for _, info in ipairs(wins) do LayoutWindow(ctx, info) end
