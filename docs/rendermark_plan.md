@@ -148,15 +148,21 @@ vim.api.nvim_create_autocmd('User', {
 
 ### R1 — 임시 우회 제거와 연결 정리
 
-- [ ] `init.lua`: `images = false` 줄과 그 주석 제거 (`rendermark.setup{ max_width = 120, plantuml = {...} }` 형태로 복원, `plantuml` 키는 R4에서 개명)
-- [ ] `lua/nvim_config/rendermark/init.lua`: `image.enabled = ...` 줄 제거, `if image.enabled then image.setup(opts) end` → `image.setup(opts)` (HEAD 상태)
+- [x] `init.lua`: `images = false` 줄과 그 주석 제거 (`rendermark.setup{ max_width = 120, plantuml = {...} }` 형태로 복원, `plantuml` 키는 R4에서 개명)
+  - 완료(2026-10-30): `images = false` 줄과 주석 제거(`git diff HEAD -- init.lua`에는 아래 `vim.g.mdloom_dir` 한 줄만 남음)
+- [x] `lua/nvim_config/rendermark/init.lua`: `image.enabled = ...` 줄 제거, `if image.enabled then image.setup(opts) end` → `image.setup(opts)` (HEAD 상태)
 - [ ] `lua/nvim_config/rendermark/image/init.lua`: `is_active()`를 `return backend.is_active()`로 복원
 - [ ] `lua/nvim_config/rendermark/image/place.lua`: `_send_images_impl`의 `M.enabled == false` 조건 제거 (`if not backend.img_available() then return end`)
-- [ ] 위 4곳은 `git checkout HEAD -- <파일>`로 되돌릴 수 있는지 확인(다른 변경과 섞이지 않았는지 `git diff`로 먼저 확인). 이 작업에서 이 4개 파일은 임시 우회 외 변경이 없다
-- [ ] `lua/nvim_config/lsp/servers/markdown.lua` (Q7): 하드코딩 `~/workspace/markdown_lsp` 제거 → 설정 `setting` 모듈 또는 `vim.g.mdloom_dir`에서 읽기. 기본값은 PATH의 `mdloom`. rtp 추가(`editors/nvim`)는 플러그인을 설치 경로에서 가져올 수 없는 개발 환경에서만 수행. `target/debug/mdloom` 경로도 같은 설정으로
-- [ ] Q5 결정에 따라 `complete/image.lua`, `complete/link.lua`, `actions.lua`, `rename.lua`와 스펙(`complete/image_spec`, `actions_spec`, `rename_spec`) 삭제. 삭제 전 `grep -rn "rendermark.complete\|rendermark.actions\|rendermark.rename" lua tests`로 참조 확인
-- [ ] `plugins/complete.lua`의 cmp 소스 제거를 확정(이미 작업 트리에 있음)
-- [ ] 스펙: 기존 이미지 스펙(`image/init_spec`, `table_image_spec`)이 `images` 기본값 상태에서 통과 — `image.enabled` 분기가 사라졌는지 확인
+- [x] 위 4곳은 `git checkout HEAD -- <파일>`로 되돌릴 수 있는지 확인(다른 변경과 섞이지 않았는지 `git diff`로 먼저 확인). 이 작업에서 이 4개 파일은 임시 우회 외 변경이 없다
+  - 완료: `git diff`로 임시 우회 외 변경이 없음을 확인하고 `git checkout HEAD -- <3개 파일>`로 복원(`init.lua`는 우회 줄만 제거)
+- [x] `lua/nvim_config/lsp/servers/markdown.lua` (Q7): 하드코딩 `~/workspace/markdown_lsp` 제거 → 설정 `setting` 모듈 또는 `vim.g.mdloom_dir`에서 읽기. 기본값은 PATH의 `mdloom`. rtp 추가(`editors/nvim`)는 플러그인을 설치 경로에서 가져올 수 없는 개발 환경에서만 수행. `target/debug/mdloom` 경로도 같은 설정으로
+  - 완료: 설정 방식은 `vim.g.mdloom_dir`(기존 `vim.g.*` 관례, `init.lua`에서 `~/workspace/markdown_lsp`로 설정). 바이너리는 PATH의 `mdloom` → `<mdloom_dir>/target/{debug,release}/mdloom` 순. `editors/nvim` rtp 추가는 `mdloom_dir`가 있고 그 디렉터리가 존재할 때만. 플러그인(`require('mdloom')`)이 없거나 바이너리가 없으면 조용히 건너뜀. 경로 결정은 `M.cmd(dir)`로 노출하고 `tests/spec/lsp_spec.lua`에 스펙 3개 추가
+  - 참고: 현재 PATH의 `mdloom`은 `~/workspace/markdown_lsp/target/debug/mdloom`으로의 심볼릭 링크라 개발 빌드와 같은 바이너리를 가리킴
+- [x] Q5 결정에 따라 `complete/image.lua`, `complete/link.lua`, `actions.lua`, `rename.lua`와 스펙(`complete/image_spec`, `actions_spec`, `rename_spec`) 삭제. 삭제 전 `grep -rn "rendermark.complete\|rendermark.actions\|rendermark.rename" lua tests`로 참조 확인
+  - 완료: 참조는 `actions.lua`→`rename.lua` 상호 참조, `plugins/complete.lua`, `tests/spec/plugins/complete_spec.lua`의 모의 등록, `tests/test_lazy_plugins.lua`(수동 스크립트의 `markdown_image` 소스 기대)뿐이었고 모두 함께 정리. `rendermark/complete/` 디렉터리 삭제. 삭제 스펙은 `complete/image_spec`, `actions_spec`, `rename_spec`
+- [x] `plugins/complete.lua`의 cmp 소스 제거를 확정(이미 작업 트리에 있음)
+- [x] 스펙: 기존 이미지 스펙(`image/init_spec`, `table_image_spec`)이 `images` 기본값 상태에서 통과 — `image.enabled` 분기가 사라졌는지 확인
+  - 확인: `M.enabled`/`image.enabled` 분기 제거 후 전체 스펙 통과(66개 파일, 통과 681 / 실패 0 / 오류 0)
 - 완료 조건: `grep -rn "image.enabled\|images = false\|M.enabled" lua init.lua` 결과 없음. mdloom 연결 상태에서 Markdown 이미지가 한 번만 그려진다(mdloom 플러그인의 그리기는 mdloom 작업 L1에서 이미 제거됨). (mdloom 작업이 먼저 끝나므로 mdloom 쪽 이미지 표시는 이미 없다.)
 
 ### R2 — 이미지 스캔 범위 (Q1: (c)로 확대 결정됨)
@@ -300,7 +306,7 @@ mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원
 | --- | --- | --- | --- |
 | 선행: coderunner, mdloom 작업 | 부분 완료 | 2026-10-30 | coderunner: C0~C8 완료, C9는 Linux 자동 검증만 완료(Windows/GUI/mdloom 실환경·수동 시나리오 미검증, 이슈 유지). mdloom(`lsp-scope` 브랜치, master 미병합): L0~L5 완료, L6 부분 완료(구현 후 문서 대조 필요), L7 검증·L8 마무리 대기 |
 | R0 기준선 | 부분 완료 | 2026-10-30 | 기준 수치: 전체 스펙 696 통과/0 실패/0 오류(69 파일), rendermark 259 통과/0/0(13 파일). 벤치(5회 중앙값, 1,000회): 변경 없음 680.0 ms·호출 전부 0, 이미지 하나 변경 690.8 ms·set 1000/mark 2000/clear 1000/redraw 1000. 미완: 수동 동작 캡처(사용자 확인 필요), 무관 변경 분리 커밋(사용자 판단) |
-| R1 임시 우회 제거 | 대기 | | |
+| R1 임시 우회 제거 | 완료(GUI 중복 확인은 R8) | 2026-10-30 | 임시 우회 4곳 제거, mdloom 경로를 `vim.g.mdloom_dir`로 설정화, `complete/{image,link}`·`actions`·`rename`과 스펙 3개 삭제, cmp 소스 제거 확정. 전체 스펙 66개 파일 통과 681/0/0(696 − 삭제 스펙 18 + 신규 3). 완료 조건 grep 결과 없음. mdloom 확인: 체크아웃 `lsp-scope`에 그리기 코드 없음(`editors/nvim`은 `init.lua`뿐), 단 master에는 아직 `image.lua`·`images.lua` 등이 남아 있어 병합 전 master 사용 시 중복 그리기 |
 | R2 스캔 범위 결정 | 대기 | | |
 | R3 공급자 API·diagram.lua | 대기 | | |
 | R4 glue·사용자 설정 | 대기 | | |
