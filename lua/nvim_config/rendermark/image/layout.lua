@@ -9,6 +9,11 @@ function Module.new(M, state)
     zoom = zoom or 1.0
     local native_w = image.source_width * zoom
     local native_h = image.source_height * zoom
+    if image.native_width then
+      -- A width asked for by the author (`width=`, `|300`): same ratio, other size.
+      native_w = image.native_width * zoom
+      native_h = native_w * image.source_height / image.source_width
+    end
     local display_w = math.min(native_w, math.max(1, math.floor(max_w_px or native_w)))
     local display_h = math.max(1, math.floor(display_w * native_h / native_w + 0.5))
     local virt_h = math.max(1, math.ceil(display_h / math.max(1, cell_h or 1)))

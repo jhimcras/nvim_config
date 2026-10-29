@@ -41,7 +41,7 @@ end
 -- others only when it does not exist.
 function M.resolve_image_path(buf, raw_path)
   raw_path = raw_path:match('^<(.*)>$') or raw_path
-  if raw_path == '' or raw_path:match('^%a[%w+.-]*://') then return nil end
+  if raw_path == '' or raw_path:match('^%a[%w+.-]*://') or raw_path:match('^[dD][aA][tT][aA]:') then return nil end
   local seen, variants = {}, {}
   local function add(path)
     if not seen[path] then seen[path] = true; variants[#variants + 1] = path end
@@ -61,10 +61,9 @@ function M.resolve_image_path(buf, raw_path)
   return absolutize(buf, best)
 end
 
-local function add_markdown_image_link(deps, buf, row0, col0, end_col, raw, result, extra)
-  local path = M.resolve_image_path(buf, raw)
-  if not path then return end
-
+-- `path` is the resolved file. `extra.want_*` are the sizes (CSS px) the author
+-- asked for in `width=`/`height=`.
+local function add_markdown_image_link(deps, row0, col0, end_col, raw, result, extra, path)
   local item = {
     row = row0,
     col = col0,
@@ -87,6 +86,10 @@ local function add_markdown_image_link(deps, buf, row0, col0, end_col, raw, resu
   if size and size.width and size.height and size.width > 0 and size.height > 0 then
     item.source_width = size.width
     item.source_height = size.height
+    -- Only the width steers the size (the file's ratio is kept); a lone height
+    -- becomes the width of that height.
+    local want = item.want_width or (item.want_height and item.want_height * size.width / size.height)
+    if want and want > 0 then item.native_width = want end
   else
     item.error = 'unsupported'
   end
@@ -154,14 +157,108 @@ local function inline_destination(text, pos)
   return raw, pos
 end
 
--- Image links outside inline code, as { s, e, raw, ref } (1-based bytes; `ref`
--- is the label of a reference image). `![alt](path "title")` always counts.
--- `![alt][ref]`, `![ref][]` and `![ref]` count only when `defs` (label ->
--- destination, or a function returning it) defines the label.
+-- Whether a line may hold an image at all: `![` covers markdown and reference
+-- images; `<img` is the HTML form. Plain finds first, because the
+-- pattern alone tries a match at every byte.
+local function has_image_candidate(text)
+  return text:find('![', 1, true) ~= nil
+    or (text:find('<', 1, true) ~= nil and text:find('<[iI][mM][gG][%s/>]') ~= nil)
+end
+
+M.has_image_candidate = has_image_candidate
+
+local ENTITIES = { amp = '&', lt = '<', gt = '>', quot = '"', apos = "'" }
+
+-- Attributes of the `<img …>` tag starting at `s` (lower-cased names) and the
+-- index of its closing '>', or nil when the tag does not close on this line.
+local function html_img_tag(text, s)
+  local i = s + 4
+  local attrs = {}
+  while true do
+    i = text:find('%S', i)
+    if not i then return nil end
+    local c = text:sub(i, i)
+    if c == '>' then return attrs, i end
+    if c == '/' then
+      if text:sub(i + 1, i + 1) == '>' then return attrs, i + 1 end
+      i = i + 1
+    else
+      local name, after = text:match('^([^%s=/>"\']+)()', i)
+      if not name then return nil end
+      local value = ''
+      local eq = text:match('^%s*=%s*()', after)
+      if eq then
+        local quote = text:sub(eq, eq)
+        if quote == '"' or quote == "'" then
+          local stop = text:find(quote, eq + 1, true)
+          if not stop then return nil end
+          value, i = text:sub(eq + 1, stop - 1), stop + 1
+        else
+          local bare, stop = text:match('^([^%s>]*)()', eq)
+          -- `src=a.png/>`: the slash belongs to the tag, not the value.
+          if bare:sub(-1) == '/' and text:sub(stop, stop) == '>' then bare = bare:sub(1, -2) end
+          value, i = bare, stop
+        end
+      else
+        i = after
+      end
+      name = name:lower()
+      if attrs[name] == nil then attrs[name] = value end
+    end
+  end
+end
+
+-- A CSS pixel size: `300` or `300px` (percentages and other units are ignored).
+local function css_pixels(value)
+  local n = value and value:match('^%s*(%d+)%s*[pP]?[xX]?%s*$')
+  return n and tonumber(n) or nil
+end
+
+-- Byte ranges of same-line `<!-- … -->` comments.
+local function comment_spans(text)
+  local spans, at = {}, 1
+  while true do
+    local s = text:find('<!--', at, true)
+    if not s then break end
+    local _, e = text:find('-->', s + 4, true)
+    spans[#spans + 1] = { s, e or #text }
+    at = (e or #text) + 1
+  end
+  return spans
+end
+
+-- `<img src="…" width=…>` as { s, e, src, nil, meta }. The tag must be complete
+-- on this line; a tag split over several lines is not seen (the scan is per line).
+local function html_links(text, links)
+  if not text:find('<', 1, true) then return end
+  local at, comments = 1, nil
+  while true do
+    local s = text:find('<[iI][mM][gG][%s/>]', at)
+    if not s then break end
+    local attrs, e = html_img_tag(text, s)
+    local src = attrs and attrs.src and attrs.src:gsub('&(%a+);', ENTITIES)
+    if src and vim.trim(src) ~= '' then
+      comments = comments or comment_spans(text)
+      if not in_code_span(comments, s) then
+        local meta = { html = true, want_width = css_pixels(attrs.width), want_height = css_pixels(attrs.height) }
+        links[#links + 1] = { s, e, vim.trim(src), nil, meta }
+      end
+      at = e + 1
+    else
+      at = s + 4
+    end
+  end
+end
+
+-- Image links outside inline code, as { s, e, raw, ref, meta } (1-based bytes;
+-- `ref` is the label of a reference image; `meta` only for HTML ones:
+-- { html = true, want_width?, want_height? }), in text order.
+-- `![alt](path "title")` always counts. `![alt][ref]`, `![ref][]` and `![ref]`
+-- count only when `defs` (label -> destination, or a function returning it)
+-- defines the label.
 local function find_image_links(text, defs)
   local links = {}
-  if not text:find('![', 1, true) then return links end
-  local spans = nil
+  if not has_image_candidate(text) then return links end
   local search_at = 1
   while search_at <= #text do
     local s, bracket_end, alt = text:find('!%[([^%]]*)%]', search_at)
@@ -185,15 +282,27 @@ local function find_image_links(text, defs)
       end
     end
     if e then
-      spans = spans or code_spans(text)
-      -- A link inside inline code is literal text.
-      if not in_code_span(spans, s) then links[#links + 1] = { s, e, raw, ref } end
+      links[#links + 1] = { s, e, raw, ref }
       search_at = e + 1
     else
       search_at = s + 2
     end
   end
-  return links
+  html_links(text, links)
+  if #links == 0 then return links end
+
+  -- Text order; a link inside an earlier one (an <img> in an alt text) or in
+  -- inline code is dropped. A link inside inline code is literal text.
+  table.sort(links, function(a, b) return a[1] < b[1] end)
+  local spans = code_spans(text)
+  local kept, last_end = {}, 0
+  for _, link in ipairs(links) do
+    if link[1] > last_end and not in_code_span(spans, link[1]) then
+      kept[#kept + 1] = link
+      last_end = link[2]
+    end
+  end
+  return kept
 end
 
 M.find_image_links = find_image_links
@@ -212,37 +321,41 @@ function M.scan_markdown_image_text(deps, buf, row0, text, result, opts)
   local base_col = math.max(0, tonumber(opts.base_col) or 0)
   local virtual = opts.virtual == true
   for _, link in ipairs(find_image_links(text, M.buf_defs(buf))) do
-    local s, e, raw = link[1], link[2], link[3]
-
-    local prefix = text:sub(1, s - 1)
-    local prefix_width = vim.fn.strdisplaywidth(prefix)
-    local match_width = vim.fn.strdisplaywidth(text:sub(s, e))
-    local col0 = base_col + prefix_width
-    local extra = nil
-    if virtual then
-      extra = {
-        virtual = true,
-        virtual_mark_col = base_col,
-        virtual_prefix_width = prefix_width,
-        virt_text_pos = opts.virt_text_pos,
-        virt_text_win_col = opts.virt_text_win_col,
-        source_span_height = opts.source_span_height,
-      }
-    else
-      extra = {
-        byte_col = s - 1,
-        byte_end_col = e,
-      }
+    local s, e, raw, meta = link[1], link[2], link[3], link[5]
+    local path = M.resolve_image_path(buf, raw)
+    if path then
+      local prefix = text:sub(1, s - 1)
+      local prefix_width = vim.fn.strdisplaywidth(prefix)
+      local match_width = vim.fn.strdisplaywidth(text:sub(s, e))
+      local col0 = base_col + prefix_width
+      local extra = nil
+      if virtual then
+        extra = {
+          virtual = true,
+          virtual_mark_col = base_col,
+          virtual_prefix_width = prefix_width,
+          virt_text_pos = opts.virt_text_pos,
+          virt_text_win_col = opts.virt_text_win_col,
+          source_span_height = opts.source_span_height,
+        }
+      else
+        extra = {
+          byte_col = s - 1,
+          byte_end_col = e,
+        }
+      end
+      if link[4] then extra.ref_label = link[4] end
+      if meta then
+        extra.want_width, extra.want_height = meta.want_width, meta.want_height
+      end
+      add_markdown_image_link(deps, row0, col0, col0 + math.max(1, match_width), raw, result, extra, path)
     end
-    if link[4] then extra.ref_label = link[4] end
-    add_markdown_image_link(deps, buf, row0, col0, col0 + math.max(1, match_width), raw, result, extra)
   end
 end
 
 -- `buf` lets `![ref]` forms count when the document defines the label.
 function M.line_has_image_link(text, buf)
-  -- Plain '![' prefilter: the pattern alone tries a match at every byte.
-  return type(text) == 'string' and text:find('![', 1, true) ~= nil
+  return type(text) == 'string' and has_image_candidate(text)
     and #find_image_links(text, buf and M.buf_defs(buf)) > 0
 end
 
@@ -290,7 +403,7 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
     local table_images = table_state.table_row(buf, row0)
     if table_images then
       for _, image in ipairs(table_images) do result[#result + 1] = vim.deepcopy(image) end
-    elseif not table_rows[row0] and line:find('![', 1, true)
+    elseif not table_rows[row0] and has_image_candidate(line)
         and not docindex.in_fence(docindex.get(buf), row0) then
       -- Fenced code is literal text; the document is indexed once per tick.
       M.scan_markdown_image_text(deps, buf, row0, line, result, { base_col = 0 })
