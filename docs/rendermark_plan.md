@@ -304,11 +304,16 @@ R3 후속 메모 (R2 기록 정정): R2의 "펜스 판정은 `blocks.lua`의 pla
 
 ### R5 — 인접 내보낸 이미지 정책 (Q3)
 
-- [ ] 규칙: 다이어그램 블록의 `end_row` 아래로 **빈 줄 0~1개** 뒤에 오는 문단이 이미지 링크를 가지면(표준 `![]()`; 위키·HTML은 rendermark가 스캔하지 못하므로 해당 없음) 그 블록의 다이어그램 항목은 그리지 않는다(소스 그대로 표시, 이미지 링크는 평소처럼 그려짐)
-- [ ] 판정은 `diagram.lua`가 `scan.lua`의 `find_image_links`를 이용해 블록 다음 행들만 검사한다. 편집 비용을 줄이기 위해 해당 행만 읽는다
-- [ ] 옵션 `diagram.hide_when_exported`(기본 true)로 끌 수 있게 한다
-- [ ] 스펙: 인접 링크 있음(빈 줄 0·1) → 블록 이미지 없음, 빈 줄 2 → 블록 이미지 있음, 인접 문단에 이미지가 없음 → 블록 이미지 있음, 옵션 off → 항상 블록 이미지
+- [x] 규칙: 다이어그램 블록의 `end_row` 아래로 **빈 줄 0~1개** 뒤에 오는 문단이 이미지 링크를 가지면(표준 `![]()`; 위키·HTML은 rendermark가 스캔하지 못하므로 해당 없음) 그 블록의 다이어그램 항목은 그리지 않는다(소스 그대로 표시, 이미지 링크는 평소처럼 그려짐)
+  - 완료(2026-10-30): "문단" = 빈 줄(공백뿐인 줄)을 만나면 끝, 코드 펜스 줄(` ``` `/`~~~`)을 만나도 끝(첫 줄이 펜스면 문단 없음). 근거: 펜스 안의 링크는 글자 그대로의 코드이고, 블록 바로 뒤에 다른 다이어그램 블록이 붙어 있을 때 그 안쪽을 보면 안 됨. 링크는 줄 단위로 `find_image_links`(인라인 코드 스팬 안은 제외)로 찾고, `resolve_image_path`가 nil인 원격(`scheme://`) 링크는 세지 않는다(rendermark가 그리지 않으므로 블록 이미지 대신이 될 수 없음). 파일이 없는 로컬 링크는 센다(링크 쪽에 `not_found` 박스가 보임). 줄 단위 판정은 실제로 그려지는 스캔(`collect_markdown_images`)과 같은 단위다. 읽는 범위는 빈 줄 1 + 문단 30줄 상한. 실패(`failed`) 블록의 `[diagram: ...]` 오류 줄은 내보낸 이미지가 있어도 그대로 표시(정보이지 중복이 아님)
+- [x] 판정은 `diagram.lua`가 `scan.lua`의 `find_image_links`를 이용해 블록 다음 행들만 검사한다. 편집 비용을 줄이기 위해 해당 행만 읽는다
+  - 완료: `diagram_exported_below(buf, item)`가 `nvim_buf_get_lines(end_row+1, end_row+32)` 한 번만 읽는다(스펙이 읽기 범위를 단언). 판정은 `item_cache[buf].exported[end_row]`에 그 `changedtick`의 항목과 함께 저장돼 편집·`refresh` 때 항목과 같이 버려진다 — 링크 줄·빈 줄·블록 편집 직후 첫 조회가 새 판정을 반영. `find_image_links`는 `scan.lua`에서 `M.find_image_links`로 노출. 활성 블록은 판정 경로를 타지 않아 미리보기가 그대로 열리고, 숨긴 블록은 결과 항목이 없으므로 예약·conceal(`source_span_height`)도 생기지 않는다(링크 이미지 예약만 남음). 단 `diagram_block_span`/`cursor_active_block_sig`는 그대로 블록을 알고 있어 미리보기 배치(블록 회피)가 소스 높이를 쓴다 — 소스가 그대로 보이므로 맞는 동작
+- [x] 옵션 `diagram.hide_when_exported`(기본 true)로 끌 수 있게 한다
+  - 완료: `image.setup(opts)`가 `opts.diagram.hide_when_exported == false`일 때만 끈다(`diagram.preview`와 같은 `opts.diagram` 아래). `init.lua`의 사용자 설정은 기본값을 쓰므로 변경 없음
+- [x] 스펙: 인접 링크 있음(빈 줄 0·1) → 블록 이미지 없음, 빈 줄 2 → 블록 이미지 있음, 인접 문단에 이미지가 없음 → 블록 이미지 있음, 옵션 off → 항상 블록 이미지
+  - 완료: `tests/spec/rendermark/image/diagram_spec.lua`에 15개 추가(빈 줄 0·1, 2·3, 이미지 없는 문단, 문단 전체·문단 끝, 코드 스팬·원격·펜스, 문단 중간 링크, 옵션 off/기본값, 편집으로 링크 추가·삭제·간격 변화, `refresh`, 버퍼 끝, 읽기 범위 단언(전체 읽기 0, 같은 틱 재조회 시 읽기 0), `send_images`로 링크 이미지만 set되고 블록 행에 extmark 없음/옵션 off면 둘 다, 링크 추가·삭제 전이, 활성 블록 미리보기 유지, 실패 오류 줄 유지)
 - 완료 조건: 스펙 통과, 중복 표시 없음(수동).
+  - 확인(2026-10-30): 스펙 통과. 중복 없음은 `send_images` 결과(링크 이미지만 `vim.ui.img.set`, 블록 행 예약·conceal 없음)로 헤드리스 확인했고 GUI/스텁 화면 확인은 R8 수동 항목(`[ ]` 유지)
 
 ### R6 — mdloom 표시 기능 대비 동등성 점검과 선택 확장
 
@@ -393,7 +398,7 @@ mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원
 | R2 스캔 범위 결정 | 완료 | 2026-10-30 | 노트 폴더 `~/notes`(md 207개) 조사: 표준 `![]()` 4개(png 3, svg 1)뿐이고 위키·HTML `<img>`·참조형 사용은 0(`keep`도 표준 27개뿐, 이미지 확장자 png/jpg). 구현 순서: 공통 기반(경로 쿼리·앵커/`<>`, 펜스 제외, 프리필터) → 참조형 → HTML → 위키 경로형 → 위키 이름형. 이름 검색 규모 위험은 노트 폴더에선 낮음(파일 251~1075, 이미지 3~29, 동명 0). 이상 징후: `scan.lua`에 펜스 코드블록 제외가 없어 R6의 "기존 규칙 유지"는 신규 구현이고, `size.lua`는 GIF·SVG 미지원 |
 | R3 공급자 API·diagram.lua | 완료 | 2026-10-30 | `set_diagram_source`/`clear_diagram_source`/`refresh` 추가, `plantuml.lua`→`diagram.lua`(실행·캐시·임시 폴더·잡·jar·환경변수·"PlantUML disabled" 제거, `collect_diagram_images`), `blocks.lua` 삭제(`diagram_items`/`diagram_block_span`, `stable_hash`→`hash.lua`), place/preview/창 변수/오류 줄 개명, `deco`의 `diagram.disable_deco_langs`, `diagram.preview` 우선·`plantuml.preview` 경고 별칭. 신규 `diagram_spec` 19개 + `deco_spec` 1개, `init_spec` 재작성(스펙 2개 삭제). 전체 701 통과/0/0(67 파일, 종료 코드 0; R1 681 + 20), `tests/spec/rendermark` 260/0/0(11 파일). 벤치(5회 중앙값): 변경 없음 671.3 ms·호출 전부 0, 너비 변경 680.1 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0 680.0/690.8 ms, 같은 호출 수). `grep plantuml_run\|plantuml_resolve\|plantuml_find_blocks\|PLANTUML_JAR lua` 결과 없음. 한계: `init.lua`의 `plantuml.preview` 사용자 설정은 R4까지 경고 한 번 발생, 닫히지 않은 펜스의 높이 예약은 이제 공급자(coderunner 파서)가 정한다 |
 | R4 glue·사용자 설정 | 완료(GUI 확인은 R8) | 2026-10-30 | `nvim_config/markdown.lua`(`setup`, `deco_langs`), `init.lua`(`diagram.preview`, `disable_deco_langs`, `plantuml_cmd()`, `markdown.setup()`), `tests/spec/markdown_glue_spec.lua` 9개. `renderer_langs()`는 coderunner에 없어 `coderunner.resolve` 사용. 실제 plantuml로 PNG 렌더 확인 중 coderunner가 stdout 렌더러 출력을 UTF-8 정리해 PNG를 깨뜨리는 결함 발견·수정(`raw_stdout`, 스펙 1개). 전체 `bash run_tests.sh` 종료 코드 0, 실패·오류 0(스펙 줄 기준 R3 697 → 708). 한계: 워크스페이스 전용 렌더러 언어는 `disable_deco_langs`에 반영되지 않음, plantuml 명령은 시작 시 한 번 결정 |
-| R5 인접 내보낸 이미지 정책 | 대기 | | |
+| R5 인접 내보낸 이미지 정책 | 완료(GUI 확인은 R8) | 2026-10-30 | `diagram.lua`의 `diagram_exported_below`(블록 다음 빈 줄 0~1개 + 문단, 펜스·빈 줄에서 끝, 코드 스팬·원격 링크 제외), 옵션 `diagram.hide_when_exported`(기본 true), 판정은 `changedtick` 항목 캐시에 저장. 스펙 +15(전체 `bash run_tests.sh` 종료 0, 실패·오류 0, 스펙 줄 725). 벤치: `benchmark_image_reapply`(5회, `collect_diagram_images` 스텁이라 호출 수 불변) 변경 없음 670.0~693.5 ms·호출 전부 0, 너비 변경 677.6~701.9 ms·set 1000/mark 2000/clear 1000/redraw 1000; `benchmark_plantuml_scan` 편집당 `send_images` 0.28 → 0.40 ms(블록 10개, 읽기는 블록당 31줄), 나머지 시나리오 불변·전체 읽기 0. 한계: 내보낸 이미지가 오래된 경우의 표시는 진단 몫(Q3) |
 | R6 동등성 점검 | 대기 | | |
 | R7 정리 | 대기 | | |
 | R8 통합 검증 | 대기 | | |

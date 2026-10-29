@@ -71,3 +71,11 @@ set 1000, mark 2000, clear 1000, redraw 1000, del 0.
 ```sh
 BENCH_PROVIDER=1 nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
 ```
+
+After R5 (exported-image check, `diagram.hide_when_exported`), same workload,
+3 runs each against the HEAD snapshot: send_images after each edit
+0.277-0.288 -> 0.393-0.401 ms/call (one 31-row read and link scan per block,
+10 blocks, once per changedtick). Cold 0.52-0.67 -> 0.70-0.94 ms. Unchanged
+send_images (0.28-0.30) and cursor signature (0.003) are unchanged: the
+verdict is cached with the items of the tick. Full buffer reads and provider
+calls stay at 0 / 0 / 0 / 100 as above.
