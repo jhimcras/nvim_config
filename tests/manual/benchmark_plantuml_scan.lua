@@ -2,6 +2,9 @@
 -- Set IMAGE_BENCH_BASELINE to a snapshot root to compare the same workload.
 -- Set BENCH_PROVIDER=1 to register a fake diagram provider with 10 ready blocks
 -- (5 inside the headless viewport); without it no provider is registered.
+-- Set BENCH_IMAGES=1 to add 5 image links inside the viewport (one a reference
+-- image), a fenced block every 50 lines and a definition at the end, so each
+-- edit pays for the document index. BENCH_LINES=<n> changes the 3000-line size.
 vim.opt.rtp:prepend(vim.fn.getcwd())
 if vim.env.IMAGE_BENCH_BASELINE then vim.opt.rtp:prepend(vim.env.IMAGE_BENCH_BASELINE) end
 vim.g.is_testing = true
@@ -14,13 +17,27 @@ local image = require('nvim_config.rendermark.image')
 local buf = vim.api.nvim_get_current_buf()
 vim.bo[buf].filetype = 'markdown'
 local lines = {}
-for i = 1, 3000 do lines[i] = 'plain markdown line ' .. i end
+local line_count = tonumber(vim.env.BENCH_LINES) or 3000
+for i = 1, line_count do lines[i] = 'plain markdown line ' .. i end
 local blocks = { 10, 30, 50, 70, 90, 400, 800, 1200, 1600, 2000 }
 if vim.env.BENCH_PROVIDER then
   for _, row in ipairs(blocks) do
     lines[row + 1] = '```plantuml'
     lines[row + 5] = '```'
   end
+end
+if vim.env.BENCH_IMAGES then
+  local png = vim.fn.tempname() .. '.png'
+  local f = assert(io.open(png, 'wb'))
+  f:write(string.char(137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 100, 0, 0, 0, 50))
+  f:close()
+  for _, row in ipairs({ 3, 12, 21, 30, 39 }) do lines[row + 1] = '![img](' .. png .. ')' end
+  lines[49] = '![ref][pic]'
+  for row = 100, line_count - 10, 50 do
+    lines[row + 1] = '```lua'
+    lines[row + 3] = '```'
+  end
+  lines[line_count] = '[pic]: ' .. png
 end
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 local ns = vim.api.nvim_create_namespace('plantuml-scan-benchmark')
@@ -65,7 +82,7 @@ run('send_images-cold', image.send_images, 1)
 run('send_images-unchanged', image.send_images, 200)
 run('cursor-unchanged', image.cursor_active_block_sig, 500)
 run('send_images-edited', function()
-  vim.api.nvim_buf_set_lines(buf, 2999, 3000, false, { 'edited' })
+  vim.api.nvim_buf_set_lines(buf, line_count - 2, line_count - 1, false, { 'edited' })
   image.send_images()
 end, 100)
 vim.cmd('qa!')
