@@ -115,6 +115,7 @@ function M.run(entry, context, opts, callback)
             active = exec.run_step(prepared.steps[index], {
                 cwd = prepared.cwd, env = prepared.env, timeout = remaining,
                 stdin = entry.input == 'stdin' and ctx.code or '', max_output = limit,
+                raw_stdout = entry.output == 'stdout',
                 on_output = function(stream, chunk)
                     if not completed and opts.on_output then opts.on_output(stream, chunk) end
                 end,
@@ -124,7 +125,7 @@ function M.run(entry, context, opts, callback)
                     local room = math.max(0, limit - #job[stream])
                     job[stream] = job[stream] .. result[stream]:sub(1, room)
                     job[stream .. '_truncated'] = job[stream .. '_truncated'] or result[stream .. '_truncated'] or #result[stream] > room
-                    job[stream] = exec.clean_utf8(job[stream])
+                    if stream == 'stderr' or entry.output ~= 'stdout' then job[stream] = exec.clean_utf8(job[stream]) end
                 end
                 job.code, job.signal, job.program = result.code, result.signal, result.program
                 if result.status ~= 'success' then finish(result.status, result.message)

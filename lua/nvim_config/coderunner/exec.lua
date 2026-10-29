@@ -42,7 +42,9 @@ function M.run_step(argv, opts, callback)
         if completed or not exited or not eof.stdout or not eof.stderr then return end
         completed = true
         close(timer); close(process); close(input); close(output); close(errors)
-        job.stdout, job.stderr = M.clean_utf8(job.stdout), M.clean_utf8(job.stderr)
+        -- Renderer stdout is image bytes; cleaning would corrupt a PNG.
+        if not opts.raw_stdout then job.stdout = M.clean_utf8(job.stdout) end
+        job.stderr = M.clean_utf8(job.stderr)
         job.status = reason or (exit_signal ~= 0 and 'failed' or exit_code == 0 and 'success' or 'failed')
         job.code = exit_signal == 0 and exit_code or nil
         job.signal = exit_signal ~= 0 and exit_signal or nil

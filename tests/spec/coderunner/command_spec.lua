@@ -45,6 +45,16 @@ describe('coderunner command', function()
         assert.equals('', vim.json.decode(dump.stdout).stdin)
         command.release(result); assert.is_nil(vim.uv.fs_stat(result.tmpdir))
     end)
+    it('keeps renderer stdout as raw bytes but still cleans runner stdout and stderr', function()
+        local bytes = '\137PNG\r\n\26\n\0\0\0\rIHDR\255'
+        ctx.code, ctx.kind, ctx.format = bytes, 'renderer', 'png'
+        local image = execute({ input = 'stdin', output = 'stdout', cmd = H.tool('stdin') })
+        assert.equals('success', image.status); assert.equals(bytes, image.stdout)
+        ctx.kind = 'runner'
+        local text = execute({ input = 'stdin', cmd = H.tool('stdin') })
+        assert.equals(require('nvim_config.coderunner.exec').clean_utf8(bytes), text.stdout)
+        assert.not_equals(bytes, text.stdout)
+    end)
     it('uses renderer tmpdir and sends stdin on every step', function()
         ctx.kind, ctx.format = 'renderer', 'svg'
         local result = execute({ input = 'stdin', cmd = H.tool('dump', '{output}') })
