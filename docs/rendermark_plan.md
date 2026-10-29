@@ -397,19 +397,90 @@ R6-B에서 정한 규칙 (HTML `<img>`·위키 이미지, 2026-10-30):
 
 ### R8 — 통합 검증
 
-- [ ] `bash run_tests.sh` 전체 통과
-- [ ] 성능 벤치(`benchmark_image_reapply.lua`) 호출 수가 R0 기준선과 같음(변경 없음 → `vim.ui.img.set` 0)
-- [ ] 수동 (neopp GUI 또는 `RENDERMARK_IMG_STUB=1`):
-  - [ ] Markdown 이미지가 한 번만 그려진다 (mdloom 플러그인 그리기 제거 후 중복 없음)
-  - [ ] 표 안 이미지, 한 줄 여러 이미지, 스크롤·분할·접기·창 크기 변경 후 위치
-  - [ ] plantuml 블록: 렌더된 이미지로 대체, 커서 진입 시 소스 노출과 미리보기, 블록 수정 후 저장 시 갱신
-  - [ ] 렌더 실패 시 `[diagram: ...]` 경고 표시와 coderunner `render-failed` 진단
-  - [ ] 내보낸 이미지가 있는 블록: 블록 이미지가 숨겨지고 링크 이미지만 보임 (Q3)
-  - [ ] coderunner 없이(glue만 제거) Markdown 이미지가 정상
-  - [ ] mdloom 연결 상태에서 mdloom 서버가 이미지 표시에 관여하지 않음(`:lua vim.print(vim.lsp.get_clients()[1].server_capabilities.codeLensProvider)` 가 nil)
-  - [ ] 읽기 모드(`read_mode`)와의 상호작용 (활성 블록 미리보기는 읽기 모드에서 열리지 않음 — 기존 동작 유지)
-- [ ] Windows GUI 환경: 이미지 경로(드라이브 문자, 역슬래시), 스크롤, 미리보기. 결과를 `docs/`에 기록
-- [ ] 진행 기록 갱신, 이슈 종료
+#### 자동 검증 (2026-10-30, 헤드리스 Linux, nvim 0.12.4) — 완료
+
+- [x] `bash run_tests.sh` 전체 통과: 종료 0, 실패 0, 오류 0, `Success` 줄 802(스펙 파일 70개; `session/events_spec`는 출력 줄이 실행마다 빠지는 기존 현상으로 요약이 누락돼 단독 재실행에서 4개 통과 확인). 읽기 모드 스펙 1개(아래)를 더한 뒤 전체를 다시 실행해 종료 0, `Success` 803, 실패·오류 0. `tests/spec/rendermark`는 13개 파일 352/0/0, `tests/spec/coderunner`·`markdown_glue_spec`은 단독 종료 0
+- [x] 성능 벤치 `benchmark_image_reapply.lua` 5회: 호출 수가 R0 기준선과 같음(변경 없음 `set`/`mark`/`clear`/`redraw`/`del` 전부 0, 너비 변경 set 1000/mark 2000/clear 1000/redraw 1000/del 0). 중앙값은 아래 표
+- [x] `benchmark_image_scan.lua` 대표 시나리오: R6-B 문서(`docs/image_scan_performance.md` "After R6-B")의 수치 범위와 일치(아래 표)
+- [x] 실제 `init.lua` 헤드리스 기동(XDG 격리): 경고·오류 없이 종료. 임시 문서(표준·표 안·참조형·HTML·위키 경로형/이름형 이미지, plantuml 블록 2개 중 하나는 아래에 내보낸 이미지 링크, 펜스 안 이미지 문법)를 열고 `RENDERMARK_IMG_STUB=1`로 확인: coderunner `diagrams`가 `pending`(`render_on_open`이 자동 시작) → 렌더 후 `ready`, `collect_markdown_images` 7개(중복 0, 펜스 안 문법 제외), `collect_diagram_images`는 내보낸 이미지가 붙은 블록을 빼고 1개만, `send_images` 후 스텁 저장소 항목 8개(= 7 + 블록 1). 본 저장소의 `tests/manual/rendermark_manual.md`로도 확인: Markdown 이미지 18개(중복 0, `not_found`·`unsupported` 오류 박스 각 1), 다이어그램 4개 `ready` 3 / `failed` 1, 그려진 블록 2개 + `[diagram: ERROR]` 오류 줄 1개(내보낸 이미지가 붙은 블록은 숨김). 실패 블록과 저장 시 갱신: 문법 오류 블록은 `failed`(plantuml 종료 코드 200) + `[diagram: ERROR]`, 블록을 고치고 `:write`하면 `auto_render`가 새 이미지로 `ready`·`stale` 해제
+- [x] coderunner 없이(`package.preload`로 `require` 실패를 흉내): glue `setup()` 오류 없음, 자동명령 0개, Markdown 이미지 7개 수집·`vim.ui.img.set` 7회, 다이어그램 항목 0. 스펙 근거: `tests/spec/markdown_glue_spec.lua`의 `registers nothing and stays quiet without coderunner`
+- [x] mdloom 연결(가능한 범위): `vim.g.mdloom_dir = '~/workspace/markdown_lsp'`, `M.cmd` = `{ ~/.local/bin/mdloom, 'lsp' }`(PATH 바이너리 우선; 심볼릭 링크로 `markdown_lsp/target/debug/mdloom`과 같은 빌드), `~/workspace/markdown_lsp`는 `lsp-scope` 브랜치(작업 트리 깨끗). 실제 서버를 헤드리스에서 기동해(10초 제한) `initialize` 완료 후 `server_capabilities.codeLensProvider == nil`, 능력 목록에 codeLens·inlayHint 등 그리기 관련 항목 없음. 기동 때 `mdloom: problems in the config: ~/.config/mdloom/config.toml (0 error(s), 2 warning(s))` 알림이 한 번 나온다(아래 "발견한 점")
+- [x] 읽기 모드: `diagram.lua`의 `diagram_active_block`이 읽기 모드 창(`vim.w.read_mode_active`)에서 항상 활성 블록 없음으로 답한다. 기존 스펙에는 이 분기를 고정하는 것이 없어(`table_image_spec`의 읽기 모드 스펙은 표 행 전용) 스펙 1개 추가(`diagram_spec`: 읽기 모드 창에서 커서가 블록 안이어도 블록 이미지가 그려진 채 유지, 미리보기 창 0, `request_live` 0, 읽기 모드를 끄면 다시 활성). 분기를 지우면 이 스펙이 실패함을 확인. 읽기 모드 자체(`concealcursor='nvic'`)는 `read_mode_spec`·`wrap/init_spec`·`events_spec`
+- [x] 코드 위생: `git status` 깨끗(이 단계의 변경은 아래 커밋 목록뿐), push 안 함
+
+R0 대비 최종 수치:
+
+| 항목 | R0 | R7 | R8 |
+| --- | ---: | ---: | ---: |
+| 전체 스펙 통과 (`Success` 줄) | 696 (69 파일) | 801~803 | 802 (70 파일) → 읽기 모드 스펙 추가 후 803 |
+| 실패 / 오류 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `tests/spec/rendermark` | 259 (13 파일) | - | 352 (13 파일; R0 대비 +93, 아래 `diagram_spec` 35개 포함) |
+| `benchmark_image_reapply` 변경 없음 중앙값 | 680.0 ms (672.0~696.7) | 673.6 ms (R6-B) | 672.0 ms (658.9~683.3) |
+| `benchmark_image_reapply` 너비 변경 중앙값 | 690.8 ms (681.4~705.9) | 682.2 ms (R6-B) | 679.6 ms (668.7~692.2) |
+| 호출 수 (변경 없음) | set/mark/clear/redraw/del 0 | 0 | 0 |
+| 호출 수 (너비 변경) | set 1000, mark 2000, clear 1000, redraw 1000, del 0 | 같음 | 같음 |
+
+스캔 벤치(`benchmark_image_scan.lua`, ms/호출, 1회 실행) — "After R6-B" 표와 비교:
+
+| 시나리오 | R6-B 기록 | R8 |
+| --- | ---: | ---: |
+| 3000줄, 이미지 없음 (cold / unchanged / edited) | 0.29-0.35 / 0.08 / 0.07 | 0.29 / 0.08 / 0.08 |
+| 3000줄, HTML 텍스트(`BENCH_NOISE=1`) edited | 0.37-0.39 | 0.39 (cold 0.84, unchanged 0.11) |
+| 3000줄, 이미지(`BENCH_PROVIDER=1 BENCH_IMAGES=1`) cold / unchanged / edited | 1.77-1.84 / 0.56-0.58 / 0.85 (공급자 없이) | 1.77 / 0.55 / 0.99 (공급자 10블록 포함: 편집당 공급자 호출 1회, 전체 읽기 1회) |
+| 8000줄, 이미지 cold / unchanged / edited | 2.12-2.47 / 0.57-0.59 / 1.35 | 2.40 / 0.58 / 1.35 |
+| 커서 이동(변경 없음) | - | 0.002~0.003, 공급자 호출 0 |
+
+발견한 점 (코드 수정 없음):
+- 사용자 환경: 실행 중인 mdloom daemon(`/home/ilmoek/workspace/nvim_config` 루트, 00:35 시작)이 프로토콜 1이고 현재 빌드는 프로토콜 2라, 다른 세션이 붙어 있는 동안 새 nvim에서 mdloom이 `protocol version conflict`로 연결되지 못한다(헤드리스에서 확인). 열린 nvim 세션을 모두 닫은 뒤 `mdloom daemon stop`으로 daemon을 내리고 새로 연다. 이 확인 중 만든 임시 daemon은 정리했고 사용자의 daemon은 건드리지 않았다
+- `~/.config/mdloom/config.toml`의 `[runners.*]`·`[renderers.plantuml]`이 mdloom L4(실행·렌더링 제거) 이후 경고 2건의 원인으로 보인다(확인하지 않음). `init.lua`의 `coderunner.setup`로 옮겨졌으므로 TOML에서 지워도 된다 — 사용자 판단
+- `init.lua`의 `coderunner.setup{ diagnostics = false }`라서 `render-failed`·`stale-export` 진단은 화면에 나오지 않는다. (d)를 확인하려면 임시로 `true`로 바꾼다
+- 헤드리스 `send_images`는 보이는 줄만 스캔하고 위키 이름 검색은 비동기라 첫 호출에서는 소스 그대로이다(설계대로). 확인 스크립트는 직접 `collect_markdown_images`를 호출하고 완료를 기다려야 한다
+
+#### 수동 확인 체크리스트 (사용자) — 대기
+
+샘플: `tests/manual/rendermark_manual.md`(이미지는 `tests/manual/rendermark_manual_assets/`의 작은 PNG 3개와 SVG 1개). 절 제목의 (a)~(h)가 아래 항목과 대응한다. 한 항목씩 열어 보고 `[x]`와 메모를 남긴다. 문서를 `:w`로 고쳤다면 끝에 `git restore tests/manual/rendermark_manual.md`.
+
+준비 (한 번만):
+
+```sh
+cd ~/workspace/nvim_config
+# 1) 이전 mdloom daemon 정리: 열린 nvim 을 모두 닫은 뒤
+mdloom daemon stop
+# 2) 그림 없이도 텍스트 박스로 보는 모드 (터미널 nvim)
+RENDERMARK_IMG_STUB=1 nvim tests/manual/rendermark_manual.md
+# 3) 실제 그림: neopp GUI 로 같은 파일을 연다 (neopp 는 PATH 에 없으므로 평소 쓰는 방법으로)
+# plantuml 이 PATH 에서 안 돌면(이 개발 환경처럼 java 링크가 깨진 경우):
+PATH=~/.local/jdk-21/bin:$PATH PLANTUML_JAR=/usr/share/java/plantuml/plantuml.jar \
+  RENDERMARK_IMG_STUB=1 nvim tests/manual/rendermark_manual.md
+```
+
+스텁 모드에서는 이미지 자리에 `+---+`와 `img: <파일>` 텍스트 박스가 보이고, 소스(`![..](..)`)가 숨는다. neopp 에서는 실제 이미지다. 아래는 어느 모드에서든 같은 판정이다.
+
+- [ ] M1 (a) Markdown 이미지가 한 번만 그려진다: "(a)" 절의 빨강 이미지가 한 개만 보이고(같은 자리에 겹치거나 두 번 나오지 않음), 문장 중간의 파랑 이미지도 한 개. 소스 `![red](...)`는 숨는다. 같은 문서를 mdloom 이 붙은 상태로 열어 mdloom 쪽 그림(옛 플러그인)이 따로 나오지 않는지 확인. 이어서 `:lua vim.print(vim.lsp.get_clients()[1].server_capabilities.codeLensProvider)` 가 `nil`
+- [ ] M2 (b) 표·한 줄 여러 이미지: "(b)" 절의 표 셀 이미지 2개가 셀 안에 보이고 표가 깨지지 않는다. "한 줄에 세 개" 줄은 세 이미지가 나란히 한 줄 높이로 보인다(너비가 모자라면 함께 축소되는 것이 현재 설계, 서브 이슈 S1). 없는 파일은 `not_found`, SVG 는 `unsupported` 오류 박스. 인라인 코드와 ```md 펜스 안의 이미지 문법은 그려지지 않는다
+- [ ] M3 (b) 스크롤: "(b)"의 `scroll target` 이미지가 있는 곳까지 `<C-e>`/`<C-y>`로 한 줄씩, `<C-d>`/`<C-u>`로 반 화면씩 오르내린다. 이미지가 위/아래 경계에 걸쳐 일부만 보여도 잘려 보이고(neopp) 위치가 어긋나지 않으며, 왔다 갔다 해도 진동하지 않는다
+- [ ] M4 (b) 분할·접기·창 크기: `:vsplit`으로 같은 문서를 두 창에 열면 각 창에 이미지가 독립으로 그려지고, 한 창을 닫으면 그 창의 이미지만 사라진다. "(b)" 절 전체를 `zfap`(또는 `:set foldmethod=indent`/`zc`)로 접으면 이미지가 접힌 줄에 남지 않고 펴면 돌아온다. GUI 창 크기를 줄였다 늘리면 이미지 크기와 위치가 새 너비를 따른다. 줄바꿈 토글 `:MarkdownWrapToggle` 후 전후에 어긋남이 없다
+- [ ] M5 (c) plantuml 블록: 열고 잠시 뒤 "(c)" 블록이 소스 대신 렌더된 이미지로 바뀐다(`render_on_open`). `j`로 블록 안에 들어가면 소스가 드러나고 미리보기 split(오른쪽이나 아래, 창 비율에 따라)이 뜬다. 블록 밖으로 나가면 미리보기가 닫히고 다시 이미지가 보인다. 블록 안에서 `Alice -> Bob: hello` 를 `hello again` 으로 바꾸고 `:w` 하면 잠시 뒤(저장 렌더 디바운스 200ms + 렌더 시간) 이미지가 새 내용으로 갱신된다. `:RendermarkPreviewToggle`로 미리보기를 끄면 블록에 들어가도 열리지 않는다
+- [ ] M6 (d) 렌더 실패: "(d)" 블록은 이미지가 되지 않고 소스가 그대로이며 블록 끝에 `[diagram: ERROR]` 경고 줄이 보인다. 코더러너 진단: `init.lua`의 `diagnostics = false` 를 임시로 `true` 로 바꾸고 다시 열어 `:lua vim.print(vim.diagnostic.get(0))` 에 `render-failed` warning(블록 첫 줄)이 있는지 확인한 뒤 되돌린다. 블록을 고치면 경고와 진단이 사라진다. `:CodeRender!` 로 강제 재렌더도 시험
+- [ ] M7 (e) 내보낸 이미지 인접 블록: "(e)"의 첫 블록(바로 아래에 초록 이미지 링크)은 소스가 그대로이고 초록 이미지만 그려진다(블록 이미지 없음). 둘째 블록(빈 줄 2개 아래 링크)은 블록 이미지와 파랑 링크 이미지가 둘 다 보인다. 첫 블록 아래 링크 앞에 빈 줄을 2개 넣으면 블록 이미지가 나타나고, 줄을 지우면 다시 숨는다. 실제 내보내기: 임시 문서(`tests/manual/` 밖, 예 `/tmp/exp.md`)에 plantuml 블록을 쓰고 `:CodeExport` 후 블록 이미지 대신 링크 이미지만 남는지
+- [ ] M8 (f) coderunner 없이: 임시로 `init.lua`의 `require'nvim_config.markdown'.setup()` 줄만 주석 처리하고(glue 제거: 공급자 등록 없음) 같은 문서를 연다. 시작 오류 없음, (a)~(b)·(h)의 Markdown 이미지는 그대로이고 plantuml 블록은 소스 그대로(이미지·경고 없음). 확인 뒤 `git checkout init.lua`로 되돌린다
+- [ ] M9 (g) 읽기 모드: `<Space>r` 로 읽기 모드를 켠다. 커서가 "(c)" 블록 안에 있어도 블록은 이미지로 유지되고 소스가 드러나지 않으며 미리보기 split 이 열리지 않는다. 읽기 모드에서 이미지와 표가 정상이고, 다시 `<Space>r` 로 끄면 블록 안 커서에서 평소처럼 소스와 미리보기가 나온다
+- [ ] M10 (h) 위키·HTML·참조형: "(h)" 절의 참조형 이미지 2개(`![ref alt][redref]`, 단축형 `![redref]`)가 빨강으로 보이고 정의 줄 `[redref]: ...`은 그대로 남는다. HTML `<img ... width="120">`은 폭 120px 정도로(원본 240px보다 작게) 보인다. 위키 경로형 2개 중 `|60`이 붙은 것은 더 작게. 위키 이름형 `![[rm_green.png]]`은 처음에는 소스 그대로이다가 잠시 뒤(프로젝트 루트 색인 후) 초록 이미지로 바뀐다. 이름을 `rm_nothing.png`로 바꿔 저장하면 `not_found` 오류 박스
+- [ ] M11 (i) Windows GUI: 같은 저장소를 Windows 에 두고 neopp 로 `tests\manual\rendermark_manual.md` 를 연다. M1·M3·M5 를 반복하고, 별도 임시 문서에 경로 변형을 넣어 확인한다(`C:\...`는 실제 경로로 바꿔서): `![d](C:\Users\me\...\rm_red.png)`, `![b](rendermark_manual_assets\rm_red.png)`, `![f](C:/Users/me/.../rm_red.png)`, `![u](<rendermark_manual_assets/rm_red.png>)`. 모두 한 번씩만 그려지고 스크롤·미리보기 split 이 동작해야 한다. plantuml 렌더(`render_on_open`)는 Windows 의 `plantuml`/`java` 경로 설정에 달렸다. 결과(되는 것/안 되는 것)를 아래 "수동 확인 결과"에 적는다
+- [ ] M12 R0 에 남은 "기존 동작 캡처": (i) 비활성 plantuml 블록이 이미지로 대체되는지 (M5), (ii) 커서 진입 시 미리보기 split (M5), (iii) `RENDERMARK_IMG_STUB=1`로 텍스트 박스 (준비 2). 회귀 비교가 필요하면 R0 기준 코드를 별도 작업 트리로 연다: `git worktree add ../nvim_before 07ab9fa`, `mkdir -p /tmp/xdg_before && ln -sfn $PWD/../nvim_before /tmp/xdg_before/nvim && XDG_CONFIG_HOME=/tmp/xdg_before RENDERMARK_IMG_STUB=1 nvim tests/manual/rendermark_manual.md` (그 시점 코드는 rendermark 가 plantuml 을 직접 실행하고 `RENDERMARK_PLANTUML_JAR`/`PLANTUML_JAR`를 읽는다). 비교 후 `git worktree remove ../nvim_before`
+- [ ] M13 R4 의 neopp GUI 통합 확인: M5 가 곧 그 확인이다(plantuml 블록 대체, 저장 시 갱신, 미리보기 split, 이벤트 연쇄의 지연 체감). 저장 후 이미지가 바뀌기까지 체감 지연이 있으면 시간을 적는다
+
+수동 확인 결과 (사용자가 채움):
+
+| 항목 | 환경(neopp/스텁/Windows) | 결과 | 메모 |
+| --- | --- | --- | --- |
+| M1~M13 | | | |
+
+#### 남은 일
+
+- [ ] 수동 확인(M1~M13) 완료 후 진행 기록 갱신
+- [ ] 수동 확인 후 이슈 `issue-rendermark_all_drawing.md`를 `closed/`로 이동 (사용자 결정)
+- 완료 조건: 자동 검증 항목이 모두 `[x]`이고(충족), 수동 체크리스트가 사용자 확인으로 모두 `[x]`가 된다.
 
 ## 6. 위험과 대응
 
@@ -440,4 +511,4 @@ R6-B에서 정한 규칙 (HTML `<img>`·위키 이미지, 2026-10-30):
 | R5 인접 내보낸 이미지 정책 | 완료(GUI 확인은 R8) | 2026-10-30 | `diagram.lua`의 `diagram_exported_below`(블록 다음 빈 줄 0~1개 + 문단, 펜스·빈 줄에서 끝, 코드 스팬·원격 링크 제외), 옵션 `diagram.hide_when_exported`(기본 true), 판정은 `changedtick` 항목 캐시에 저장. 스펙 +15(전체 `bash run_tests.sh` 종료 0, 실패·오류 0, 스펙 줄 725). 벤치: `benchmark_image_reapply`(5회, `collect_diagram_images` 스텁이라 호출 수 불변) 변경 없음 670.0~693.5 ms·호출 전부 0, 너비 변경 677.6~701.9 ms·set 1000/mark 2000/clear 1000/redraw 1000; `benchmark_image_scan` 편집당 `send_images` 0.28 → 0.40 ms(블록 10개, 읽기는 블록당 31줄), 나머지 시나리오 불변·전체 읽기 0. 한계: 내보낸 이미지가 오래된 경우의 표시는 진단 몫(Q3) |
 | R6 동등성 점검 | 완료(GUI 확인은 R8) | 2026-10-30 | R6-A: 동등성 표 확정(서브 이슈 S1~S3), 공통 기반(`%xx`·쿼리·앵커·`<…>`·title·tilde, 펜스 제외 `docindex.lua`), 참조형 이미지, GIF 크기, provider 오류 내성, 스텁 환경변수 값. 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 R5 725 → 759~762, 3회 실행에서 일부 기존 spec 출력 줄이 빠져 실행마다 ±3 변동하나 실패·오류는 0; 신규 `scan_spec` 39). 벤치: `benchmark_image_reapply`(5회) 변경 없음 중앙값 681.3 ms·호출 전부 0, 너비 변경 686.8 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0와 같음); 스캔은 이미지가 보이는 문서의 편집당 +0.3 ms(3000줄)·+0.8 ms(8000줄), 이미지 없는 문서·스크롤·커서·변경 없는 `send_images`는 불변. R6-B: HTML `<img src>`(크기 속성 반영, 여러 줄 태그 미지원), 위키 이미지(경로형·이름형, `wikisearch.lua` 비동기 색인·캐시·`ambiguous` 박스), 프리필터 `has_image_candidate`. 신규 `html_wiki_spec` 38개, 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 802). 벤치: `benchmark_image_reapply`(5회) 변경 없음 중앙값 673.6 ms·호출 전부 0, 너비 변경 682.2 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0와 같음); 이미지 없는 문서(HTML 텍스트 줄 포함) 불변, 이미지당 `send_images` 비용은 문법과 무관(약 0.06 ms) |
 | R7 정리 | 완료 | 2026-10-30 | `docs/rendermark_image.md` 신설(공급자 계약·glue·설정 키·이미지 문법·경로·위키 검색·크기 형식·스텁), README·`coderunner.md`(`raw_stdout` 포함) 갱신, 낡은 주석 정정, 벤치·성능 문서를 `*_image_scan*`로 개명하고 머리말 메모, 이슈 "확인 필요" 닫기와 작업 노트 추가(closed 이동은 R8 후). grep 점검 결과는 호환 별칭·언어 기본값·픽스처·coderunner 렌더러 설정·과거 기록만 남음. 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(스펙 줄 801~803) |
-| R8 통합 검증 | 대기 | | |
+| R8 통합 검증 | 자동 검증 완료, 수동 확인 대기 | 2026-10-30 | 전체 `bash run_tests.sh` 종료 0, 실패·오류 0(`Success` 802 → 읽기 모드 스펙 추가 후 803; R0 696), `tests/spec/rendermark` 352/0/0(R0 259). 벤치 5회 중앙값: 변경 없음 672.0 ms·호출 전부 0, 너비 변경 679.6 ms·set 1000/mark 2000/clear 1000/redraw 1000(R0 680.0/690.8 ms, 호출 수 같음). 스캔 벤치는 R6-B 수치 범위. 실제 `init.lua` 헤드리스 스모크(XDG 격리, 스텁): 경고·오류 없음, plantuml `ready`/`failed`, Markdown 이미지 중복 0, 내보낸 이미지 인접 블록 숨김, 저장 시 갱신, coderunner 없이 Markdown 이미지 정상, mdloom `codeLensProvider` nil. 스펙 추가: 읽기 모드 창은 활성 블록 없음(`diagram_spec`). 발견: mdloom daemon 프로토콜 1 잔존(사용자 세션 종료 후 `mdloom daemon stop`), `mdloom` config.toml 경고 2건, `diagnostics=false`라 진단은 확인 시 임시 활성화 필요. 수동 체크리스트 M1~M13은 R8 절, 샘플은 `tests/manual/rendermark_manual.md`. 이슈는 수동 확인 뒤 사용자가 닫는다 |
