@@ -17,6 +17,7 @@ require'nvim_config.file_info'.setup()
 require'nvim_config.smart_cursorline'.setup()
 require'nvim_config.read_mode'.setup()
 require'nvim_config.reopen'.setup()
+vim.g.mdloom_dir = '~/workspace/markdown_lsp' -- mdloom development checkout (plugin + fallback binary).
 require'nvim_config.lsp'.setup()
 require'nvim_config.coderunner'.setup{
     diagnostics = false, -- mdloom coexistence; enable after migration.

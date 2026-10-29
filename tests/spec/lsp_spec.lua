@@ -251,4 +251,33 @@ describe('lsp', function()
             assert.is_true(index_of(cmd, '^%-j=') < #cmd)
         end)
     end)
+
+    describe('mdloom command', function()
+        local markdown = require('nvim_config.lsp.servers.markdown')
+        local original_exepath, original_executable = vim.fn.exepath, vim.fn.executable
+
+        after_each(function()
+            vim.fn.exepath = original_exepath
+            vim.fn.executable = original_executable
+        end)
+
+        it('prefers the binary on PATH over the development build', function()
+            vim.fn.exepath = function() return '/usr/bin/mdloom' end
+            vim.fn.executable = function() return 1 end
+            assert.are.same({ '/usr/bin/mdloom', 'lsp' }, markdown.cmd('/dev/mdloom'))
+        end)
+
+        it('falls back to the development build when PATH has none', function()
+            vim.fn.exepath = function() return '' end
+            vim.fn.executable = function(path) return path == '/dev/mdloom/target/debug/mdloom' and 1 or 0 end
+            assert.are.same({ '/dev/mdloom/target/debug/mdloom', 'lsp' }, markdown.cmd('/dev/mdloom'))
+        end)
+
+        it('returns nil when neither exists', function()
+            vim.fn.exepath = function() return '' end
+            vim.fn.executable = function() return 0 end
+            assert.is_nil(markdown.cmd('/dev/mdloom'))
+            assert.is_nil(markdown.cmd(nil))
+        end)
+    end)
 end)
