@@ -226,6 +226,26 @@ describe('rendermark diagram items', function()
       assert.equals(0, #preview_windows())
       assert.equals(0, #src.live_calls)
     end)
+
+    it('is never active in a read-mode window: the image stays drawn and no preview opens', function()
+      src.status, src.path = 'none', nil
+      img.refresh(buf)
+      vim.w[win].read_mode_active = true
+      enter_block()
+      assert.equals(0, #(collect()))
+      vim.wait(600, function() return false end)
+      assert.equals(0, #preview_windows())
+      assert.equals(0, #src.live_calls) -- no live render is requested either
+      src.status, src.path = 'ready', png
+      img.refresh(buf)
+      local result = collect()
+      assert.equals(1, #result) -- the cursor inside the block does not reveal the source
+      assert.equals(START, result[1].row)
+      assert.equals(0, #preview_windows())
+      vim.w[win].read_mode_active = nil
+      assert.equals(0, #(collect())) -- leaving read mode makes the block active again
+      assert.equals(1, #preview_windows())
+    end)
   end)
 
   describe('provider', function()
