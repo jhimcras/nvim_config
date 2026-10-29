@@ -18,6 +18,17 @@ require'nvim_config.smart_cursorline'.setup()
 require'nvim_config.read_mode'.setup()
 require'nvim_config.reopen'.setup()
 require'nvim_config.lsp'.setup()
+require'nvim_config.coderunner'.setup{
+    diagnostics = false, -- mdloom coexistence; enable after migration.
+    render_on_open = true, -- global renderers only; cache misses in the visible window.
+    runners = {
+        python = { match = { 'python', 'py' }, ext = 'py', cmd = { 'python3', '{file}' } },
+    },
+    renderers = {
+        plantuml = { match = { 'plantuml', 'puml' }, formats = { 'png', 'svg' },
+            input = 'stdin', output = 'stdout', cmd = { 'plantuml', '-t{format}', '-pipe' } },
+    },
+}
 require'nvim_config.rendermark'.setup{
     max_width = 120,
     plantuml = {
