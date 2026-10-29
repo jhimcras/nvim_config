@@ -4,7 +4,10 @@
 -- (5 inside the headless viewport); without it no provider is registered.
 -- Set BENCH_IMAGES=1 to add 5 image links inside the viewport (one a reference
 -- image), a fenced block every 50 lines and a definition at the end, so each
--- edit pays for the document index. BENCH_LINES=<n> changes the 3000-line size.
+-- edit pays for the document index. It also adds 2 HTML <img> and 2 wiki
+-- ![[path]] embeds in the viewport (R6-B syntaxes; plain text before R6-B).
+-- Set BENCH_NOISE=1 to make every 5th line HTML text with no image, which the
+-- `<img` prefilter must reject cheaply. BENCH_LINES=<n> changes the 3000-line size.
 vim.opt.rtp:prepend(vim.fn.getcwd())
 if vim.env.IMAGE_BENCH_BASELINE then vim.opt.rtp:prepend(vim.env.IMAGE_BENCH_BASELINE) end
 vim.g.is_testing = true
@@ -19,6 +22,9 @@ vim.bo[buf].filetype = 'markdown'
 local lines = {}
 local line_count = tonumber(vim.env.BENCH_LINES) or 3000
 for i = 1, line_count do lines[i] = 'plain markdown line ' .. i end
+if vim.env.BENCH_NOISE then
+  for i = 5, line_count, 5 do lines[i] = '<div class="x">text <b>bold</b> <image> ' .. i .. '</div> ![ not an image' end
+end
 local blocks = { 10, 30, 50, 70, 90, 400, 800, 1200, 1600, 2000 }
 if vim.env.BENCH_PROVIDER then
   for _, row in ipairs(blocks) do
@@ -33,6 +39,10 @@ if vim.env.BENCH_IMAGES then
   f:close()
   for _, row in ipairs({ 3, 12, 21, 30, 39 }) do lines[row + 1] = '![img](' .. png .. ')' end
   lines[49] = '![ref][pic]'
+  lines[7] = '<img src="' .. png .. '" width="100">'
+  lines[16] = 'text <IMG alt=x src=\'' .. png .. '\'> text'
+  lines[25] = '![[' .. png .. '|80]]'
+  lines[34] = '![[' .. png .. '#top]] end'
   for row = 100, line_count - 10, 50 do
     lines[row + 1] = '```lua'
     lines[row + 3] = '```'
