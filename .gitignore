@@ -11,3 +11,4 @@ result_*.txt
 repro_result.txt
 HANDOFF.md
 .issues
+nvim.log
