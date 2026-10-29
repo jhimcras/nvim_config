@@ -1,5 +1,14 @@
 # Module refactoring verification
 
+## Completion (2026-10-07)
+
+The user accepted completion of the refactoring scope. No further structural
+changes are planned. The full unit suite was rerun successfully (exit 0), and
+the dependency graph still reports 90 modules, 211 local edges, zero layer
+violations and zero cyclic groups. The user also reports ongoing use in a Windows
+GUI environment with no issues observed so far. This provides user-side manual
+usage confirmation; individual acceptance scenarios were not reported separately.
+
 ## Stage 0 baseline (2026-10-07)
 
 Environment: Linux, NVIM v0.12.4 (RelWithDebInfo), LuaJIT 2.1.1784580905.
@@ -545,11 +554,11 @@ rendering. Real installed Telescope first-use and Config/move prompt checks pass
 in stage 8. Headless Markdown/image benchmarks preserve deterministic counters;
 image/PlantUML geometry and reservation tests use simulated image backends.
 
-A neopp GUI/display is unavailable in this execution environment. Actual GUI
-image/PlantUML output, GUI key handling, GUI instance transfer, and the complete
-interactive session exit/save confirmation flow still need user-side manual
-acceptance. The final issue remains open for those checks rather than claiming
-all manual acceptance is complete. Windows-specific behavior was not run here.
+A neopp GUI/display is unavailable in this execution environment, and automated
+Windows checks were not run here. At completion, the user confirmed ongoing use
+in a Windows GUI environment with no issues observed so far. Individual checks
+for image/PlantUML output, GUI key handling, GUI instance transfer, and the complete
+interactive session exit/save confirmation flow were not reported separately.
 Temporary env/msbuild shims remain for the previously verified external .prjroot
 caller, and T01–T10 manual diagnostic scripts remain pending the user's choices.
 No unrelated InsertEnter plugin fix or external configuration migration is included.
