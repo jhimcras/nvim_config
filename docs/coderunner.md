@@ -3,7 +3,8 @@
 코드 실행·다이어그램 렌더링·내보내기를 위한 독립 Lua 모듈이다.
 현재 C0–C8(실행·렌더링·내보내기·공급 API)를 구현했다.
 `CodeRun`·`CodeRender`·`CodeExport`와 `diagrams`·`request_live`를 사용할 수 있다.
-기존 mdloom·rendermark 설정은 계속 사용한다.
+렌더 결과를 그리는 일은 rendermark가 맡으며 둘은 `nvim_config/markdown.lua` glue로만 연결된다
+([rendermark_image.md](rendermark_image.md)).
 
 루트 init.lua에서 초기화한다. 사용자 설정의 예시는 다음과 같다.
 
@@ -117,7 +118,9 @@ Windows는 미검증이다.
 `render_on_open=true`는 보이는 블록 중 현재 캐시가 없는 것을 전역 렌더러로만 렌더한다.
 기본값은 false이며, 자동 경로는 미로드·거부된 workspace 설정을 로드하거나 프롬프트를 띄우지 않는다.
 기준선을 수집할 수 없던 미신뢰 상태에서 설정을 로드한 경우 다음 저장은 현재 키를 새로 수집한다.
-렌더링 결과를 그리는 기능은 별도 rendermark 작업이다.
+렌더링 결과를 그리는 일은 rendermark의 몫이다([rendermark_image.md](rendermark_image.md)).
+`output='stdout'` 렌더러의 stdout은 UTF-8 정리 없이 원시 바이트로 받는다(`raw_stdout`): PNG 같은 바이너리를
+깨뜨리지 않기 위해서이며 러너의 stdout·stderr는 기존대로 정리한다.
 이미지는 `stdpath('cache')/coderunner/<루트 해시>/diagrams`에 저장한다.
 키는 코드·설정·포맷·치환 명령으로 계산하고 실행마다 다른 임시 경로는 고정 토큰으로 둔다.
 외부 참조 파일이나 도구 버전 변경은 자동 탐지하지 않으므로 force로 갱신한다.
@@ -221,8 +224,8 @@ Markdown 버퍼의 기본 키맵은 다음과 같다(leader 뒤 키).
 | ce / cE | CodeExport / CodeExportAll |
 
 전역 기본값 `render_on_open=false`와 달리 이 저장소 init.lua는 true로 설정한다.
-보이는 전역 PlantUML 블록 중 캐시가 없는 항목을 렌더한다. 기존 mdloom/rendermark의
-표시 흐름은 병행 기간에 유지한다.
+보이는 전역 PlantUML 블록 중 캐시가 없는 항목을 렌더한다. 렌더된 이미지는 rendermark가
+`diagrams`/`request_live` 공급 API로 받아 소스 자리에 그린다(PlantUML 실행은 rendermark가 아니라 coderunner가 한다).
 
 ## 워크스페이스 설정과 이전 예시
 

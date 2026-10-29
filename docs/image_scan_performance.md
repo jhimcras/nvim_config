@@ -1,5 +1,11 @@
 # PlantUML block scan comparison
 
+> 과거 측정 기록이다. 이 문서는 원래 `plantuml_scan_performance.md`였고 스크립트도
+> `benchmark_plantuml_scan.lua`였으나, 이미지 스캔 전반(Markdown·HTML·위키 이미지, 다이어그램 항목)을 재는
+> `benchmark_image_scan.lua`로 개명했다. 아래 "Before/After" 첫 표는 plantuml 블록을 rendermark가 직접
+> 스캔·실행하던 시절의 수치다. plantuml 실행은 coderunner로 옮겨졌고 rendermark는 공급자가 준 다이어그램
+> 항목만 그린다(After R3 이후). 현재 구조는 [rendermark_image.md](rendermark_image.md)를 본다.
+
 The block list and PlantUML height spans share a buffer/changedtick cache.
 A cache miss reads the buffer once and scans its fences; subsequent cursor,
 collection, and preview queries reuse it. Buffer cleanup clears the cache,
@@ -27,8 +33,8 @@ cost and do not represent real GUI rendering or PlantUML generation latency.
 Reproduce:
 
 ```sh
-nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
-IMAGE_BENCH_BASELINE=/path/to/original/snapshot nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
+nvim --headless -u NONE -l tests/manual/benchmark_image_scan.lua
+IMAGE_BENCH_BASELINE=/path/to/original/snapshot nvim --headless -u NONE -l tests/manual/benchmark_image_scan.lua
 ```
 
 The full test suite passed, including regression checks for shared reads,
@@ -69,7 +75,7 @@ set/mark/clear/redraw/del all 0, one-image-size-changed
 set 1000, mark 2000, clear 1000, redraw 1000, del 0.
 
 ```sh
-BENCH_PROVIDER=1 nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
+BENCH_PROVIDER=1 nvim --headless -u NONE -l tests/manual/benchmark_image_scan.lua
 ```
 
 After R5 (exported-image check, `diagram.hide_when_exported`), same workload,
@@ -116,7 +122,7 @@ identical to R0 (unchanged 0/0/0/0/0; changed set 1000, mark 2000, clear 1000,
 redraw 1000, del 0).
 
 ```sh
-BENCH_IMAGES=1 BENCH_LINES=8000 nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
+BENCH_IMAGES=1 BENCH_LINES=8000 nvim --headless -u NONE -l tests/manual/benchmark_image_scan.lua
 ```
 
 ## After R6-B: `<img` and wiki embeds in the line prefilter (2026-10-30)
@@ -157,6 +163,6 @@ one-image-size-changed 682.2 ms (675.5-710.5), call counts identical to R0
 del 0).
 
 ```sh
-BENCH_NOISE=1 nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
-BENCH_IMAGES=1 BENCH_LINES=8000 nvim --headless -u NONE -l tests/manual/benchmark_plantuml_scan.lua
+BENCH_NOISE=1 nvim --headless -u NONE -l tests/manual/benchmark_image_scan.lua
+BENCH_IMAGES=1 BENCH_LINES=8000 nvim --headless -u NONE -l tests/manual/benchmark_image_scan.lua
 ```

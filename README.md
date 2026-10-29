@@ -49,13 +49,15 @@ remove them once that configuration uses the new paths.
 | `lua/nvim_config/ansi_parser.lua` | ANSI SGR color codes → Neovim highlight groups |
 | `lua/nvim_config/json.lua` | jq-backed JSON pretty-print/minify (`:JsonPretty`, `:JsonOneline`) |
 | `lua/nvim_config/util/` | Buffer, text, keymap, highlight, job, cache and serialization helpers; init re-exports the public API |
-| `lua/nvim_config/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables (images allowed in cells), HTML subset (e.g. `<details>`), inline image and PlantUML previews (neopp GUI), link navigation/completion (`<C-]>`/`<C-}>`, creates missing link/wikilink targets), image file completion for `![`, Obsidian-style checkbox toggle (`<C-Space>`) |
+| `lua/nvim_config/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables (images allowed in cells), HTML subset (e.g. `<details>`), inline images (`![]()`, reference, HTML `<img>`, wiki `![[]]`) and diagram previews (neopp GUI, or text-box stub with `RENDERMARK_IMG_STUB=1`), Obsidian-style checkbox toggle (`<C-Space>`) — see [docs/rendermark_image.md](docs/rendermark_image.md) |
+| `lua/nvim_config/coderunner/` | Run code blocks, render diagram blocks (PlantUML, …) to cached images, export them next to the document — see [docs/coderunner.md](docs/coderunner.md) |
+| `lua/nvim_config/markdown.lua` | Glue between coderunner (renders) and rendermark (draws); neither requires the other |
 
 Markdown wrap orchestration, inline styles and table rendering live in
 `rendermark/wrap/`; `rendermark/table_state.lua` shares table placements with images.
-`rendermark/image/` separates synchronization, placement, preview, PlantUML,
-stub drawing, screen coordinates and layout. Markdown actions/rename and
-completion sources live in `rendermark/`, alongside the renderer.
+`rendermark/image/` separates synchronization, placement, preview, diagram items
+from a provider, stub drawing, screen coordinates and layout. Link navigation and
+completion come from the mdloom language server (`lsp/servers/markdown.lua`).
 Telescope configuration lives in `plugins/tele/init.lua`; lazy feature pickers
 live in `plugins/tele/pickers.lua`.
 

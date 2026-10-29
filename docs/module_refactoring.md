@@ -73,7 +73,7 @@ nvim --headless -i NONE -u NONE -l tests/manual/benchmark_launcher.lua
 nvim --headless -i NONE -u NONE --cmd 'set lines=50 columns=140' -l tests/manual/benchmark_markdown_cursor.lua
 nvim --headless -i NONE -u tests/minimal_init.lua -l tests/manual/benchmark_markdown_html.lua
 nvim --headless -i NONE -u NONE -l tests/manual/benchmark_image_reapply.lua
-nvim --headless -i NONE -u NONE -l tests/manual/benchmark_plantuml_scan.lua
+nvim --headless -i NONE -u NONE -l tests/manual/benchmark_image_scan.lua
 nvim --headless -i NONE -u NONE -l tests/manual/benchmark_grep_timer.lua
 python3 tests/manual/benchmark_statusline_shrink.py
 python3 tests/manual/benchmark_spinner.py
@@ -363,6 +363,8 @@ LSP leaves the global floating-preview handler unchanged. Explicit setup install
 one wrapper; repeated setup retains that wrapper. Diagnostic symbols and progress
 state aliases remain public, with one progress-state table. Markdown actions and
 rename helpers live in rendermark; completion sources under rendermark/complete.
+(Later removed: the markdown-oxide actions/rename/completion code was deleted in the
+rendermark R1 step; see docs/rendermark_plan.md.)
 
 Verification: full unit suite exits 0 (526 success lines), all 11 integrations
 pass, including actual FileInfo and statusline rendering. Float load/setup regression
