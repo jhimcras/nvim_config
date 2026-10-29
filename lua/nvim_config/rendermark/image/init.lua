@@ -7,6 +7,7 @@ local state = {
   item_cache = {},
   diagram_states = {},
   diagram_source = nil,
+  hide_when_exported = true,
   reservation_sig = '',
   resyncing = false,
   stub_source_rows = {},
@@ -329,6 +330,8 @@ end
 
 function M.setup(opts)
   state.preview_cfg = state.normalize_preview(preview_option(opts))
+  -- `diagram.hide_when_exported` (default true): an image link next to a block keeps its source.
+  state.hide_when_exported = not (opts and opts.diagram and opts.diagram.hide_when_exported == false)
   install_terminal_stub()
   if backend.img_available() then
     M._init()

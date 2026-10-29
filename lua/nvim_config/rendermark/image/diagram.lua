@@ -3,6 +3,12 @@
 -- the block under the cursor. Nothing here runs a renderer.
 local Module = {}
 
+local scan = require('nvim_config.rendermark.image.scan')
+
+-- Rows read below a block when looking for an exported image: one optional
+-- blank line plus at most this many paragraph lines.
+local EXPORT_PARAGRAPH_LINES = 30
+
 function Module.new(M, state)
   local api = {}
   local delete_image = state.backend.delete_image
@@ -36,8 +42,43 @@ function Module.new(M, state)
         end
       end
     end
-    item_cache[buf] = { tick = tick, items = items }
+    -- `exported`: end_row -> whether a link image follows the block (this tick only).
+    item_cache[buf] = { tick = tick, items = items, exported = {} }
     return items
+  end
+
+  -- Whether the paragraph after the block ending at `item.end_row` (zero or one
+  -- blank line in between) holds a local image link, i.e. the block was exported
+  -- next to its source. The paragraph ends at a blank line or a code fence, and
+  -- only those rows are read. The verdict is kept with the items of this
+  -- changedtick, so an edit (of the link, the gap or the block) re-decides it on
+  -- the next query.
+  function api.diagram_exported_below(buf, item)
+    M.diagram_items(buf)
+    local cached = item_cache[buf]
+    if not cached then return false end
+    local verdict = cached.exported[item.end_row]
+    if verdict ~= nil then return verdict end
+    verdict = false
+    local first = item.end_row + 1
+    local ok, lines = pcall(vim.api.nvim_buf_get_lines, buf, first, first + 1 + EXPORT_PARAGRAPH_LINES, false)
+    if ok then
+      local i = 1
+      if lines[i] and lines[i]:match('^%s*$') then i = i + 1 end
+      while lines[i] and not lines[i]:match('^%s*$')
+          and not lines[i]:match('^%s*```') and not lines[i]:match('^%s*~~~') do
+        if lines[i]:find('![', 1, true) then
+          for _, link in ipairs(scan.find_image_links(lines[i])) do
+            -- Remote links are never drawn, so they cannot stand in for the block.
+            if scan.resolve_image_path(buf, link[3]) then verdict = true; break end
+          end
+        end
+        if verdict then break end
+        i = i + 1
+      end
+    end
+    cached.exported[item.end_row] = verdict
+    return verdict
   end
 
   -- Height in rows of the diagram block containing `row` (nil outside blocks).
@@ -342,7 +383,9 @@ function Module.new(M, state)
           end
         end
       elseif drawable then
-        local size = M.read_image_size(item.path)
+        -- An exported image next to the block already shows the diagram: keep the source.
+        local hidden = state.hide_when_exported and M.diagram_exported_below(buf, item)
+        local size = not hidden and M.read_image_size(item.path)
         if size and size.width and size.height then
           local first = (vim.api.nvim_buf_get_lines(buf, item.start_row, item.start_row + 1, false) or {})[1] or ''
           result[#result + 1] = {

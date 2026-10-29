@@ -89,6 +89,8 @@ local function find_image_links(text)
   return links
 end
 
+M.find_image_links = find_image_links
+
 function M.scan_markdown_image_text(deps, buf, row0, text, result, opts)
   if type(text) ~= 'string' or text == '' then return end
   opts = opts or {}
