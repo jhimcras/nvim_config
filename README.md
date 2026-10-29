@@ -93,7 +93,7 @@ live in `plugins/tele/pickers.lua`.
 - `norcalli/nvim-colorizer.lua` — color preview
 
 **Misc**
-- `weirongxu/plantuml-previewer.vim` — PlantUML preview
+- `aklt/plantuml-syntax` — PlantUML syntax highlighting (loaded on the `plantuml` filetype; diagrams are rendered by coderunner)
 - `andythigpen/nvim-coverage` — code coverage overlay (Unix only)
 
 ## Testing

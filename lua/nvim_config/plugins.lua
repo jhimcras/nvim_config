@@ -41,7 +41,7 @@ function M.setup()
         }, config = require('nvim_config.plugins.misc').setup_fugitive },
         { 'tpope/vim-surround' },
         { 'stevearc/oil.nvim', config = require('nvim_config.plugins.oil').setup },
-        { 'weirongxu/plantuml-previewer.vim', cond = event({'FileType'}, {'plantuml'}), requires = {'tyru/open-browser.vim', 'aklt/plantuml-syntax'} },
+        { 'aklt/plantuml-syntax', cond = event({'FileType'}, {'plantuml'}) },
         -- { 'will133/vim-dirdiff' },
         { 'junegunn/gv.vim', cond = command('GV'), requires = 'tpope/vim-fugitive' },
         { 'wincent/loupe', branch = 'main', config = require('nvim_config.plugins.misc').setup_loupe },
