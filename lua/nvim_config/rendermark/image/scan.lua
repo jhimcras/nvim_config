@@ -1,5 +1,6 @@
 local M = {}
 local docindex = require('nvim_config.rendermark.image.docindex')
+local wikisearch = require('nvim_config.rendermark.image.wikisearch')
 
 -- Prefix test, not equality with ':p': on Windows ':p' normalizes slashes.
 function M.is_absolute_path(path, is_windows)
@@ -61,9 +62,10 @@ function M.resolve_image_path(buf, raw_path)
   return absolutize(buf, best)
 end
 
--- `path` is the resolved file. `extra.want_*` are the sizes (CSS px) the author
--- asked for in `width=`/`height=`.
-local function add_markdown_image_link(deps, row0, col0, end_col, raw, result, extra, path)
+-- `path` is the resolved file; `failure` ('ambiguous', 'not_found') short-cuts the
+-- file checks for a wiki name the project search could not settle. `extra.want_*`
+-- are the sizes (CSS px) the author asked for in `width=`/`height=`/`|300`.
+local function add_markdown_image_link(deps, row0, col0, end_col, raw, result, extra, path, failure)
   local item = {
     row = row0,
     col = col0,
@@ -76,8 +78,8 @@ local function add_markdown_image_link(deps, row0, col0, end_col, raw, result, e
   end
   item.source_span_height = math.max(1, tonumber(item.source_span_height) or 1)
 
-  if vim.fn.filereadable(path) ~= 1 then
-    item.error = 'not_found'
+  if failure or vim.fn.filereadable(path) ~= 1 then
+    item.error = failure or 'not_found'
     result[#result + 1] = item
     return
   end
@@ -94,6 +96,25 @@ local function add_markdown_image_link(deps, row0, col0, end_col, raw, result, e
     item.error = 'unsupported'
   end
   result[#result + 1] = item
+end
+
+-- File of a wiki image embed. A target with a folder part is relative to the
+-- document like any path. A bare name is looked for in the document folder,
+-- then by name under the project root (`wikisearch`, asynchronous and cached).
+-- Returns path, or path + a failure ('not_found', 'ambiguous'), or nil while the
+-- search is still running (nothing is drawn; the buffer refreshes when done) and
+-- nil, nil for a remote target.
+function M.resolve_wiki_image(buf, target)
+  if target:find('[/\\]') then
+    local path = M.resolve_image_path(buf, target)
+    return path
+  end
+  local path = absolutize(buf, target)
+  if vim.uv.fs_stat(path) then return path end
+  local found = wikisearch.lookup(buf, vim.fn.fnamemodify(path, ':h'), target)
+  if not found then return nil, 'pending' end
+  if found.path then return found.path end
+  return path, found.error
 end
 
 -- Byte ranges { first, last } (1-based, inclusive) of inline code spans.
@@ -157,8 +178,8 @@ local function inline_destination(text, pos)
   return raw, pos
 end
 
--- Whether a line may hold an image at all: `![` covers markdown and reference
--- images; `<img` is the HTML form. Plain finds first, because the
+-- Whether a line may hold an image at all: `![` covers markdown, reference and
+-- wiki (`![[`) images; `<img` is the HTML form. Plain finds first, because the
 -- pattern alone tries a match at every byte.
 local function has_image_candidate(text)
   return text:find('![', 1, true) ~= nil
@@ -166,6 +187,34 @@ local function has_image_candidate(text)
 end
 
 M.has_image_candidate = has_image_candidate
+
+-- `![[target|options]]` wiki embeds of images as { s, e, target, nil, meta }.
+-- The `#heading` part is dropped, `|300` and `|300x200` are the width (and
+-- height), any other `|text` is an alias. Non-image targets (`![[note]]`,
+-- `![[x.pdf]]`) are not images.
+local function wiki_links(text, links)
+  local at = 1
+  while true do
+    local s = text:find('![[', at, true)
+    if not s then break end
+    local close = text:find(']]', s + 3, true)
+    if not close then break end
+    local parts = vim.split(text:sub(s + 3, close - 1), '\\?|')
+    local target = vim.trim(parts[1]:match('^[^#]*')):gsub('^<(.*)>$', '%1')
+    if target ~= '' and not target:find('[%[%]]') and wikisearch.is_image_name(target) then
+      local meta = { wiki = true }
+      for i = 2, #parts do
+        local w, h = vim.trim(parts[i]):match('^(%d+)x?(%d*)$')
+        if w then
+          meta.want_width, meta.want_height = tonumber(w), tonumber(h)
+          break
+        end
+      end
+      links[#links + 1] = { s, close + 1, target, nil, meta }
+    end
+    at = close + 2
+  end
+end
 
 local ENTITIES = { amp = '&', lt = '<', gt = '>', quot = '"', apos = "'" }
 
@@ -251,21 +300,24 @@ local function html_links(text, links)
 end
 
 -- Image links outside inline code, as { s, e, raw, ref, meta } (1-based bytes;
--- `ref` is the label of a reference image; `meta` only for HTML ones:
--- { html = true, want_width?, want_height? }), in text order.
+-- `ref` is the label of a reference image; `meta` only for wiki and HTML ones:
+-- { wiki|html = true, want_width?, want_height? }), in text order.
 -- `![alt](path "title")` always counts. `![alt][ref]`, `![ref][]` and `![ref]`
 -- count only when `defs` (label -> destination, or a function returning it)
 -- defines the label.
 local function find_image_links(text, defs)
   local links = {}
   if not has_image_candidate(text) then return links end
+  if text:find('![[', 1, true) then wiki_links(text, links) end
   local search_at = 1
   while search_at <= #text do
     local s, bracket_end, alt = text:find('!%[([^%]]*)%]', search_at)
     if not s then break end
     local e, raw, ref
     local following = text:sub(bracket_end + 1, bracket_end + 1)
-    if following == '(' then
+    if text:sub(s + 2, s + 2) == '[' then
+      e = nil -- a `![[…]]` embed, handled by wiki_links
+    elseif following == '(' then
       local dest, close = inline_destination(text, bracket_end + 2)
       if dest then e, raw = close, dest end
     elseif defs then
@@ -322,7 +374,13 @@ function M.scan_markdown_image_text(deps, buf, row0, text, result, opts)
   local virtual = opts.virtual == true
   for _, link in ipairs(find_image_links(text, M.buf_defs(buf))) do
     local s, e, raw, meta = link[1], link[2], link[3], link[5]
-    local path = M.resolve_image_path(buf, raw)
+    local path, failure
+    if meta and meta.wiki then
+      path, failure = M.resolve_wiki_image(buf, raw)
+      if failure == 'pending' then path = nil end
+    else
+      path = M.resolve_image_path(buf, raw)
+    end
     if path then
       local prefix = text:sub(1, s - 1)
       local prefix_width = vim.fn.strdisplaywidth(prefix)
@@ -348,7 +406,8 @@ function M.scan_markdown_image_text(deps, buf, row0, text, result, opts)
       if meta then
         extra.want_width, extra.want_height = meta.want_width, meta.want_height
       end
-      add_markdown_image_link(deps, row0, col0, col0 + math.max(1, match_width), raw, result, extra, path)
+      add_markdown_image_link(deps, row0, col0, col0 + math.max(1, match_width), raw, result, extra, path,
+        failure ~= 'pending' and failure or nil)
     end
   end
 end

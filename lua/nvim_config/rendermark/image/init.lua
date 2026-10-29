@@ -3,6 +3,7 @@ local M = {}
 local util = require('nvim_config.util.cache')
 local image_scan = require('nvim_config.rendermark.image.scan')
 local image_size = require('nvim_config.rendermark.image.size')
+local wikisearch = require('nvim_config.rendermark.image.wikisearch')
 local state = {
   item_cache = {},
   diagram_states = {},
@@ -25,6 +26,13 @@ local cursor_block_sig
 local diagram_states = state.diagram_states
 local install_terminal_stub = backend.install_terminal_stub
 local notify_redraw = backend.notify_redraw
+
+-- A background search for wiki image names finished: draw the buffers that waited.
+wikisearch.on_ready = function(bufs)
+  for buf in pairs(bufs) do
+    if vim.api.nvim_buf_is_valid(buf) then M.refresh(buf) end
+  end
+end
 
 local function export(functions)
   for name, fn in pairs(functions) do M[name] = fn end
@@ -91,6 +99,9 @@ end
 function M.image_error_text(image)
   if image.error == 'not_found' then
     return ' [neopp: image not found: ' .. (image.raw_path or image.path or '') .. ']'
+  end
+  if image.error == 'ambiguous' then
+    return ' [neopp: image name is ambiguous: ' .. (image.raw_path or image.path or '') .. ']'
   end
   return ' [neopp: image unsupported: ' .. (image.raw_path or image.path or '') .. ']'
 end
@@ -367,6 +378,16 @@ function M._init()
     { 'BufEnter', 'BufReadPost', 'FileType' },
     { group = autocmd_group, callback = function() M.send_images() end })
 
+  -- The wiki name index watches no files: a visit or a save marks it stale.
+  vim.api.nvim_create_autocmd({ 'BufEnter', 'BufWritePost' }, {
+    group = autocmd_group,
+    callback = function(args)
+      if vim.bo[args.buf].filetype == 'markdown' then
+        wikisearch.invalidate(args.buf, args.event == 'BufEnter' and 'enter' or 'write')
+      end
+    end,
+  })
+
   -- Coalesce TextChanged bursts; SafeState renders once typing pauses.
   local debounce_ms = tonumber(vim.g.rendermark_image_debounce_ms) or 30
   local debounced_send = util.debounce(function() M.send_images() end, debounce_ms)
@@ -410,6 +431,7 @@ function M._init()
       M.clear_images_for_buf(args.buf)
       M.diagram_cleanup_buf(args.buf)
       require('nvim_config.rendermark.image.docindex').forget(args.buf)
+      wikisearch.forget_buf(args.buf)
     end })
 
   vim.api.nvim_create_autocmd('SafeState', { group = autocmd_group, callback = M.handle_safestate })
