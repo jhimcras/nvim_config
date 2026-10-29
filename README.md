@@ -49,7 +49,7 @@ remove them once that configuration uses the new paths.
 | `lua/nvim_config/ansi_parser.lua` | ANSI SGR color codes → Neovim highlight groups |
 | `lua/nvim_config/json.lua` | jq-backed JSON pretty-print/minify (`:JsonPretty`, `:JsonOneline`) |
 | `lua/nvim_config/util/` | Buffer, text, keymap, highlight, job, cache and serialization helpers; init re-exports the public API |
-| `lua/nvim_config/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables (images allowed in cells), HTML subset (e.g. `<details>`), inline images (`![]()`, reference, HTML `<img>`, wiki `![[]]`) and diagram previews (neopp GUI, or text-box stub with `RENDERMARK_IMG_STUB=1`), Obsidian-style checkbox toggle (`<C-Space>`) — see [docs/rendermark_image.md](docs/rendermark_image.md) |
+| `lua/nvim_config/rendermark/` | Markdown rendering: browser-like soft-wrap, boxed tables (images allowed in cells), HTML subset (e.g. `<details>`), inline images (`![]()`, reference, HTML `<img>`, wiki `![[]]`), an enlarged single-image tab (`:RendermarkImageOpen`, `<leader>i`) and diagram previews (neopp GUI, or text-box stub with `RENDERMARK_IMG_STUB=1`), Obsidian-style checkbox toggle (`<C-Space>`) — see [docs/rendermark_image.md](docs/rendermark_image.md) |
 | `lua/nvim_config/coderunner/` | Run code blocks, render diagram blocks (PlantUML, …) to cached images, export them next to the document — see [docs/coderunner.md](docs/coderunner.md) |
 | `lua/nvim_config/markdown.lua` | Glue between coderunner (renders) and rendermark (draws); neither requires the other |
 

@@ -123,3 +123,16 @@ HTML: <img src="rendermark_manual_assets/rm_red.png" width="120"> (width 120 이
 위키 이름형: ![[rm_green.png]] (문서 폴더에 없으면 프로젝트 루트 아래를 비동기로 찾는다. 찾는 동안은 소스 그대로이다.)
 
 [redref]: rendermark_manual_assets/rm_red.png
+
+## (j) 이미지 확대 보기: `:RendermarkImageOpen` (`<leader>i`)
+
+커서를 아래 줄 위에 두고 `:RendermarkImageOpen` (또는 `<leader>i`) 을 실행하면 새 탭이 열리고 이미지가 창에 꽉 차게 보인다.
+한 줄에 여러 개이면 커서가 놓인 이미지, 사이에 있으면 가까운 이미지가 열린다 (`q` 또는 `<Esc>` 로 탭을 닫는다).
+
+세 개: ![r](rendermark_manual_assets/rm_red.png) ![b](rendermark_manual_assets/rm_blue.png) ![g](rendermark_manual_assets/rm_green.png)
+
+참조형: ![ref alt][redref] / HTML: <img src="rendermark_manual_assets/rm_blue.png" width="60"> / 위키: ![[rendermark_manual_assets/rm_green.png|60]]
+
+오류 알림 확인: ![missing](rendermark_manual_assets/rm_missing.png) (이미지 없음), ![svg](rendermark_manual_assets/rm_bad.svg) (미지원), 이 줄처럼 이미지가 없는 줄 (`no image under the cursor`).
+
+다이어그램은 (c) 의 렌더된 plantuml 블록 안에 커서를 두고 실행한다.

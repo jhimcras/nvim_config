@@ -60,6 +60,32 @@ glue는 `coderunner.diagrams`/`coderunner.request_live`를 공급자로 등록�
 
 명령: `:RendermarkPreviewShow`, `:RendermarkPreviewHide`, `:RendermarkPreviewToggle`.
 
+## 이미지 확대 보기 (`:RendermarkImageOpen`)
+
+본문 이미지는 줄 높이로 그려지므로 작게 보일 수 있다. `:RendermarkImageOpen`(Markdown 버퍼의 `<leader>i`)은
+커서가 있는 이미지를 **새 탭**에 창이 꽉 차도록(종횡비 유지, 창에 맞는 최대 크기, 가운데 정렬) 보여 준다.
+`q` 또는 `<Esc>` 로 탭을 닫으면 이미지도 지워지고 원래 탭으로 돌아온다.
+
+| 커서 위치 | 여는 이미지 |
+| --- | --- |
+| 다이어그램 블록 안(활성 블록 포함) | 그 항목이 `ready` 이면 렌더된 이미지(공급자 항목의 `path`). `pending`/`failed`/`none`과 SVG는 알림 |
+| 이미지 링크가 있는 줄 | 표준·참조형·HTML `<img>`·위키 모두. 한 줄에 여러 개이면 커서 열을 포함한 링크, 없으면 가장 가까운 링크 |
+| 그 밖 | `rendermark: no image under the cursor` 알림 |
+
+없는 파일(`not_found`), 크기를 못 읽는 형식(`unsupported`), 모호한 위키 이름(`ambiguous`), 원격 이미지, 이미지 백엔드
+(`vim.ui.img`) 없음, `vim.g.neopp_images_enabled = false` 는 탭을 열지 않고 `vim.notify` 로 알린다.
+코드 펜스 안의 이미지 문법은 본문과 같이 이미지로 보지 않는다.
+
+- 크기: 창 텍스트 영역(셀 수 x `neopp_cell_width_px`/`neopp_cell_height_px`)을 픽셀로 바꾸고 원본 크기(`size.lua`)와
+  비교해 `min(창 너비/원본 너비, 창 높이/원본 높이)` 배율로 맞춘다. 창보다 작은 이미지도 꽉 차게 **확대**한다
+  (한도 없음: 요구가 "창에 꽉 차게"이고, 해상도는 GUI 가 다시 샘플링한다). 창 크기가 바뀌면
+  (`VimResized`/`WinResized`, 탭·창 진입, `NeoppMetrics`) 다시 계산하고 배치가 같으면 다시 보내지 않는다.
+- 탭 버퍼는 `nofile`/읽기 전용 스크래치(`rendermark_zoom`)이고 줄 번호·sign·fold 열·줄 바꿈을 끈다. 다른 탭으로 가면
+  이미지를 내리고(`vim.ui.img.del`) 돌아오면 다시 올린다. 탭·버퍼가 닫히면 이미지 id를 지운다.
+- 본문 그리기와 분리돼 있다(`image/zoom.lua`): 문서에 extmark·공간 예약을 만들지 않고 `send_images`/payload 경로를
+  지나지 않으며, `vim.ui.img.set/del` 을 자기 id(`rendermark:zoom:<버퍼>`)로 직접 부른다. `RENDERMARK_IMG_STUB=1`
+  이면 같은 사각형에 텍스트 박스를 그린다.
+
 ## 지원하는 이미지 문법
 
 | 문법 | 비고 |
