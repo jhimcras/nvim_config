@@ -116,10 +116,34 @@ vim.api.nvim_create_autocmd('User', {
 ### R0 — 기준선
 
 - [ ] 작업 트리 미커밋 변경(2절 표)을 정리한다: 이 작업과 무관한 항목(`.gitignore`, `docs/module_refactoring.md`, `issues/closed/*`)은 별도 커밋으로 분리하거나 사용자 판단에 맡긴다. 임시 우회 변경(`images = false` 관련)은 R1에서 되돌리므로 커밋하지 않는다
-- [ ] 기준 테스트: `bash run_tests.sh` 결과와 `tests/spec/rendermark` 통과 수 기록
-- [ ] 기준 성능: `nvim --headless -u NONE -l tests/manual/benchmark_image_reapply.lua` 결과 기록(1,000회 누적 호출 수와 중앙값)
+  - 점검만 수행(2026-10-30): 2절 표와 일치함(`git status` 기준 변경 14개 + 미추적 `nvim.log`). 무관 항목은 손대지 않음. 분리 커밋은 사용자 판단 대기라 체크하지 않음. `nvim.log`는 2절 표에 없는 미추적 파일(`.gitignore` 대상 여부 확인 필요)
+- [x] 기준 테스트: `bash run_tests.sh` 결과와 `tests/spec/rendermark` 통과 수 기록
+  - 전체: 69개 스펙 파일, 통과 696 / 실패 0 / 오류 0 (coderunner_plan C9 기록 697과 1 차이). `tests/spec/rendermark`: 13개 파일, 통과 259 / 실패 0 / 오류 0
+- [x] 기준 성능: `nvim --headless -u NONE -l tests/manual/benchmark_image_reapply.lua` 결과 기록(1,000회 누적 호출 수와 중앙값)
+  - 5회 실행 중앙값: 변경 없음 680.0 ms (671.98~696.66), 이미지 하나 너비 변경 690.8 ms (681.36~705.88). 1,000회 누적 호출: 변경 없음 set/mark/clear/redraw/del 전부 0; 이미지 하나 변경 set 1000, mark 2000, clear 1000, redraw 1000, del 0. `docs/image_reapply_performance.md`의 수정 후 수치(683.9/700.2 ms, 0 / 1000·2000·1000·1000)와 일치
+  - 벤치는 `vim.ui.img`·`rpcnotify`·`collect_markdown_images`를 스텁으로 고정한 Lua+API 비용 측정이라 pty/드레인 없이도 위 문서와 같은 값이 나옴(실제 GUI 비용 아님). 주의: 스크립트가 `img.collect_plantuml_images`를 스텁하므로 R3에서 `collect_diagram_images`로 개명하면 벤치 스크립트도 같이 고쳐야 함
 - [ ] 기존 동작 캡처(수동): plantuml 블록이 있는 문서를 열어 (i) 비활성 블록이 이미지로 대체되는지 (ii) 커서 진입 시 미리보기 split이 뜨는지 (iii) `RENDERMARK_IMG_STUB=1`로 텍스트 박스가 보이는지 스크린샷/메모 — 회귀 비교용
-- [ ] mdloom 플러그인의 그리기 기능 중 사용자가 의존하던 것의 목록(5절 R6 체크리스트의 입력): 소스 숨김 후 커서 올리면 노출, 한 줄 여러 이미지 나란히, 참조형 이미지, 표 안 이미지, 이미지 크기 읽기(PNG/JPEG/GIF/WebP), neopp 우선, `MDLOOM_IMG_STUB`
+  - 사용자 수동 확인 필요: 화면 캡처·neopp GUI는 헤드리스에서 불가해 건너뜀
+- [x] mdloom 플러그인의 그리기 기능 중 사용자가 의존하던 것의 목록(5절 R6 체크리스트의 입력): 소스 숨김 후 커서 올리면 노출, 한 줄 여러 이미지 나란히, 참조형 이미지, 표 안 이미지, 이미지 크기 읽기(PNG/JPEG/GIF/WebP), neopp 우선, `MDLOOM_IMG_STUB`
+  - 출처: mdloom 태그 `before-lsp-scope`의 `editors/nvim/lua/mdloom/{image,images,image_size}.lua`와 `tests/{images,images_unit}.lua`(스펙 제목 14개). 확인된 목록(R6 표 외 추가분에 `*`):
+    1. 이미지 자리 예약(virt_lines)과 소스 불변(버퍼 내용·modified 안 바뀜)
+    2. 이미지·다이어그램 소스 숨김, 커서가 올라오면 노출 (f660eb8)
+    3. 한 줄 여러 이미지 나란히, 폭 초과 시 줄바꿈 (f8fca98)
+    4. 참조형 이미지 `![a][r]` 사용 위치마다 표시, 정의 conceal (be74a94)
+    5. 위키 이미지 `![[x.png]]`, HTML `<img src>` (documentLink 해석 경유)
+    6. `~/` 경로 확장 (issue image_tilde_path), 다운로드 링크(비이미지)는 제외*
+    7. 이미지 크기 읽기 PNG/JPEG/GIF/WebP, 잘린 헤더·미지원 형식(SVG)은 무시 (`image_size.lua`)
+    8. neopp 우선: 늦게 붙는 neopp provider에 경로·원본 비율·창 클리핑(`clip_*`, `dest_y_px`) 전달, 기본 `vim.ui.img`는 PNG만(그 외 형식은 provider 실패로 간주)
+    9. 스크롤로 일부만 보일 때 클리핑 유지, 창 분할 시 창별 독립 placement, 창 닫기/스크롤 시 stale 제거*
+    10. 편집·버퍼 삭제·비활성화 시 소유한 이미지 id와 예약만 정리*
+    11. provider 오류 시 빈 예약 제거, 같은 파일 리비전으로 무한 재시도하지 않음*
+    12. provider 미구비/불완전해도 SafeState에서 오류 없음*
+    13. 오래된 응답 거부(서버 응답 경합)* — 서버 의존이라 rendermark에는 해당 없음
+    14. 이미지가 있는 창의 `conceallevel < 1`이면 2로 올림*
+    15. `MDLOOM_IMG_STUB=1`: provider 없이 이미지·다이어그램 텍스트 박스(`+---+`, `img:`) 표시, 해제 시 정상 렌더 복원
+    16. 다이어그램: 렌더 캐시 hover 기반 인라인 표시, 렌더 알림이 해당 클라이언트·문서만 갱신 (coderunner/R3로 이관, 그리기 부분만 rendermark 대상)
+    17. 확대 미리보기 `MdloomOpenImage` (`image.lua` open/close)
+  - R6 표에서 아직 없는 행: 9(스크롤 중 일부만 보임), 11(재시도 억제), 12, 14는 rendermark에 이미 같은 동작이 있는지 R6에서 대조해야 함
 - 완료 조건: 기준 수치가 이 문서 8절에 기록됨.
 
 ### R1 — 임시 우회 제거와 연결 정리
@@ -274,8 +298,8 @@ mdloom 플러그인이 제공하던 표시 기능과 rendermark의 현재 지원
 
 | 단계 | 상태 | 날짜 | 비고 |
 | --- | --- | --- | --- |
-| 선행: coderunner, mdloom 작업 | 대기 | | |
-| R0 기준선 | 대기 | | 기준 수치: |
+| 선행: coderunner, mdloom 작업 | 부분 완료 | 2026-10-30 | coderunner: C0~C8 완료, C9는 Linux 자동 검증만 완료(Windows/GUI/mdloom 실환경·수동 시나리오 미검증, 이슈 유지). mdloom(`lsp-scope` 브랜치, master 미병합): L0~L5 완료, L6 부분 완료(구현 후 문서 대조 필요), L7 검증·L8 마무리 대기 |
+| R0 기준선 | 부분 완료 | 2026-10-30 | 기준 수치: 전체 스펙 696 통과/0 실패/0 오류(69 파일), rendermark 259 통과/0/0(13 파일). 벤치(5회 중앙값, 1,000회): 변경 없음 680.0 ms·호출 전부 0, 이미지 하나 변경 690.8 ms·set 1000/mark 2000/clear 1000/redraw 1000. 미완: 수동 동작 캡처(사용자 확인 필요), 무관 변경 분리 커밋(사용자 판단) |
 | R1 임시 우회 제거 | 대기 | | |
 | R2 스캔 범위 결정 | 대기 | | |
 | R3 공급자 API·diagram.lua | 대기 | | |
