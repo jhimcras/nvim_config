@@ -44,6 +44,8 @@ export(require('nvim_config.rendermark.image.layout').new(M, state))
 export(require('nvim_config.rendermark.image.preview').new(M, state))
 export(require('nvim_config.rendermark.image.diagram').new(M, state))
 export(require('nvim_config.rendermark.image.place').new(M, state))
+-- Enlarged single-image tab: separate from the body pipeline above.
+export(require('nvim_config.rendermark.image.zoom').new(M, state))
 
 function M.is_active()
   return backend.is_active()
@@ -344,6 +346,7 @@ function M.setup(opts)
   -- `diagram.hide_when_exported` (default true): an image link next to a block keeps its source.
   state.hide_when_exported = not (opts and opts.diagram and opts.diagram.hide_when_exported == false)
   install_terminal_stub()
+  M.zoom_setup()
   if backend.img_available() then
     M._init()
   else
