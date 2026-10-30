@@ -8,6 +8,7 @@ local fs = { read = cache.read, stat = uv.fs_lstat, realpath = uv.fs_realpath,
     list = function(path) return vim.fn.readdir(path) end }
 local serial = 0
 local function inside(path, root)
+    path, root = vim.fs.normalize(path), vim.fs.normalize(root)
     return path == root or path:sub(1, #root + 1) == root .. '/'
 end
 local function document(block)

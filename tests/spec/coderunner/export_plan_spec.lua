@@ -87,6 +87,26 @@ describe('coderunner export planning', function()
         io.stat = function(p) if p ~= '/w/assets' then return stat(p) end end
         p, err = plan('```dot\nx\n```', { fs = io }); assert.is_nil(p); assert.matches('does not exist', err)
     end)
+    it('normalizes real paths without accepting sibling directory escapes', function()
+        local io = fake()
+        local realpath = io.realpath
+        local function native(path)
+            if vim.fn.has('win32') == 1 then return (path:gsub('/', '\\')) end
+            return path .. '/.'
+        end
+        io.realpath = function(path)
+            local real = realpath(path)
+            return real and native(real)
+        end
+        assert(plan('```dot\nx\n```', { fs = io }))
+        io.realpath = function(path)
+            if path == '/w/assets' then return native('/w-sibling/assets') end
+            local real = realpath(path)
+            return real and native(real)
+        end
+        local p, err = plan('```dot\nx\n```', { fs = io })
+        assert.is_nil(p); assert.matches('escapes', err)
+    end)
     it('limits basename wiki lookup to attachments and rejects ambiguity', function()
         local io = fake({ ['/w/assets/picture.png'] = 'old', ['/w/picture.png'] = 'elsewhere' })
         local p = assert(plan('```dot\nx\n```\n![[picture]]', { fs = io }))

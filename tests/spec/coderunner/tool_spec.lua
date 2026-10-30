@@ -16,6 +16,17 @@ describe('coderunner fake tool', function()
         assert.same({ '<svg/>' }, vim.fn.readfile(root .. '/image'))
     end)
 
+    it('preserves binary bytes through files and stdin', function()
+        local bytes = '\137PNG\r\n\26\n\0\255' .. string.rep('x', 8192)
+        local input = H.write(root .. '/binary-input', bytes)
+        for _, argv in ipairs({ H.tool('echo', input), H.tool('stdin') }) do
+            local result = vim.system(argv, { stdin = bytes }):wait(5000)
+            assert.equals(0, result.code)
+            assert.equals(bytes, result.stdout)
+            assert.equals('', result.stderr)
+        end
+    end)
+
     it('reports literal argv, inherited env, cwd and stdin', function()
         local result = vim.system(H.tool('dump', '; rm -rf', '$(x)', ''), {
             cwd = root, env = { CODERUNNER_TEST_VAR = 'ok' }, stdin = '한글\n',
