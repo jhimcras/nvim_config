@@ -2,9 +2,7 @@
 
 `lua/nvim_config/rendermark/image/`가 Markdown 버퍼의 이미지와 다이어그램을 모두 그린다.
 그리기는 extmark와 `vim.ui.img`(neopp GUI)뿐이라 버퍼 내용은 바뀌지 않는다.
-설계 결정과 단계별 기록은 [rendermark_plan.md](rendermark_plan.md), 성능 측정은
-[image_reapply_performance.md](image_reapply_performance.md)와
-[image_scan_performance.md](image_scan_performance.md)(과거 측정 기록)에 있다.
+설계 결정, 검증 현황과 성능 측정은 [작업 문서](../.refactoring_docs/rendermark.md)에 있다.
 
 ## coderunner와의 경계
 

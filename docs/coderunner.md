@@ -10,7 +10,7 @@
 
 ```lua
 require('nvim_config.coderunner').setup {
-    diagnostics = false, -- mdloom과 공존하는 동안 중복 진단 방지
+    diagnostics = true, -- LSP 전용 mdloom과 연결; 실행·렌더 진단은 coderunner 담당
     runners = {
         python = { match = { 'python', 'py' }, ext = 'py', cmd = { 'python3', '{file}' } },
     },
@@ -77,8 +77,7 @@ UI는 누적 바이트를 `exec.clean_utf8`로 변환해 표시할 수 있다.
 완료 결과의 `tmpdir`은 `command.release(result)` 전까지 남는다. 러너 서비스는 아래 보관 수명 정책으로 이를 관리한다.
 `command.prepare(entry, context)`는 파일·프로세스를 만들지 않고 치환된 steps/env/cwd를 반환한다.
 
-세부 이식 목록과 미결 동작은 [시나리오 문서](coderunner_scenarios.md),
-전체 단계는 [계획서](coderunner_plan.md)를 따른다.
+구현 계약, 검증 현황과 남은 작업은 [작업 문서](../.refactoring_docs/coderunner.md)를 따른다.
 
 ## 코드 실행과 결과
 
@@ -290,7 +289,7 @@ rm -rf "$smoke_runtime"
 ```
 
 정상 `plantuml` 명령이 있는 환경에서는 두 `CODERUNNER_SMOKE_*` 환경변수를 생략한다.
-5,000줄/200블록 파싱·저장 검사 수치와 재현은 [성능 문서](coderunner_performance.md)에 있다.
+5,000줄/200블록 파싱·저장 검사 수치와 재현은 [작업 문서](../.refactoring_docs/coderunner.md)에 있다.
 반복 조회와 무변경 저장은 캐시를 사용한다. 초기·변경 파싱 비용은 남는다.
 
 테스트 실행기는 고의 실패 시 파일/디렉터리 모두 종료 코드 1을 반환함을 확인했다.

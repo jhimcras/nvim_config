@@ -1,6 +1,6 @@
 # rendermark 수동 확인 샘플 (R8)
 
-이 문서는 `docs/rendermark_plan.md` 의 R8 절 체크리스트를 따라 열어 보는 샘플이다.
+이 문서는 [.refactoring_docs/rendermark.md](../../.refactoring_docs/rendermark.md)의 수동 확인 체크리스트를 따라 열어 보는 샘플이다.
 각 절 제목의 (a)~(h) 는 체크리스트 항목과 같다. 이미지는 `rendermark_manual_assets/` 의 작은 PNG 를 쓴다
 (빨강 240x120, 파랑 120x120, 초록 160x80, 그리고 (k) 용 손상 PNG `rm_corrupt.png`). 저장해서 문서를 바꿨다면 `git restore tests/manual/rendermark_manual.md`.
 

@@ -112,4 +112,4 @@ Specs live in `tests/spec/`, grouped by module (for example `lsp_spec.lua`,
 Run `bash run_integration_tests.sh` for real-init terminal integration tests,
 and `python3 scripts/check_require_graph.py` to check local dependency layers
 and cycles. Refactoring validation and benchmark results are recorded in
-[docs/module_refactoring.md](docs/module_refactoring.md).
+[.refactoring_docs/README.md](.refactoring_docs/README.md).

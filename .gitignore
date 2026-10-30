@@ -1,6 +1,7 @@
 fonts/
 ginit.vim
 .*
+!.refactoring_docs/
 bundle
 .vim
 plugged

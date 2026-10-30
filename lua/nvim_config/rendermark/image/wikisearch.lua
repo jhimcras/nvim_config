@@ -13,7 +13,7 @@ local M = {}
 
 local uv = vim.uv
 
--- Observed note trees (docs/rendermark_plan.md R2): 251 to 1075 files and 26 to
+-- Observed note trees (.refactoring_docs/rendermark.md): 251 to 1075 files and 26 to
 -- 291 directories. 20000 entries is about 20 times the largest of them and
 -- still a few tens of milliseconds of worker-thread readdir; depth 8 is
 -- generous for a note tree and stops runaway nesting.
