@@ -27,11 +27,11 @@
 - `init.lua`에서 coderunner 진단을 활성화하고 미리 지정한 `vim.g.mdloom_dir`를 보존한다. 전역 mdloom 설정의 옛 runners/renderers만 제거하고 `[links] scope="filesystem"`은 유지했다.
 - TUI 정리 시 Neovim 캐시 쓰기와 임시 폴더 삭제가 충돌한 `ENOTEMPTY`를 재현했다. `tests/integration/tmux_case.py`에서 Neovim 종료를 기다리도록 수정한 뒤 전체 통합 검사가 통과했다.
 - 실제 Python·PlantUML, TUI stub, neopp 실이미지·키 입력·신뢰 UI를 확인했다. 도구 환경과 손상 PNG의 한계는 각 작업 문서에 남긴다. 테스트 전용 데몬은 정리했다.
-- Windows는 사용자가 직접 수행한다. 별도 진행 파일 없이 이 세션에서 W1~W8을 순서대로 진행하며, 명령·통과 기준은 mdloom [현행 Windows 절차](../../markdown_lsp/doc/manual-test.md#현행-windows-검증-순서-w1w8)에 둔다. Windows·MSRV 1.88·Windows CI 결과는 아직 없다. 전체 작업은 미완료다.
+- Windows는 사용자가 직접 수행한다. 별도 진행 파일 없이 이 세션에서 W1~W8을 순서대로 진행하며, 명령·통과 기준은 mdloom [현행 Windows 절차](../../markdown_lsp/doc/manual-test.md#현행-windows-검증-순서-w1w8)에 둔다. W1·W2는 통과했고 W3~W8, MSRV 1.88, Windows CI 결과는 아직 없다. 전체 작업은 미완료다.
 
 ### Windows 진행 (2026-10-30)
 
-- W1 통과(재동기화·MSVC·vendor/lock·symlink). W2 재실행: build·fmt·clippy 종료 0, workspace 442개·필수 Neovim 5개 통과, `where mdloom` 확인. `mdloom --help` 종료 2는 mdloom `a6eafdf`로 수정했으며 Windows 재확인 대기. W3~W8, MSRV 1.88, Windows CI는 미실행·미확인. 상세는 mdloom [Windows 기록](../../markdown_lsp/doc/windows-test-log.md#w1w2-결과-2026-10-30).
+- W1·W2 통과. W2 최종 재실행(mdloom `a6eafdf` 포함): build·fmt·clippy 종료 0, workspace 443개·필수 Neovim 5개 통과, `--help`/`-h` 종료 0. W3~W8, MSRV 1.88, Windows CI는 미실행·미확인. 상세는 mdloom [Windows 기록](../../markdown_lsp/doc/windows-test-log.md#w1w2-결과-2026-10-30).
 
 ### Windows W1 소스 불일치 보고 (해소됨)
 
