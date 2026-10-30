@@ -29,7 +29,11 @@
 - 실제 Python·PlantUML, TUI stub, neopp 실이미지·키 입력·신뢰 UI를 확인했다. 도구 환경과 손상 PNG의 한계는 각 작업 문서에 남긴다. 테스트 전용 데몬은 정리했다.
 - Windows는 사용자가 직접 수행한다. 별도 진행 파일 없이 이 세션에서 W1~W8을 순서대로 진행하며, 명령·통과 기준은 mdloom [현행 Windows 절차](../../markdown_lsp/doc/manual-test.md#현행-windows-검증-순서-w1w8)에 둔다. Windows·MSRV 1.88·Windows CI 결과는 아직 없다. 전체 작업은 미완료다.
 
-### Windows W1 소스 불일치 보고
+### Windows 진행 (2026-10-30)
+
+- W1 통과(재동기화·MSVC·vendor/lock·symlink). W2 재실행: build·fmt·clippy 종료 0, workspace 442개·필수 Neovim 5개 통과, `where mdloom` 확인. `mdloom --help` 종료 2는 mdloom `a6eafdf`로 수정했으며 Windows 재확인 대기. W3~W8, MSRV 1.88, Windows CI는 미실행·미확인. 상세는 mdloom [Windows 기록](../../markdown_lsp/doc/windows-test-log.md#w1w2-결과-2026-10-30).
+
+### Windows W1 소스 불일치 보고 (해소됨)
 
 - 사용자 보고: Windows `mdloom_integration` / `8348dd6`에는 coderunner가 있지만 새 통합 smoke, `diagnostics=true`, 외부 `mdloom_dir` 보존, tmux 종료 대기가 빠져 W1 준비가 완료되지 않았다. W2는 보류한다. 이는 제품 테스트 실패가 아니라 검증할 소스의 불일치다.
 - Linux도 현재 같은 브랜치·HEAD이며 위 변경은 미커밋/미추적 상태에 있다. 브랜치 체크아웃만으로 전달되지 않으므로 `init.lua`, `tests/integration/tmux_case.py`, `tests/manual/mdloom_integration_smoke.lua` 세 파일을 작업 트리에서 복사하고 SHA256을 대조한다. 기대 해시와 재확인 방법은 mdloom [Windows 기록](../../markdown_lsp/doc/windows-test-log.md#w1-재확인-소스-불일치)에 둔다.
