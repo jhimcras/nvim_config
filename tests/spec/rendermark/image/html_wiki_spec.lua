@@ -101,7 +101,7 @@ describe('find_image_links: wiki embeds', function()
 end)
 
 describe('HTML and wiki images in a document', function()
-  local dir, buf, old_on_ready, old_limits, old_home
+  local dir, buf, old_on_ready, old_limits, old_home, old_homedir
   local image = require('nvim_config.rendermark.image')
 
   local function open(lines)
@@ -125,6 +125,7 @@ describe('HTML and wiki images in a document', function()
     wikisearch.reset()
     old_on_ready, old_limits = wikisearch.on_ready, vim.deepcopy(wikisearch.limits)
     old_home = vim.uv.os_getenv('HOME')
+    old_homedir = vim.uv.os_homedir
   end)
   after_each(function()
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
@@ -132,6 +133,7 @@ describe('HTML and wiki images in a document', function()
     wikisearch.min_age_ms = 2000
     wikisearch.reset()
     vim.uv.os_setenv('HOME', old_home)
+    vim.uv.os_homedir = old_homedir
     vim.fn.delete(dir, 'rf')
   end)
 
@@ -157,6 +159,7 @@ describe('HTML and wiki images in a document', function()
 
     it('expands ~ and reports a missing file as not_found', function()
       vim.uv.os_setenv('HOME', dir)
+      vim.uv.os_homedir = function() return dir end -- Windows ignores HOME here
       open({ '<img src="~/docs/pic.png">', '<img src="gone.png">' })
       local found = collect()
       assert.equals(dir .. '/docs/pic.png', found[1].path)
@@ -200,15 +203,16 @@ describe('HTML and wiki images in a document', function()
       open({ '![[sub/in.png]] ![[./pic.png]] ![[../up.png]] ![[sub/none.png]]' })
       local found = collect()
       assert.equals(4, #found)
-      assert.equals(dir .. '/docs/sub/in.png', found[1].path)
-      assert.equals(dir .. '/docs/pic.png', found[2].path)
-      assert.equals(dir .. '/up.png', found[3].path)
+      assert.equals(dir .. '/docs/sub/in.png', vim.fs.normalize(found[1].path))
+      assert.equals(dir .. '/docs/pic.png', vim.fs.normalize(found[2].path))
+      assert.equals(dir .. '/up.png', vim.fs.normalize(found[3].path))
       assert.equals('not_found', found[4].error)
       assert.equals(0, wikisearch.stats.started)
     end)
 
     it('takes |width and drops #heading, and expands ~', function()
       vim.uv.os_setenv('HOME', dir)
+      vim.uv.os_homedir = function() return dir end -- Windows ignores HOME here
       open({ '![[pic.png|100]] ![[pic.png#top]] ![[~/docs/pic.png|x|50x30]]' })
       local found = collect()
       assert.equals(3, #found)
@@ -320,7 +324,7 @@ describe('HTML and wiki images in a document', function()
     end)
 
     it('searches the document folder tree when there is no project root', function()
-      local bare = vim.fn.tempname()
+      local bare = vim.fs.normalize(vim.fn.tempname())
       write(bare .. '/n/sub/shot.png')
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       buf = vim.api.nvim_create_buf(false, true)

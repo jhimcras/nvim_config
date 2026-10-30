@@ -59,7 +59,8 @@ describe('launcher', function()
         
         -- Mock AsyncProcess to avoid actual process creation
         local original_async = require('nvim_config.util.job').AsyncProcess
-        require('nvim_config.util.job').AsyncProcess = function() return 123, function() end, function() return "running" end, {} end
+        require('nvim_config.util.job').AsyncProcess = function() return 123, function() end, function() return "running" end,
+            { is_closing = function() return false end, kill = function() end } end
         
         launcher.Launch('ls', {}, '.', nil, nil, nil, 'use', nil, nil, 'test')
         
@@ -416,7 +417,7 @@ describe('launcher.Jump filename resolution', function()
 
         launcher.Jump()
 
-        assert.are.equal(vim.fn.fnamemodify(target, ':p'), vim.api.nvim_buf_get_name(0))
+        assert.are.equal(vim.fs.normalize(vim.fn.fnamemodify(target, ':p')), vim.fs.normalize(vim.api.nvim_buf_get_name(0)))
         vim.fn.delete(root, 'rf')
     end)
 
@@ -435,7 +436,7 @@ describe('launcher.Jump filename resolution', function()
 
         launcher.Jump()
 
-        assert.are.equal(vim.fn.fnamemodify(target, ':p'), vim.api.nvim_buf_get_name(0))
+        assert.are.equal(vim.fs.normalize(vim.fn.fnamemodify(target, ':p')), vim.fs.normalize(vim.api.nvim_buf_get_name(0)))
         vim.fn.delete(root, 'rf')
     end)
 
@@ -559,7 +560,7 @@ describe('launcher.Jump filename resolution', function()
         launcher.Jump()
 
         assert.are.equal(launcher_buf, vim.api.nvim_win_get_buf(launcher_win))
-        assert.are.equal(vim.fn.fnamemodify(target, ':p'), vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(other_win)))
+        assert.are.equal(vim.fs.normalize(vim.fn.fnamemodify(target, ':p')), vim.fs.normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(other_win))))
 
         vim.fn.delete(root, 'rf')
     end)

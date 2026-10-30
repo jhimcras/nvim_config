@@ -6,7 +6,6 @@ local api = vim.api
 local pr = require('nvim_config.prjroot')
 local util_buffer = require('nvim_config.util.buffer')
 local util_job = require('nvim_config.util.job')
-local env = require('nvim_config.env')
 local guard = require('nvim_config.launcher.guard')
 local buffers_handles = {}
 local launcher_timers = {}
@@ -232,7 +231,9 @@ local function CreateOutputCallbacks(buf, session_token, encoding, color_mode, p
         if not api.nvim_buf_is_valid(buf) then return end
         if not running_processes[buf] or running_processes[buf].session_token ~= session_token then return end
         if #pending == 0 then return end
-        local results = vim.split(table.concat(pending), env.new_line_char, { plain = true })
+        -- Accept LF and CRLF alike; a bare LF must never reach nvim_buf_set_lines inside an item.
+        local results = vim.split(table.concat(pending), '\n', { plain = true })
+        for i, line in ipairs(results) do results[i] = line:gsub('\r$', '') end
         pending = {}
 
         local scroll_wins = FollowingWindows(buf)

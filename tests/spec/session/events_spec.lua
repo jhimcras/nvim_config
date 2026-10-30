@@ -27,9 +27,16 @@ describe('session events', function()
             group = group,
             pattern = { 'SessionChanged', 'SessionLoaded' },
             callback = function(event)
+                -- Windows reports backslash paths; normalize a copy, keep empty strings.
+                local data = vim.deepcopy(event.data)
+                for _, key in ipairs({ 'path', 'session' }) do
+                    if type(data[key]) == 'string' and data[key] ~= '' then
+                        data[key] = vim.fs.normalize(data[key])
+                    end
+                end
                 events[#events + 1] = {
                     event = event.match,
-                    data = event.data,
+                    data = data,
                     tabline = vim.go.tabline,
                     cmdheight = vim.o.cmdheight,
                     loclist = vim.fn.getloclist(0),
@@ -49,7 +56,7 @@ describe('session events', function()
         pcall(vim.cmd, 'cclose')
         vim.cmd('enew!')
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-            if vim.api.nvim_buf_get_name(buf):find(directory, 1, true) == 1 then
+            if vim.fs.normalize(vim.api.nvim_buf_get_name(buf)):find(directory, 1, true) == 1 then
                 vim.api.nvim_buf_delete(buf, { force = true })
             end
         end

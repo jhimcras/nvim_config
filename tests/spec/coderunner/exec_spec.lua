@@ -27,7 +27,7 @@ describe('coderunner exec', function()
         assert.equals('success', result.status)
         local report = vim.json.decode(result.stdout)
         assert.same({ '; rm -rf', '$(x)', '' }, report.args)
-        assert.equals(root, report.cwd); assert.equals('ok', report.var)
+        assert.equals(root, vim.fs.normalize(report.cwd)); assert.equals('ok', report.var)
         assert.equals('한글\n', report.stdin); assert.is_string(report.path)
     end)
     it('distinguishes failed exit, missing program and invalid cwd', function()
@@ -55,9 +55,15 @@ describe('coderunner exec', function()
         local job = exec.run_step(H.tool('hang'), {}, function(r) result = r end)
         assert.is_true(job.cancel()); H.wait(function() return result ~= nil end)
         assert.equals('cancelled', result.status)
-        -- Windows has no signals: a terminated process reports exit code 1.
-        if uv.os_uname().sysname ~= 'Windows_NT' then assert.is_nil(result.code) end
-        assert.is_number(result.signal); assert.is_false(job.cancel())
+        -- Windows has no signals: a terminated process reports exit code 1 and no signal.
+        if uv.os_uname().sysname == 'Windows_NT' then
+            assert.equals(1, result.code)
+            assert.is_nil(result.signal)
+        else
+            assert.is_nil(result.code)
+            assert.is_number(result.signal)
+        end
+        assert.is_false(job.cancel())
         if uv.os_uname().sysname ~= 'Windows_NT' then
             result = nil
             job = exec.run_step(H.tool('hang'), {}, function(r) result = r end)

@@ -7,7 +7,8 @@ describe('launcher output batching', function()
         original_async = util.AsyncProcess
         util.AsyncProcess = function(_, _, _, opts)
             callbacks = opts
-            return 1, function() end, function() end, {}
+            return 1, function() end, function() end,
+                { is_closing = function() return false end, kill = function() end }
         end
         buf = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_win_set_buf(0, buf)
@@ -30,6 +31,20 @@ describe('launcher output batching', function()
         assert.are.same({'file.cpp:42', '---- End [code 0] [signal 0]'}, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
         assert.are.same({{lnum = 1, filename = 'file.cpp', row = '42'}}, vim.b[buf].launcher_matches)
         assert.is_false(vim.bo[buf].modifiable)
+    end)
+    it('splits mixed LF and CRLF output into lines', function()
+        launch()
+        callbacks.onread(nil, 'one\ntwo\r\nthree\n')
+        callbacks.onexit(0, 0)
+        assert.are.same({'one', 'two', 'three', '---- End [code 0] [signal 0]'}, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+    end)
+    it('splits CRLF whose CR and LF arrive in different flushes', function()
+        launch()
+        callbacks.onread(nil, 'one\r')
+        vim.wait(80, function() return false end)
+        callbacks.onread(nil, '\ntwo\n')
+        callbacks.onexit(0, 0)
+        assert.are.same({'one', 'two', '---- End [code 0] [signal 0]'}, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
     end)
     it('makes matches available during execution without copying the buffer variable', function()
         launch()

@@ -27,7 +27,7 @@
 - `init.lua`에서 coderunner 진단을 활성화하고 미리 지정한 `vim.g.mdloom_dir`를 보존한다. 전역 mdloom 설정의 옛 runners/renderers만 제거하고 `[links] scope="filesystem"`은 유지했다.
 - TUI 정리 시 Neovim 캐시 쓰기와 임시 폴더 삭제가 충돌한 `ENOTEMPTY`를 재현했다. `tests/integration/tmux_case.py`에서 Neovim 종료를 기다리도록 수정한 뒤 전체 통합 검사가 통과했다.
 - 실제 Python·PlantUML, TUI stub, neopp 실이미지·키 입력·신뢰 UI를 확인했다. 도구 환경과 손상 PNG의 한계는 각 작업 문서에 남긴다. 테스트 전용 데몬은 정리했다.
-- Windows는 사용자가 직접 수행한다. 별도 진행 파일 없이 이 세션에서 W1~W8을 순서대로 진행하며, 명령·통과 기준은 mdloom [현행 Windows 절차](../../markdown_lsp/doc/manual-test.md#현행-windows-검증-순서-w1w8)에 둔다. W1·W2는 통과했고 W3는 미통과(1차 65건 실패, 픽스처·export 경로 수정 `16441cf` 뒤 868개 중 39건 실패, 이후 Unix 가정 테스트 수정은 Windows 재실행 대기)이고 W4~W8, MSRV 1.88, Windows CI 결과는 아직 없다. 전체 작업은 미완료다.
+- Windows는 사용자가 직접 수행한다. 별도 진행 파일 없이 이 세션에서 W1~W8을 순서대로 진행하며, 명령·통과 기준은 mdloom [현행 Windows 절차](../../markdown_lsp/doc/manual-test.md#현행-windows-검증-순서-w1w8)에 둔다. W1·W2는 통과했고 W3는 미통과(1차 65건 실패, 픽스처·export 경로 수정 `16441cf` 뒤 39건 → 21건 실패, Windows에서 870개 통과를 확인한 수정안을 원본에 반영하고 재실행 대기)이고 W4~W8, MSRV 1.88, Windows CI 결과는 아직 없다. 전체 작업은 미완료다.
 
 ### Windows 진행 (2026-10-30)
 

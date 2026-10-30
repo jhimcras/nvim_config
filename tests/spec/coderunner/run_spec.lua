@@ -110,7 +110,8 @@ describe('coderunner run service', function()
         assert.equals(0, calls)
     end)
     it('blocks denied workspace fallback and selects loaded workspace runners first', function()
-        H.write(root .. '/.coderunner.lua', 'return { runners = { z = { match={"python"}, cmd={"' .. vim.v.progpath .. '", "--version"} } } }')
+        H.write(root .. '/.coderunner.lua', 'return { runners = { z = { match={"python"}, cmd={'
+            .. vim.inspect(vim.v.progpath) .. ', "--version"} } } }')
         vim.secure.read = function() return nil end
         local job, err = start(); assert.is_nil(job); assert.matches('not loaded', err)
         vim.secure.read = function(path) local f = assert(io.open(path)); local s = f:read('*a'); f:close(); return s end

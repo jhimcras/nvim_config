@@ -131,7 +131,7 @@ describe('coderunner provider', function()
         setup({ match = { 'dot' }, formats = { 'png' }, output = 'stdout', cmd = H.tool('dump'), cwd = '{docdir}' })
         assert.is_true(provider.request_live(buf, 1)); ready()
         local dump = vim.json.decode(cache.read(item().path))
-        assert.equals(root .. '/nested', dump.cwd)
+        assert.equals(root .. '/nested', vim.fs.normalize(dump.cwd))
         local b = require('nvim_config.coderunner.blocks').get(buf, root)[1]
         local entry = require('nvim_config.coderunner').resolve(root).renderers.fake
         local absolute = vim.deepcopy(b); absolute.path = root .. '/nested/note.md'

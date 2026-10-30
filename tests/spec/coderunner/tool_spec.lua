@@ -34,7 +34,7 @@ describe('coderunner fake tool', function()
         assert.equals(0, result.code)
         local report = vim.json.decode(result.stdout)
         assert.same({ '; rm -rf', '$(x)', '' }, report.args)
-        assert.equals(root, report.cwd)
+        assert.equals(root, vim.fs.normalize(report.cwd))
         assert.equals('ok', report.var)
         assert.equals('한글\n', report.stdin)
         assert.is_string(report.path)
@@ -57,9 +57,15 @@ describe('coderunner fake tool', function()
                 H.wait(function() return vim.uv.fs_stat(pidfile) ~= nil end)
                 local pid = tonumber(vim.fn.readfile(pidfile)[1])
                 assert.is_number(pid)
-                assert.is_truthy(vim.uv.kill(pid, 0))
-                -- C0 verifies the fixture; C3 will verify executor tree cleanup.
-                assert(vim.uv.kill(pid, 'sigkill'))
+                if mode == 'exit' and vim.fn.has('win32') == 1 then
+                    -- Windows reaps the descendant once the leader exits.
+                    assert.equals(0, job:wait(5000).code)
+                    H.wait(function() return not vim.uv.kill(pid, 0) end)
+                else
+                    assert.is_truthy(vim.uv.kill(pid, 0))
+                    -- C0 verifies the fixture; C3 will verify executor tree cleanup.
+                    assert(vim.uv.kill(pid, 'sigkill'))
+                end
             end)
             job:kill('sigkill')
             job:wait(5000)

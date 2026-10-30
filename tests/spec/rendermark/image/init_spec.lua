@@ -735,7 +735,7 @@ describe('resolve_image_path', function()
   it('resolves a relative path to an absolute path', function()
     local p = image.resolve_image_path(buf, 'foo.png')
     assert.is_truthy(p)
-    assert.equals('/', p:sub(1, 1))
+    assert.is_true(require('nvim_config.rendermark.image.scan').is_absolute_path(p, vim.fn.has('win32') == 1))
     assert.is_truthy(p:find('foo.png', 1, true))
   end)
 
