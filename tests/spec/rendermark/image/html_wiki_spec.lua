@@ -119,7 +119,7 @@ describe('HTML and wiki images in a document', function()
   end
 
   before_each(function()
-    dir = vim.fn.tempname()
+    dir = vim.fs.normalize(vim.fn.tempname())
     vim.fn.mkdir(dir .. '/.git', 'p') -- project root marker
     write(dir .. '/docs/pic.png')
     wikisearch.reset()
@@ -396,7 +396,7 @@ describe('rendering HTML and wiki images', function()
       set = function(id, path, opts) store[id] = { path = path, opts = opts } end,
       del = function(id) store[id] = nil end,
     } }
-    dir = vim.fn.tempname()
+    dir = vim.fs.normalize(vim.fn.tempname())
     vim.fn.mkdir(dir .. '/.git', 'p')
     write(dir .. '/docs/pic.png')
     wikisearch.reset()

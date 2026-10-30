@@ -63,11 +63,14 @@ describe('lsp', function()
 
             vim.env.VIMRUNTIME = '/tmp/vimruntime'
             vim.env.LUALS = '/opt/lua-language-server'
+            -- Windows always launches lua-language-server.exe from PATH, not from LUALS.
+            local luals_bin = require('nvim_config.env').os.win and 'lua-language-server.exe'
+                or '/opt/lua-language-server/bin/lua-language-server'
             vim.fn.executable = function(cmd)
-                return cmd == '/opt/lua-language-server/bin/lua-language-server' and 1 or 0
+                return cmd == luals_bin and 1 or 0
             end
             vim.fn.exepath = function(cmd)
-                if cmd == '/opt/lua-language-server/bin/lua-language-server' then
+                if cmd == luals_bin then
                     return '/opt/lua-language-server/bin/lua-language-server'
                 end
                 return ''
@@ -123,14 +126,15 @@ describe('lsp', function()
         it('uses a server on PATH when LUALS is absent', function()
             vim.env.LUALS = nil
             vim.fn.executable = function(cmd)
-                return cmd == 'lua-language-server' and 1 or 0
+                return (cmd == 'lua-language-server' or cmd == 'lua-language-server.exe') and 1 or 0
             end
             local lua_config
             vim.lsp.config = setmetatable({}, { __call = function(_, name, config)
                 if name == 'lua_ls' then lua_config = config end
             end })
             require('nvim_config.lsp.servers.lua_ls').setup()
-            assert.are.same({ 'lua-language-server' }, lua_config.cmd)
+            assert.are.same({ require('nvim_config.env').os.win and 'lua-language-server.exe' or 'lua-language-server' },
+                lua_config.cmd)
         end)
 
         it('adds luv metadata when the local LuaLS installation provides it', function()

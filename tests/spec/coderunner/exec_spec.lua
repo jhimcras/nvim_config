@@ -54,7 +54,9 @@ describe('coderunner exec', function()
         local result
         local job = exec.run_step(H.tool('hang'), {}, function(r) result = r end)
         assert.is_true(job.cancel()); H.wait(function() return result ~= nil end)
-        assert.equals('cancelled', result.status); assert.is_nil(result.code)
+        assert.equals('cancelled', result.status)
+        -- Windows has no signals: a terminated process reports exit code 1.
+        if uv.os_uname().sysname ~= 'Windows_NT' then assert.is_nil(result.code) end
         assert.is_number(result.signal); assert.is_false(job.cancel())
         if uv.os_uname().sysname ~= 'Windows_NT' then
             result = nil

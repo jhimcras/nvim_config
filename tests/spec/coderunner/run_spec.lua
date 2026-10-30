@@ -136,7 +136,7 @@ describe('coderunner run service', function()
     it('does not follow artifact symlinks or exclude user-created input names', function()
         local outside = H.write(root .. '/outside', 'private')
         command.run = function(_, _, _, callback)
-            local dir = vim.fn.tempname(); vim.fn.mkdir(dir .. '/nested', 'p')
+            local dir = vim.fs.normalize(vim.fn.tempname()); vim.fn.mkdir(dir .. '/nested', 'p')
             H.write(dir .. '/input', 'generated'); H.write(dir .. '/nested/input.txt', 'artifact')
             H.write(dir .. '/.coderunner-result.json', 'user artifact')
             if vim.uv.os_uname().sysname ~= 'Windows_NT' then
@@ -165,7 +165,7 @@ describe('coderunner run service', function()
         local running = assert(start())
         local dirs = {}
         command.run = function(_, _, _, callback)
-            local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p'); dirs[#dirs + 1] = dir
+            local dir = vim.fs.normalize(vim.fn.tempname()); vim.fn.mkdir(dir, 'p'); dirs[#dirs + 1] = dir
             local result = { status = 'success', stdout = '', stderr = '', tmpdir = dir, elapsed = 0 }
             vim.schedule(function() callback(result) end)
             return { status = 'running', cancel = function() end }
@@ -178,7 +178,7 @@ describe('coderunner run service', function()
     it('keeps an oversized newest result and accounts artifact bytes for retention', function()
         command.run = function(_, _, _, callback)
             local result = { status = 'success', stdout = '', stderr = '', elapsed = 0 }
-            local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p'); result.tmpdir = dir
+            local dir = vim.fs.normalize(vim.fn.tempname()); vim.fn.mkdir(dir, 'p'); result.tmpdir = dir
             local fd = assert(vim.uv.fs_open(dir .. '/big', 'w', 384))
             assert(vim.uv.fs_ftruncate(fd, 257 * 1024 * 1024)); vim.uv.fs_close(fd)
             vim.schedule(function() callback(result) end)

@@ -1,6 +1,9 @@
 local H = require('tests.spec.coderunner.helpers')
 local command = require('nvim_config.coderunner.command')
 local queue = require('nvim_config.coderunner.queue')
+-- Spawning nvim -l and killing its process tree is much slower on Windows.
+local win = vim.fn.has('win32') == 1
+local scale, slack = win and 10 or 1, win and 1500 or 0
 local function run(entry, ctx, opts)
     local result
     command.run(entry, ctx, opts, function(r) result = r end)
@@ -104,12 +107,12 @@ describe('coderunner command', function()
     it('applies one timeout budget to all steps', function()
         local result = execute({ steps = { H.tool('sleep-ms', '80'), H.tool('sleep-ms', '80') } }, ctx, { timeout = 140 })
         assert.equals('timeout', result.status)
-        assert.is_true(result.elapsed < 250)
+        assert.is_true(result.elapsed < 250 + slack)
     end)
     it('excludes queue wait from timeout and creates no tempdir for queued cancellation', function()
         local q, first, second, cancelled = queue.new(1)
-        command.run({ cmd = H.tool('sleep-ms', '150') }, ctx, { queue = q }, function(r) first = r; results[#results + 1] = r end)
-        command.run({ cmd = H.tool('exit', '0') }, ctx, { queue = q, timeout = 100 }, function(r) second = r; results[#results + 1] = r end)
+        command.run({ cmd = H.tool('sleep-ms', tostring(150 * scale)) }, ctx, { queue = q }, function(r) first = r; results[#results + 1] = r end)
+        command.run({ cmd = H.tool('exit', '0') }, ctx, { queue = q, timeout = 100 * scale }, function(r) second = r; results[#results + 1] = r end)
         local pending = command.run({ cmd = H.tool('hang') }, ctx, { queue = q }, function(r) cancelled = r end)
         assert.is_nil(pending.tmpdir); assert.is_true(pending.cancel())
         H.wait(function() return first and second and cancelled end)

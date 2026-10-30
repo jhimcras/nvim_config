@@ -8,7 +8,7 @@ describe('session events', function()
     local events, group, file
 
     before_each(function()
-        directory = vim.fn.tempname()
+        directory = vim.fs.normalize(vim.fn.tempname())
         vim.fn.mkdir(directory, 'p')
         original_stdpath = vim.fn.stdpath
         original_session = vim.v.this_session

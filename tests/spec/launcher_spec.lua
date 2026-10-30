@@ -335,8 +335,8 @@ end)
 
 describe('launcher.WipeLauncherBuffers', function()
     it('asks before deleting a running buffer from the current prjroot', function()
-        local root_a = vim.fn.tempname()
-        local root_b = vim.fn.tempname()
+        local root_a = vim.fs.normalize(vim.fn.tempname())
+        local root_b = vim.fs.normalize(vim.fn.tempname())
 
         local matching_buf = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_buf_set_var(matching_buf, 'prjroot_folder', root_a)
@@ -397,7 +397,7 @@ describe('launcher.Jump filename resolution', function()
     end
 
     it('resolves a backslash relative filename via match.base_dir', function()
-        local root = vim.fn.tempname()
+        local root = vim.fs.normalize(vim.fn.tempname())
         vim.fn.mkdir(root .. '/src/base/log', 'p')
         local target = root .. '/src/base/log/LauncherTestFixtureA.cpp'
         vim.fn.writefile({ 'content' }, target)
@@ -421,7 +421,7 @@ describe('launcher.Jump filename resolution', function()
     end)
 
     it('falls back to prjroot-relative resolution when base_dir is absent', function()
-        local root = vim.fn.tempname()
+        local root = vim.fs.normalize(vim.fn.tempname())
         vim.fn.mkdir(root .. '/src', 'p')
         local target = root .. '/src/LauncherTestFixtureB.cpp'
         vim.fn.writefile({ 'content' }, target)
@@ -534,7 +534,7 @@ describe('launcher.Jump filename resolution', function()
     end)
 
     it('never opens the resolved file into the window still showing the launcher buffer', function()
-        local root = vim.fn.tempname()
+        local root = vim.fs.normalize(vim.fn.tempname())
         vim.fn.mkdir(root .. '/src', 'p')
         local target = root .. '/src/LauncherTestFixtureF.cpp'
         vim.fn.writefile({ 'content' }, target)

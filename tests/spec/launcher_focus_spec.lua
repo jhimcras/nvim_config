@@ -4,7 +4,7 @@ local util = require('nvim_config.util.job')
 
 describe('launcher focus option', function()
     local original_root, original_config, original_async, original_confirm
-    local config, parent_win
+    local config, parent_win, root
 
     before_each(function()
         original_root = pr.GetCurrentProjectRoot
@@ -16,7 +16,9 @@ describe('launcher focus option', function()
         vim.cmd('enew')
         parent_win = vim.api.nvim_get_current_win()
         config = { launchers = { build = { cmd = 'echo', args = { 'ok' } } } }
-        pr.GetCurrentProjectRoot = function() return '/tmp' end
+        root = vim.fs.normalize(vim.fn.tempname())
+        vim.fn.mkdir(root, 'p')
+        pr.GetCurrentProjectRoot = function() return root end
         pr.GetPrjrootConfig = function() return config end
         util.AsyncProcess = function()
             return 123, function() end, function() return 'running' end,
@@ -37,6 +39,7 @@ describe('launcher focus option', function()
             end
         end
         vim.cmd('only')
+        vim.fn.delete(root, 'rf')
     end)
 
     it('focuses a new output buffer only when enabled', function()
@@ -84,6 +87,7 @@ describe('launcher focus option', function()
     end)
 
     it('preserves the caller window in terminal mode', function()
+        if vim.fn.has('win32') == 1 then return end -- needs sh and sleep
         config.launchers.build.mode = 'terminal'
         config.launchers.build.cmd = 'sh'
         config.launchers.build.args = { '-c', 'sleep 10' }

@@ -8,7 +8,7 @@ function M.write(path, content)
 end
 
 function M.workspace()
-    local root = vim.fn.tempname()
+    local root = vim.fs.normalize(vim.fn.tempname())
     vim.fn.mkdir(root .. '/.git', 'p')
     return root
 end
