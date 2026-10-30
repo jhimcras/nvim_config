@@ -17,7 +17,7 @@ require'nvim_config.file_info'.setup()
 require'nvim_config.smart_cursorline'.setup()
 require'nvim_config.read_mode'.setup()
 require'nvim_config.reopen'.setup()
-vim.g.mdloom_dir = '~/workspace/markdown_lsp' -- mdloom development checkout (plugin + fallback binary).
+vim.g.mdloom_dir = vim.g.mdloom_dir or '~/workspace/markdown_lsp' -- mdloom development checkout (plugin + fallback binary).
 require'nvim_config.lsp'.setup()
 -- Same lookup rendermark used before diagrams moved to coderunner: an explicit jar
 -- run through `java`, else the `plantuml` wrapper on PATH.
@@ -30,7 +30,7 @@ local function plantuml_cmd()
     return { 'plantuml', '-t{format}', '-pipe' }
 end
 require'nvim_config.coderunner'.setup{
-    diagnostics = false, -- mdloom coexistence; enable after migration.
+    diagnostics = true, -- execution/render diagnostics belong to coderunner.
     render_on_open = true, -- global renderers only; cache misses in the visible window.
     runners = {
         python = { match = { 'python', 'py' }, ext = 'py', cmd = { 'python3', '{file}' } },

@@ -47,6 +47,7 @@ class TmuxCase(unittest.TestCase):
         self.tmux("new-session", "-d", "-s", "test", "-x", "120", "-y", "40",
                   "-c", str(self.project), command)
         self.wait_lua("return vim.g.integration_ready == true", True)
+        self.nvim_pid = self.lua("return vim.fn.getpid()")
         self.assert_no_errors()
 
     def file(self, name, content):
@@ -143,5 +144,16 @@ class TmuxCase(unittest.TestCase):
         except (subprocess.SubprocessError, ValueError):
             pass
         self.tmux("kill-server", check=False)
+        # Shutdown callbacks may still write Lua caches after tmux exits.
+        if hasattr(self, "nvim_pid"):
+            deadline = time.monotonic() + self.timeout
+            while True:
+                try:
+                    os.kill(self.nvim_pid, 0)
+                except ProcessLookupError:
+                    break
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Neovim did not exit before cleanup")
+                time.sleep(0.05)
         if not failed:
             shutil.rmtree(self.directory)
