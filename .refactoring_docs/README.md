@@ -31,7 +31,7 @@
 
 ### Windows 진행 (2026-10-30)
 
-- W1·W2 통과. W2 최종 재실행(mdloom `a6eafdf` 포함): build·fmt·clippy 종료 0, workspace 443개·필수 Neovim 5개 통과, `--help`/`-h` 종료 0. W3~W8, MSRV 1.88, Windows CI는 미실행·미확인. 상세는 mdloom [Windows 기록](../../markdown_lsp/doc/windows-test-log.md#w1w2-결과-2026-10-30).
+- W1~W3 통과. W2 최종 재실행(mdloom `a6eafdf` 포함): build·fmt·clippy 종료 0, workspace 443개·필수 Neovim 5개 통과, `--help`/`-h` 종료 0. W3(`640aa17` 반영 코드): 72개 스펙·870개 성공·실패 0·종료 0(launcher_focus terminal 검사는 Windows 건너뜀). W4~W8, MSRV 1.88, Windows CI는 미실행·미확인. 상세는 mdloom [Windows 기록](../../markdown_lsp/doc/windows-test-log.md#w1w2-결과-2026-10-30).
 
 ### Windows W1 소스 불일치 보고 (해소됨)
 
