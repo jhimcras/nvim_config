@@ -16,4 +16,4 @@ git apply D:/workspace/nvim_config/patches/mdloom-windows-move-buffer.patch
 
 수정은 이동 전 열린 버퍼의 정규화 경로를 기록하고, 파일 이동 후에도 옛 이름에 남은 버퍼를 Neovim rename과 같은 saveas 방식으로 갱신한다. 회귀 테스트는 디스크만 이동하는 rename을 주입해 버퍼 경로 갱신과 편집 후 저장을 확인한다.
 
-Linux 확인: `cargo test -p mdloom --test nvim move_in_neovim -- --nocapture` 통과. Windows 재검증은 미실행이다.
+Linux 확인: `cargo test -p mdloom --test nvim move_in_neovim -- --nocapture` 통과. Windows W4 재검증도 통과했다(2026-11-02 사용자 보고). 이동 후 버퍼가 새 경로로 변경되고 편집·wall 후 옛 파일이 재생성되지 않음을 headless와 실제 TUI 키 입력 자동화로 확인했다. 기존 이동 버퍼 이슈는 열림 상태를 유지하며 종료는 별도 결정이다.

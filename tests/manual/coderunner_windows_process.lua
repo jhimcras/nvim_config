@@ -9,7 +9,9 @@ local H = require('tests.spec.coderunner.helpers')
 local runner = require('nvim_config.coderunner.run')
 local python = vim.env.CODERUNNER_TEST_PYTHON or vim.fn.exepath('python')
 assert(python ~= '' and vim.fn.executable(python) == 1, 'Python required')
-local worker = arg[1] == 'exit-editor'
+local worker = arg[1] == 'exit-editor' or arg[1] == 'kill-editor'
+-- A fresh isolated state has no directory for vim.secure.trust() yet.
+vim.fn.mkdir(vim.fn.stdpath('state'), 'p')
 local root = worker and arg[2] or H.workspace()
 local script = root .. '/tree.py'
 local buf, pids = nil, {}
@@ -65,7 +67,11 @@ time.sleep(120)
     end
     source('wait', root .. '/placeholder.pid'); load()
     if worker then
-        start('wait', 'editor')
+        start('wait', arg[1] == 'kill-editor' and 'forced-editor' or 'editor')
+        if arg[1] == 'kill-editor' then
+            vim.wait(120000, function() return false end, 100)
+            error('parent did not terminate test editor')
+        end
         vim.cmd('qa!')
         return
     end
@@ -89,6 +95,29 @@ time.sleep(120)
         assert(not alive(pid), 'surviving editor-exit test PID ' .. pid)
     end
     print('PASS editor exit: leader/child/grandchild dead')
+    local editor = vim.system({
+        vim.v.progpath, '--headless', '-u', 'NONE', '-i', 'NONE', '-l',
+        vim.fn.getcwd() .. '/tests/manual/coderunner_windows_process.lua',
+        'kill-editor', root,
+    }, { timeout = 15000 })
+    -- Record the exact descendants before killing only the editor (no /T).
+    H.wait(function()
+        return vim.uv.fs_stat(root .. '/forced-editor.pid')
+    end, 10000)
+    local tree = vim.fn.readfile(root .. '/forced-editor.pid')
+    for _, pid in ipairs(tree) do
+        pids[#pids + 1] = pid
+    end
+    local killed = vim.system({
+        'taskkill', '/F', '/PID', tostring(editor.pid),
+    }):wait()
+    assert(killed.code == 0, killed.stderr)
+    assert(editor:wait().code ~= 0, 'forced editor exit must fail')
+    for _, pid in ipairs(tree) do
+        H.wait(function() return not alive(pid) end, 5000)
+        assert(not alive(pid), 'surviving forced-editor test PID ' .. pid)
+    end
+    print('PASS forced editor exit: leader/child/grandchild dead')
 end, debug.traceback)
 -- Only exact PIDs published by this test; never kill all python/nvim processes.
 for _, pid in ipairs(pids) do if alive(pid) then vim.system({ 'taskkill', '/F', '/T', '/PID', pid }):wait() end end

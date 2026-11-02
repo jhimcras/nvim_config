@@ -303,4 +303,5 @@ rm -rf "$smoke_runtime"
 2026-11-02 Windows W6 사용자 검증: 실제 Python/PlantUML·preview·저장·실패 복구·export/stale 해제,
 View→trust→재로드·변경 후 재승인·Deny·Untrust, 절대/상대·양쪽 슬래시·공백/한글 경로를 확인했다.
 위 C9 표는 당시 기록이며 최신 진행 상태는 [통합 인계](../.refactoring_docs/README.md)를 따른다.
-W7은 사용자 로컬 Job Object 구현에서 통과했고 원본에 해당 구현을 반영했다. 복원본 Windows 재검증과 W8은 남아 있다.
+W7 복원본 Windows 재검증은 6그룹 × 3회·전체 75개 스펙/890개 통과, W8은 결과 반영·예외 분류 완료다(사용자 보고).
+Windows CI·MSRV와 기존 보류·미검증 예외는 유지하며 전체 완료·이슈 종료는 별도 결정이다.
