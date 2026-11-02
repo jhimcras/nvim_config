@@ -30,6 +30,22 @@ describe('coderunner exec', function()
         assert.equals(root, vim.fs.normalize(report.cwd)); assert.equals('ok', report.var)
         assert.equals('한글\n', report.stdin); assert.is_string(report.path)
     end)
+    it('preserves quotes, trailing backslashes and empty arguments', function()
+        local args = {
+            '', 'space value', '한글',
+            'a"b', 'a\\"b', 'C:\\path with space\\',
+        }
+        local result = run(H.tool('dump', unpack(args)))
+        assert.equals('success', result.status)
+        assert.same(args, vim.json.decode(result.stdout).args)
+    end)
+    it('preserves binary stdout including NUL and invalid UTF-8 for renderers', function()
+        local bytes = '\137PNG\r\n\26\n\0\255\192\128'
+        local path = H.write(root .. '/image.png', bytes)
+        local result = run(H.tool('echo', path), { raw_stdout = true })
+        assert.equals('success', result.status)
+        assert.equals(bytes, result.stdout)
+    end)
     it('distinguishes failed exit, missing program and invalid cwd', function()
         local result = run(H.tool('exit', '7'))
         assert.equals('failed', result.status); assert.equals(7, result.code)
@@ -45,7 +61,8 @@ describe('coderunner exec', function()
         assert.is_true(result.stdout_truncated); assert.is_true(result.stderr_truncated)
     end)
     it('reports timeout and retains output read before cancellation', function()
-        local result = run(H.tool('emit-wait'), { timeout = 100 })
+        -- Windows process startup can exceed 100ms under concurrent specs.
+        local result = run(H.tool('emit-wait'), { timeout = vim.fn.has('win32') == 1 and 1000 or 100 })
         assert.equals('before\n', result.stdout); assert.equals('warning\n', result.stderr)
         assert.equals('timeout', result.status)
         assert.is_true(result.elapsed >= 40)

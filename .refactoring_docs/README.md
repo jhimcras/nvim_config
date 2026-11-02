@@ -1,12 +1,12 @@
 # 작업 문서
 
-기준일: 2026-11-02. 다음 세션은 이 문서에서 시작한다. 현재 Windows 상태는 W1~W5 통과(W4의 다른 SID pipe 선점은 보류 예외), W6 기능 검증 완료(비동기 이미지 오류 박스·C++ 전체 테스트 한계 유지), W7~W8 미실행이다. 이슈 종료는 별도 결정이다. 구현 계약·남은 작업·검증 기록의 기준은 아래 문서이며, 오래된 계획이나 이슈의 상태를 다시 적용하지 않는다.
+기준일: 2026-11-02. 다음 세션은 이 문서에서 시작한다. 현재 Windows 상태는 W1~W5 통과(W4의 다른 SID pipe 선점은 보류 예외), W6 기능 검증 완료(비동기 이미지 오류 박스·C++ 전체 테스트 한계 유지), W7은 사용자 Windows 로컬 수정본에서 통과했으나 Job Object 구현 반영 완료·복원본 Windows 재검증 대기, W8 미실행이다. 이슈 종료는 별도 결정이다. 구현 계약·남은 작업·검증 기록의 기준은 아래 문서이며, 오래된 계획이나 이슈의 상태를 다시 적용하지 않는다.
 
 ## 문서와 현재 상태
 
 | 문서 | 내용 | 상태 |
 | --- | --- | --- |
-| [coderunner.md](coderunner.md) | 실행·결과 삽입·렌더·캐시·내보내기·신뢰 계약과 검증 | Linux 및 Windows W6 실행·렌더·신뢰 UI 검증 완료, W7~W8 대기 |
+| [coderunner.md](coderunner.md) | 실행·결과 삽입·렌더·캐시·내보내기·신뢰 계약과 검증 | Linux 및 Windows W6 실행·렌더·신뢰 UI 검증 완료, W7 구현 반영·Windows 재검증 대기, W8 대기 |
 | [rendermark.md](rendermark.md) | 이미지 표시·공급자·배치·실패 처리, 성능과 M1~M15 수동 확인 | Linux stub·neopp 검증 완료, Windows W6 기능 검증 완료, 비동기 디코더 실패 전달 한계 유지 |
 | [followups.md](followups.md) | Mermaid 설정, 표 이미지 중복 전송, PlantUML 감지, 이미지 붙여넣기 | 개별 후속 작업 대기 |
 | [module_refactoring.md](module_refactoring.md) | 공통 모듈 구조·이벤트·호환과 과거 검증 요약 | 2026-10-07 종료, 현재 의존성 검사 결과 별도 기록 |
@@ -177,3 +177,41 @@ UNC는 앞선 미실행 상태에서 **Windows 파일 I/O 수준 검증 통과**
 - Linux 재검증(이번 반영): 수정 전 HEAD를 `/tmp`에 별도 추출하고 새 Lua 테스트를 실행해 5개 대상 스펙 모두 실패를 확인했다. 수정 후 저장소 기본 `bash run_tests.sh`로 75개 스펙/888개 통과·실패/오류 0·종료 0. 전달 patch가 없어 테스트를 재구성했으므로 Windows 보고의 885개와 개수는 다르다. 저장소 harness는 변경하지 않았다.
 - neopp 반영 커밋: `95ce254` (`Fix UTF-8 image loading and preserve images across grid clear`).
 - Linux neopp 재검증: `cmake --build build --target neopp neopp_tests -j 4`로 실행 파일과 표준 테스트 target 빌드 성공. `build/neopp_tests '[bridge][images]'`는 4 cases/528 assertions 통과, `xvfb-run -a build/neopp_tests '[image-backend]~[perf]'`는 6 cases/55 assertions 통과. 이 Linux 환경에서는 JPEG 링크 문제가 재현되지 않았다. C++ 전체 suite와 알려진 clip 성능 실패는 이번에 재실행하지 않았으며 Windows 네이티브 경로 분기는 사용자 보고로만 확인됐다.
+
+
+## Windows W7 결과 (2026-11-02, 사용자 로컬 수정본)
+
+**W7은 사용자 Windows 로컬 수정본에서 통과했다. 해당 구현을 원본 작업 트리에 반영했으며 복원본 Windows 재검증은 대기 중이다.** Python 리더가 정상/실패 종료한 뒤 자손이 남고 상속된 출력 파이프 때문에 완료 콜백도 돌아오지 않는 문제가 원인이었다. 원본 코드에서는 종료 회귀 검사가 실패했고, 로컬 Job Object 수정본에서는 통과 및 추가 3회 반복 통과를 보고받았다.
+
+| 검증 | 사용자 Windows 결과 |
+| --- | --- |
+| 정상/실패·CodeCancel·timeout·편집기 정상 종료 | tasklist로 리더·자식·손자 잔존 없음 확인 |
+| 편집기 강제 종료 | 시험 Neovim만 `/T` 없이 강제 종료한 뒤 리더·자식 정리 확인 |
+| CRLF output/export·undo | CRLF 바이트 유지·undo 복원·export 이미지 보존 |
+| 한글/공백 경로·다른 드라이브 export | D: 문서·C: 캐시, 내보낸 바이트 일치 |
+| 대상 점유·외부 변경 | 적용 거부·기존 바이트 보존·임시 파일 정리, 점유 해제/재시도 성공 |
+| max_jobs=1 FIFO | 실제 Python 작업 시작/종료 순서 1→2→3 |
+| 두 Neovim 동시 렌더 | manifest 두 항목과 이미지 모두 유지 |
+| GC | dry-run 비삭제·orphan 삭제·현재/stale 보호·사용 중 루트 건너뜀 |
+| 실제 Java/PlantUML | PNG·SVG 성공, PNG 전체 chunk CRC·압축 데이터 검증 |
+| 자원 정리 | 정상 실행 50회＋실행 실패 50회 후 handle 수 170→170 |
+| 전체 자동 검사 | 75개 스펙·890개 성공·Failed/Errors 0·종료 0 |
+
+보고된 변경은 `exec.lua`, 신규 `windows_process.lua`, `exec_spec.lua`, 신규 `tests/manual/coderunner_windows_process.lua`의 4개 파일이다. 로컬 구현은 프로세스를 suspended 상태로 생성하고 `KILL_ON_JOB_CLOSE`가 설정된 Job Object에 등록한 뒤 재개한다. 등록 실패 시 실행하지 않고 종료하며, 리더 종료·취소·timeout에는 Job 전체를 종료한다. Windows 전용 spawn 경로로 연결하고 Unix 경로는 유지한다.
+
+**원본 반영 상태:** 사용자가 신규 파일 2개와 `exec.lua` 연결 변경 전체를 제공해 원본 작업 트리에 복원했다. `exec.lua`의 Windows taskkill 분기는 제거하고 `windows_process.spawn`을 사용한다. 기존 인자/바이너리 회귀 테스트 2개와 Windows 테스트 timeout 100→1000ms 조정은 중복 추가하지 않았다. 제품 timeout과 Unix 경로는 유지한다. **구현 반영 완료·복원본 Windows 재검증 대기**이며, 위 5그룹·추가 3회·75개 스펙/890개 통과는 사용자가 검증했던 로컬 코드의 결과다.
+
+실행 파일은 별도 `SearchPathW`/`PATHEXT` 로직 없이 `CreateProcessW`의 `lpApplicationName=nil` 검색을 사용한다. 전달한 자식 환경 PATH로 실행 파일을 찾는 별도 구현은 없다. 사용자 Python/Java 실검증은 절대 실행 파일 경로로 수행했다.
+
+`tests/manual/coderunner_windows_process.lua`는 실제 Python 리더·자식·손자를 이용한 정상/실패·취소·timeout과 편집기 정상 종료의 5그룹을 검사한다. `/T` 없는 편집기 강제 종료는 사용자 별도 임시 드라이버 결과이며 이 파일에는 포함하지 않는다. 정리 대상은 이 검사에서 기록한 정확한 PID로 한정한다.
+
+Windows에서 state/cache를 격리하고 nvim_config 루트에서 다음을 실행한다. 필요하면 `CODERUNNER_TEST_PYTHON`에 Python 절대 경로를 지정한다.
+
+```bat
+nvim --headless -u tests/minimal_init.lua -i NONE -l tests/manual/coderunner_windows_process.lua
+nvim --headless -u tests/minimal_init.lua -i NONE -l tests/run_unit.lua
+```
+
+Linux 복원 후 검증: 신규 파일 2개 LuaJIT 문법 검사 통과. 기본 전체 실행은 종료 0·실패/오류 0이지만 일부 워커 요약이 누락돼, 저장소 harness 변경 없이 파일별 `bash run_tests.sh <spec>`를 임시 실행기로 순차 실행했다. **75개 스펙/890개 통과·실패/오류 0·각 종료 0**. Windows 전용 모듈 실행과 수동 5그룹은 이 Linux 검증에 포함되지 않는다.
+
+W8·Windows CI·MSRV와 기존 W4 SID 보류·W6 비동기 PNG/C++ 제약은 이 반영으로 완료 처리하지 않는다.

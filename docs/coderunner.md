@@ -61,9 +61,11 @@ rendermark의 plantuml 실행 명령은 위 `renderers.plantuml`로 옮긴다.
 신뢰 기능과 별개이므로, 명령 정의는 `.coderunner.lua`에 둔다.
 
 플랫폼 상태: Linux/Neovim 0.12.4에서 C0–C9 자동 스펙 697개 통과(Failed/Errors 0).
-Windows W6의 실제 실행·렌더·경로·신뢰 UI 검증은 완료했다(사용자 보고). W7 프로세스 검증은 미실행이다. Windows 실행 엔진은 `taskkill /F /T /PID`로 트리를 종료한다.
-리더가 이미 종료한 뒤에는 taskkill이 자손을 찾지 못할 수 있으므로 정상 리더 종료 후 자손 정리는
-최선 노력이다. Windows 검증에서 이 한계가 확인되면 Job Object 적용을 후속 검토한다.
+Windows W6와 W7의 사용자 로컬 검증은 통과했다. Job Object 구현을 원본에 반영했으며 복원본 Windows 재검증은 대기 중이다.
+Windows 실행 엔진은 프로세스를 일시 정지 상태로 생성하고 Job Object에 등록한 뒤 재개한다.
+리더 종료·취소·timeout에는 Job 전체를 종료하며 마지막 Job handle 종료 시에도 트리를 정리한다.
+실행 파일 검색은 `CreateProcessW` 기본 동작을 사용한다. 자식 환경 PATH나 PATHEXT를 이용하는 별도 검색은 없으며,
+사용자 Python/Java 검증은 절대 실행 파일 경로로 수행했다.
 Unix는 detached 프로세스 그룹에 SIGKILL을 보내고 리더 exit 콜백에서 남은 자손도 종료한다.
 uv가 리더를 수거한 뒤 exit 콜백을 호출하므로 PID/그룹 ID 재사용의 작은 경쟁 창이 남는다.
 스스로 다른 프로세스 그룹으로 이탈한 자손은 이 방식으로 종료할 수 없다.
@@ -301,4 +303,4 @@ rm -rf "$smoke_runtime"
 2026-11-02 Windows W6 사용자 검증: 실제 Python/PlantUML·preview·저장·실패 복구·export/stale 해제,
 View→trust→재로드·변경 후 재승인·Deny·Untrust, 절대/상대·양쪽 슬래시·공백/한글 경로를 확인했다.
 위 C9 표는 당시 기록이며 최신 진행 상태는 [통합 인계](../.refactoring_docs/README.md)를 따른다.
-W7~W8은 미실행이며 Windows 자손 프로세스 정리는 미검증이다.
+W7은 사용자 로컬 Job Object 구현에서 통과했고 원본에 해당 구현을 반영했다. 복원본 Windows 재검증과 W8은 남아 있다.

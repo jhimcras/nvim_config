@@ -54,12 +54,7 @@ function M.run_step(argv, opts, callback)
     local function kill_tree()
         if not pid then return end
         if windows then
-            local killer
-            killer = uv.spawn('taskkill', { args = { '/F', '/T', '/PID', tostring(pid) }, hide = true }, function()
-                close(killer)
-                if not exited and process then process:kill('sigkill') end
-            end)
-            if not killer and not exited then process:kill('sigkill') end
+            if process and not process:is_closing() then process:kill('sigkill') end
         else
             uv.kill(-pid, 'sigkill')
         end
@@ -89,7 +84,8 @@ function M.run_step(argv, opts, callback)
     for k, v in pairs(env) do env_list[#env_list + 1] = k .. '=' .. v end
     local args = {}; for i = 2, #argv do args[#args + 1] = argv[i] end
     local spawn_error
-    process, spawn_error = uv.spawn(argv[1], {
+    local spawn = windows and require('nvim_config.coderunner.windows_process').spawn or uv.spawn
+    process, spawn_error = spawn(argv[1], {
         args = args, cwd = opts.cwd, env = env_list, stdio = { input, output, errors },
         detached = not windows, hide = true,
     }, function(code, signal)
