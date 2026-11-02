@@ -8,6 +8,7 @@ function Backend.new(host)
   end
 
   state.entries = state.entries or {}
+  state.entry_revisions = state.entry_revisions or {}
   state.failed = state.failed or {}
   local self = {}
   local dirty = false
@@ -90,9 +91,11 @@ function Backend.new(host)
       local id, path = entry.id, entry.path
       next_ids[id] = true
       local failure = state.failed[id]
-      local rev = failure and revision(path, entry.display_width_px, entry.display_height_px)
-      -- A failed image changed on disk or in size is asked again even if the entry is equal.
-      local changed = (failure and rev ~= failure.rev) or not vim.deep_equal(state.entries[id], entry)
+      local rev = revision(path, entry.display_width_px, entry.display_height_px)
+      -- Async GUI failures look successful to Lua. File changes must reach the
+      -- provider even when the placement and dimensions are unchanged.
+      local changed = state.entry_revisions[id] ~= rev
+        or not vim.deep_equal(state.entries[id], entry)
       if changed then
         if failure and rev == failure.rev then
           -- Same revision as the failure: remember the entry, do not ask again.
@@ -107,7 +110,7 @@ function Backend.new(host)
             state.failed[id] = nil
           else
             state.failed[id] = {
-              rev = rev or revision(path, entry.display_width_px, entry.display_height_px),
+              rev = rev,
               buf = entry.buf,
             }
             new_failure = true
@@ -117,12 +120,14 @@ function Backend.new(host)
           state.entries[id] = vim.deepcopy(entry)
           dirty = true
         end
+        state.entry_revisions[id] = rev
       end
     end
     for id in pairs(state.live_ids) do
       if not next_ids[id] then
         safe_del(id)
         state.entries[id] = nil
+        state.entry_revisions[id] = nil
         dirty = true
       end
     end
@@ -137,16 +142,18 @@ function Backend.new(host)
     if not id then return end
     state.live_ids[id] = nil
     state.entries[id] = nil
+    state.entry_revisions[id] = nil
     state.failed[id] = nil
     dirty = true
     if self.img_available() then safe_del(id) end
   end
 
   function self.clear_all_images()
-    if not self.img_available() then state.live_ids = {}; state.entries = {}; return end
+    if not self.img_available() then state.live_ids = {}; state.entries = {}; state.entry_revisions = {}; return end
     for id in pairs(state.live_ids) do safe_del(id); dirty = true end
     state.live_ids = {}
     state.entries = {}
+    state.entry_revisions = {}
   end
 
   function self.notify_redraw()

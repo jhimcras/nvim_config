@@ -130,13 +130,14 @@ function Module.new(M, state)
     local cell_w = tonumber(vim.g.neopp_cell_width_px) or 10
     local cell_h = tonumber(vim.g.neopp_cell_height_px) or 18
     local textoff = tonumber(info.textoff) or 0
-    local area_w = math.max(1, (info.width - textoff) * cell_w)
-    local area_h = math.max(1, info.height * cell_h)
+    -- The GUI image contract uses integer pixels even with fractional cells.
+    local area_w = math.max(1, math.floor((info.width - textoff) * cell_w))
+    local area_h = math.max(1, math.floor(info.height * cell_h))
     local disp_w, disp_h = api.zoom_fit(z.src_w, z.src_h, area_w, area_h)
     if not disp_w then return end
 
-    local clip_x = (info.wincol - 1 + textoff) * cell_w
-    local clip_y = (info.winrow - 1) * cell_h
+    local clip_x = math.floor((info.wincol - 1 + textoff) * cell_w)
+    local clip_y = math.floor((info.winrow - 1) * cell_h)
     local dest_x = clip_x + math.floor((area_w - disp_w) / 2)
     local dest_y = clip_y + math.floor((area_h - disp_h) / 2)
     local grid_row, grid_col = math.floor(dest_y / cell_h), math.floor(dest_x / cell_w)

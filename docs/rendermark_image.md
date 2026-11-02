@@ -118,6 +118,9 @@ glue는 `coderunner.diagrams`/`coderunner.request_live`를 공급자로 등록�
 크기는 파일 앞 512 KiB의 헤더에서 읽는다: **PNG, JPEG, WebP, GIF**(87a/89a). **SVG·BMP 등은 지원하지 않는다**
 (neopp가 래스터만 그린다). 이런 파일은 `[neopp: image unsupported: …]` 박스로 표시된다.
 
+접힌 범위 안 일반 이미지는 표시하지 않는다. 다이어그램은 자기 블록 시작 행에서 접힌 경우 이미지 대체를 유지한다.
+확대 영역과 clip 좌표는 분수 셀 크기에서도 정수 픽셀로 보낸다.
+
 ### 표시 실패 (`vim.ui.img.set`이 거부한 이미지)
 
 `vim.ui.img.set`이 예외를 던지거나 `false`를 돌려주면(`nil`은 성공) 그 이미지는 **자리를 그대로 두고** 그 자리에
@@ -132,6 +135,11 @@ glue는 `coderunner.diagrams`/`coderunner.request_live`를 공급자로 등록�
 - 한 줄 여러 이미지는 거부된 이미지 자리에만 경고가 뜨고 나머지는 정상으로 그려진다. 다이어그램 블록 이미지도 같다.
 - 표 셀 안 이미지와 미리보기 float 이미지는 경고 알림과 재시도 억제만 있고 박스는 그리지 않는다(표가 셀 공간을 소유).
 - 스텁(`RENDERMARK_IMG_STUB`)에서는 스텁 박스가 같은 자리에서 경고 문구로 바뀐다.
+
+neopp의 비동기 디코더 거부는 Lua에 전달되지 않아 오류 문구 대신 빈 예약 공간이 남을 수 있다.
+성공처럼 보였던 이미지도 다음 sync/refresh에서 파일 revision을 비교해 같은 크기 파일 교체를 provider에 재전송한다.
+파일 감시는 없으며 파일 크기와 mtime이 모두 같으면 변경을 감지하지 못한다.
+Windows W6에서는 동일한 160×80 정상 PNG 교체 후 geometry·뒤 문장 행을 유지한 복구를 확인했다(사용자 보고).
 
 ## 스텁 (이미지 provider가 없는 터미널)
 

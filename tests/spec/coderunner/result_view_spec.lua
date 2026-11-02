@@ -16,6 +16,24 @@ describe('coderunner result view', function()
         view.release(job.id); assert.is_false(api.nvim_buf_is_valid(v.buf))
         assert.is_nil(view.open(nil))
     end)
+    it('normalizes CRLF in streaming and final displays without changing results', function()
+        local job = { id = 9001, status = 'running', stdout = 'one\r\ntwo\r\n', stderr = 'warn\r\n' }
+        local v = view.open(job)
+        local function check()
+            local text = table.concat(api.nvim_buf_get_lines(v.buf, 0, -1, false), '\n')
+            assert.matches('one\ntwo\n', text, 1, true)
+            assert.matches('warn\n', text, 1, true)
+            assert.is_nil(text:find('\r', 1, true))
+        end
+        check()
+        job.result = { stdout = job.stdout, stderr = job.stderr }
+        job.status = 'success'
+        view.update(job)
+        check()
+        assert.equals('one\r\ntwo\r\n', job.result.stdout)
+        assert.equals('warn\r\n', job.result.stderr)
+        assert.equals(job.stdout, job.result.stdout)
+    end)
     it('final results always win over late streaming updates', function()
         local job = { id = 9001, status = 'running', stdout = 'partial', stderr = '' }
         local v = view.open(job)

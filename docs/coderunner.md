@@ -61,7 +61,7 @@ rendermark의 plantuml 실행 명령은 위 `renderers.plantuml`로 옮긴다.
 신뢰 기능과 별개이므로, 명령 정의는 `.coderunner.lua`에 둔다.
 
 플랫폼 상태: Linux/Neovim 0.12.4에서 C0–C9 자동 스펙 697개 통과(Failed/Errors 0).
-Windows는 미검증이다. Windows 실행 엔진은 `taskkill /F /T /PID`로 트리를 종료한다.
+Windows W6의 실제 실행·렌더·경로·신뢰 UI 검증은 완료했다(사용자 보고). W7 프로세스 검증은 미실행이다. Windows 실행 엔진은 `taskkill /F /T /PID`로 트리를 종료한다.
 리더가 이미 종료한 뒤에는 taskkill이 자손을 찾지 못할 수 있으므로 정상 리더 종료 후 자손 정리는
 최선 노력이다. Windows 검증에서 이 한계가 확인되면 Job Object 적용을 후속 검토한다.
 Unix는 detached 프로세스 그룹에 SIGKILL을 보내고 리더 exit 콜백에서 남은 자손도 종료한다.
@@ -88,6 +88,7 @@ UI는 누적 바이트를 `exec.clean_utf8`로 변환해 표시할 수 있다.
 - `:CodeRelease`: 완료 결과와 임시 산출물 삭제. 진행 중이면 먼저 취소한다.
 
 열기·저장으로 러너가 실행되지는 않는다. 결과 창은 stdout/stderr·잘림·상태·오류·산출물 경로를 표시한다.
+output 삽입과 결과 창의 stdout/stderr 표시에는 CRLF→LF를 적용한다. 보관한 원시 결과는 바꾸지 않는다.
 output 삽입은 들여쓰기 없는 최상위 닫힌 펜스만 지원한다. 실행 중 소스 또는 기존 output이 바뀌면 삽입을 거부하고,
 다른 영역 편집으로 위치만 옮겨진 경우에는 허용한다. 삽입/교체는 undo 한 번으로 되돌린다.
 완료 결과는 세션 중 시간 만료 없이 100개/256MiB 상한으로 보관하며 진행 작업은 정리하지 않는다.
@@ -295,3 +296,9 @@ rm -rf "$smoke_runtime"
 테스트 실행기는 고의 실패 시 파일/디렉터리 모두 종료 코드 1을 반환함을 확인했다.
 전체 로그에는 기존 launcher 테스트 상태의 가짜 handle 정리에서 `is_closing` 콜백 경고가 남지만
 스펙 Failed/Errors는 0이다. Windows·GUI·mdloom 확인 전까지 관련 이슈는 열린 상태로 유지한다.
+
+
+2026-11-02 Windows W6 사용자 검증: 실제 Python/PlantUML·preview·저장·실패 복구·export/stale 해제,
+View→trust→재로드·변경 후 재승인·Deny·Untrust, 절대/상대·양쪽 슬래시·공백/한글 경로를 확인했다.
+위 C9 표는 당시 기록이며 최신 진행 상태는 [통합 인계](../.refactoring_docs/README.md)를 따른다.
+W7~W8은 미실행이며 Windows 자손 프로세스 정리는 미검증이다.

@@ -170,6 +170,13 @@ function Module.new(M, state)
     local buf_images, payload, cell_w, cell_h, max_rows = ctx.buf_images, ctx.payload, ctx.cell_w, ctx.cell_h, ctx.max_rows
     local by_row = {}
     for _, image in ipairs(buf_images[info.buf] or {}) do
+      local fold_start = vim.api.nvim_win_call(info.win, function()
+        return vim.fn.foldclosed(image.row + 1)
+      end)
+      -- A diagram may replace its own folded block, not a larger folded region.
+      if fold_start > 0 and (not image.diagram or fold_start ~= image.row + 1) then
+        goto continue_image
+      end
       if image.table_layout then
         local sp = M.safe_screenpos(info.win, image.row + 1, 1)
         local anchor = sp.row > 0 and (sp.row - 1)

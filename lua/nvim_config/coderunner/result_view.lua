@@ -10,7 +10,8 @@ local function content(job)
     if result.message then lines[#lines + 1] = 'Error: ' .. result.message end
     for _, stream in ipairs({ 'stdout', 'stderr' }) do
         lines[#lines + 1] = ''; lines[#lines + 1] = stream .. (result[stream .. '_truncated'] and ' [truncated]' or '')
-        vim.list_extend(lines, vim.split(require('nvim_config.coderunner.exec').clean_utf8(result[stream] or ''), '\n', { plain = true }))
+        local text = require('nvim_config.coderunner.exec').clean_utf8(result[stream] or '')
+        vim.list_extend(lines, vim.split(text:gsub('\r\n', '\n'), '\n', { plain = true }))
     end
     if result.artifacts and #result.artifacts > 0 then
         lines[#lines + 1] = ''; lines[#lines + 1] = 'Artifacts:'

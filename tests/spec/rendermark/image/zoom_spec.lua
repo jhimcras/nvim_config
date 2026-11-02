@@ -301,6 +301,24 @@ describe('rendermark image zoom', function()
       assert.equals(z.buf, o.buf)
     end)
 
+    it('sends integer pixel geometry with fractional GUI cells', function()
+      vim.g.neopp_cell_width_px, vim.g.neopp_cell_height_px = 7.37, 15.23
+      open(1)
+      local _, entry = zoom_entry()
+      local o = entry.opts
+      local info = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1]
+      assert.equals(math.floor(info.width * 7.37), o.clip_width_px)
+      assert.equals(math.floor(info.height * 15.23), o.clip_height_px)
+      assert.equals(math.floor((info.wincol - 1) * 7.37), o.clip_x_px)
+      assert.equals(math.floor((info.winrow - 1) * 15.23), o.clip_y_px)
+      for _, key in ipairs({ 'dest_x_px', 'dest_y_px', 'display_width_px', 'display_height_px',
+          'clip_x_px', 'clip_y_px', 'clip_width_px', 'clip_height_px' }) do
+        assert.equals(math.floor(o[key]), o[key], key)
+      end
+      assert.is_true(o.dest_x_px + o.display_width_px <= o.clip_x_px + o.clip_width_px)
+      assert.is_true(o.dest_y_px + o.display_height_px <= o.clip_y_px + o.clip_height_px)
+    end)
+
     it('fits a portrait image to the window height', function()
       open(2)
       local _, entry = zoom_entry()

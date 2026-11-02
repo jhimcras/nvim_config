@@ -1,13 +1,13 @@
 # 작업 문서
 
-기준일: 2026-11-02. 다음 세션은 이 문서에서 시작한다. 현재 Windows 상태는 W1~W5 통과(W4의 다른 SID pipe 선점은 보류 예외), W6 일부 진행·전체 미완료, W7~W8 미실행이다. 이슈 종료는 별도 결정이다. 구현 계약·남은 작업·검증 기록의 기준은 아래 문서이며, 오래된 계획이나 이슈의 상태를 다시 적용하지 않는다.
+기준일: 2026-11-02. 다음 세션은 이 문서에서 시작한다. 현재 Windows 상태는 W1~W5 통과(W4의 다른 SID pipe 선점은 보류 예외), W6 기능 검증 완료(비동기 이미지 오류 박스·C++ 전체 테스트 한계 유지), W7~W8 미실행이다. 이슈 종료는 별도 결정이다. 구현 계약·남은 작업·검증 기록의 기준은 아래 문서이며, 오래된 계획이나 이슈의 상태를 다시 적용하지 않는다.
 
 ## 문서와 현재 상태
 
 | 문서 | 내용 | 상태 |
 | --- | --- | --- |
-| [coderunner.md](coderunner.md) | 실행·결과 삽입·렌더·캐시·내보내기·신뢰 계약과 검증 | Linux 자동·실도구·neopp·실제 신뢰 UI 검증 완료, Windows 대기 |
-| [rendermark.md](rendermark.md) | 이미지 표시·공급자·배치·실패 처리, 성능과 M1~M15 수동 확인 | Linux stub·neopp 검증 완료, 비동기 디코더 실패 전달 한계 기록, Windows 대기 |
+| [coderunner.md](coderunner.md) | 실행·결과 삽입·렌더·캐시·내보내기·신뢰 계약과 검증 | Linux 및 Windows W6 실행·렌더·신뢰 UI 검증 완료, W7~W8 대기 |
+| [rendermark.md](rendermark.md) | 이미지 표시·공급자·배치·실패 처리, 성능과 M1~M15 수동 확인 | Linux stub·neopp 검증 완료, Windows W6 기능 검증 완료, 비동기 디코더 실패 전달 한계 유지 |
 | [followups.md](followups.md) | Mermaid 설정, 표 이미지 중복 전송, PlantUML 감지, 이미지 붙여넣기 | 개별 후속 작업 대기 |
 | [module_refactoring.md](module_refactoring.md) | 공통 모듈 구조·이벤트·호환과 과거 검증 요약 | 2026-10-07 종료, 현재 의존성 검사 결과 별도 기록 |
 
@@ -161,3 +161,19 @@ UNC는 앞선 미실행 상태에서 **Windows 파일 I/O 수준 검증 통과**
 - text_layout이 있으면 payload의 text_col/text_end_col을 -1로 보내 추가 GUI 가림을 생략한다. 이미지 위치·크기·예약 높이와 text_layout 없는 다이어그램 경로는 유지한다. 단일·다중 인라인 이미지의 payload와 원문·nomodified 불변을 신규 테스트로 확인한다.
 - Linux 원본 재검증: 새 테스트 수정 전 2개 실패, 수정 후 rendermark 전체 16개 스펙·424개 통과, 실패·오류 0, 종료 0. 사용자 Windows 기록도 같은 결과다.
 - 사용자 실제 neopp 확인: 원본 픽스처의 인라인 파랑 이미지 뒤 `뒤에 글이 이어진다.`가 다시 표시됐고 원문 불변·nomodified 유지. 실제 GUI 확인은 사용자 보고이며 Linux에서 다시 실행한 결과는 아니다. 임시 검사 스크립트·스크린샷은 제품 변경에 포함하지 않는다.
+
+
+### W6 기능 검증 완료·추가 수정 반영 (2026-11-02)
+
+- 사용자 Windows 최종 보고가 앞선 W6 일부 진행 상태를 갱신한다. 실제 GUI 이미지·표·스크롤·split/fold/wrap·버퍼 전환, 실제 Python/PlantUML 실행·preview·저장·실패 복구·export/stale 해제, 신뢰 UI의 View→trust→재로드·변경 후 재승인·Deny·Untrust를 확인했다. 절대/상대·슬래시/역슬래시·공백/한글 경로, 확대·실제 창 resize·탭 이동·q/Esc도 확인했다. W7~W8은 미실행이며 이슈 종료와 전체 완료를 뜻하지 않는다.
+- 보고된 제품 코드 7개·회귀 테스트 7개는 현재 checkout에 없어 보고 내용과 현재 코드로 재구성했다. Windows 임시 handoff patch의 사본을 직접 적용한 것은 아니다. 기존 인라인 이미지 뒤 문장 수정 `2f6e0cc`는 그대로 유지한다.
+- nvim_config: output 삽입과 stdout/stderr 표시 시 CRLF→LF(원시 결과 보존), 확대 payload의 정수 픽셀 좌표, 접힌 범위 안 일반 이미지 제외·자기 시작 행에서 접힌 다이어그램 대체 유지, 성공처럼 보였던 이미지도 파일 revision 변경 시 provider 재전송. 파일 감시는 추가하지 않았고 다음 sync/refresh에서 변경을 감지한다.
+- neopp: UTF-8 경로로 파일 메타데이터 조회·Windows wide 파일 열기, global grid_clear에서 producer 이미지 registry를 재투영한다. 명시 producer delete는 유지한다. 빌드 후 새 GUI 세션으로 실행해야 한다.
+- M13: 캐시되지 않은 새 코드의 저장→이미지 payload 갱신 약 2.20초와 변경된 그림 확인(사용자 단일 관찰값).
+- M15: 손상 PNG를 동일한 160×80 정상 PNG로 교체해 회복. 뒤 문장 화면 행 10→10, geometry 동일, 실제 초록 픽셀 36,696→73,392, 원문 불변·modified=false. 실제 손상 PNG의 비동기 거부는 Lua에 성공처럼 보여 오류 박스 대신 빈 예약 공간이 남는다. 로그·옆 이미지 유지·동일 크기 교체 복구 확인을 GUI 오류 박스 통과로 대체하지 않는다.
+- 사용자 Windows 자동 검사: 격리 state/cache·ShaDa NONE·임시 순차 실행기로 75개 스펙/885개 테스트 통과·종료 0, neopp 빌드 성공. C++ bridge 4 cases/525 assertions, backend 4 cases/38 assertions 통과는 `test_image_decode_perf.cpp.obj`를 제외한 임시 회귀 바이너리 결과다. 표준 target의 Skia JPEG encoder 링크 문제와 `text runs share one clip per row`의 `32 <= 26` 실패가 남아 C++ 전체 통과로 기록하지 않는다.
+- 사용자 소유 GUI/Neovim·해당 테스트 루트 데몬은 종료됐고 원본 fixture SHA256·33 bytes 손상 PNG는 보존됐다는 보고다. 이번 Linux 재검증은 아래에 별도로 기록한다.
+
+- Linux 재검증(이번 반영): 수정 전 HEAD를 `/tmp`에 별도 추출하고 새 Lua 테스트를 실행해 5개 대상 스펙 모두 실패를 확인했다. 수정 후 저장소 기본 `bash run_tests.sh`로 75개 스펙/888개 통과·실패/오류 0·종료 0. 전달 patch가 없어 테스트를 재구성했으므로 Windows 보고의 885개와 개수는 다르다. 저장소 harness는 변경하지 않았다.
+- neopp 반영 커밋: `95ce254` (`Fix UTF-8 image loading and preserve images across grid clear`).
+- Linux neopp 재검증: `cmake --build build --target neopp neopp_tests -j 4`로 실행 파일과 표준 테스트 target 빌드 성공. `build/neopp_tests '[bridge][images]'`는 4 cases/528 assertions 통과, `xvfb-run -a build/neopp_tests '[image-backend]~[perf]'`는 6 cases/55 assertions 통과. 이 Linux 환경에서는 JPEG 링크 문제가 재현되지 않았다. C++ 전체 suite와 알려진 clip 성능 실패는 이번에 재실행하지 않았으며 Windows 네이티브 경로 분기는 사용자 보고로만 확인됐다.

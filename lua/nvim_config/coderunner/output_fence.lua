@@ -34,7 +34,7 @@ function M.apply(snapshot, result)
     end
     local output = block.output and lines(buf, block.output)
     if not vim.deep_equal(snapshot.output, output) then return false, 'output changed while running' end
-    local stdout, longest = result.stdout or '', 0
+    local stdout, longest = (result.stdout or ''):gsub('\r\n', '\n'), 0
     for run in stdout:gmatch('`+') do longest = math.max(longest, #run) end
     local fence = string.rep('`', math.max(3, longest + 1))
     local replacement = { fence .. 'output' .. (result.status == 'success' and '' or ' {.error}') }

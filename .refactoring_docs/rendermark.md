@@ -1,13 +1,13 @@
 # rendermark 작업 인계
 
-기준일: 2026-10-30. 기존 계획서와 이미지·Markdown 성능 기록을 통합했다.
+기준일: 2026-11-02. 기존 계획서와 이미지·Markdown 성능 기록을 통합했다.
 사용법과 공개 API는 [이미지 매뉴얼](../docs/rendermark_image.md)을 따른다.
 
 ## 현재 상태
 
 - R1~R7, R9, S3 구현은 완료했다. R8의 Linux 자동 검증도 통과했다.
-- Linux의 실제 TUI stub·neopp 확인을 완료했다. M15의 비동기 디코더 실패 전달 한계는 아래 결과와 구분한다. Windows 확인 전에는 작업 전체를 완료로 처리하지 않는다.
-- coderunner도 Linux 자동·실도구·GUI·실제 신뢰 UI·mdloom 연결을 확인했고 Windows 검증이 남았다. 자세한 내용은 [coderunner 인계](coderunner.md)를 본다.
+- Linux의 실제 TUI stub·neopp 확인을 완료했다. M15의 비동기 디코더 실패 전달 한계는 아래 결과와 구분한다. Windows W6 기능 검증도 완료했다. W7~W8과 C++ 전체 테스트 한계가 남아 작업 전체 완료를 뜻하지 않는다.
+- coderunner도 Linux 자동·실도구·GUI·실제 신뢰 UI·mdloom 연결을 확인했고 Windows W6 실행·신뢰 UI 검증도 완료했으며 W7 프로세스 검증은 남았다. 자세한 내용은 [coderunner 인계](coderunner.md)를 본다.
 - mdloom은 `lsp-scope` / `802b9a5`로 다시 확인했다. Linux 빌드·자동 검사와 nvim_config 실통합은 통과했으며 Windows·MSRV·병합은 남았다.
 - 기존 `.issues/open/issue-rendermark_all_drawing.md`의 요구와 결정은 이 문서에 통합했다. 다음 세션에서는 아래 수동 확인 결과와 이 문서의 완료 상태를 갱신한다.
 
@@ -89,13 +89,16 @@ M15에서 GUI가 손상 파일을 받아들이면 스텁에서 `vim.ui.img.set =
 | 2026-10-30 | M15 | Linux TUI stub, 제공자 거부 주입 | 오류 박스·예약 높이·뒤 문장 화면 행 유지, 같은 리비전 재시도 0, 파일 변경 후 회복 통과 |
 | 2026-10-30 | M1~M10·M13·M14 | Linux Xvfb + 실제 neopp | 실이미지와 키 입력·스크린샷 확인. 반 화면 스크롤·공급자 해제·확대 resize/Esc도 추가 확인. 저장→렌더→이벤트 2회→화면 갱신 약 1.187초는 단일 관찰값 |
 | 2026-10-30 | M15 | Linux 실제 neopp | 손상 PNG의 비동기 디코더 실패는 Lua에 전달되지 않아 빈 예약 공간. 정상 파일 교체 후 표시 회복. 실제 GUI 오류 박스·동일 높이 회복 통과가 아님 |
-| 미실행 | M11 및 Windows 전체 | Windows stub / neopp | 사용자가 [W5·W6](../../markdown_lsp/doc/manual-test.md#현행-windows-검증-순서-w1w8)에서 확인 예정 |
+| 2026-11-02 | Windows W5·W6 | 사용자 실제 TUI stub / neopp 보고 | GUI 이미지·표·스크롤·split/fold/wrap·버퍼 전환, 실제 Python/PlantUML·저장/preview/export/stale·신뢰 UI, 절대/상대·양쪽 슬래시·공백/한글 경로, 확대/실제 resize/탭/q/Esc 확인. M13 약 2.20초 |
+| 2026-11-02 | M15 | 사용자 Windows 실제 neopp 보고 | 동일한 160×80 정상 PNG 교체 복구. 뒤 문장 화면 행 10→10·geometry 동일·초록 픽셀 36,696→73,392·원문 불변·modified=false. 비동기 거부 오류 박스는 여전히 미지원 |
 
 실제 TUI stub은 `RENDERMARK_IMG_STUB=1`이고, neopp는 이 변수를 해제한 실제 `vim.ui.img`였다. 일반/표 이미지의 배치 안정화 후 10회 동기화에서 `set=0`, 스크롤 후 20회 동기화에서 viewport/payload가 안정적이었다. 기존 표 중복 전송 관찰은 이번 조건에서 재현되지 않았으며 수정 완료라는 뜻은 아니다.
 
-실도구는 JDK21 PATH·`RENDERMARK_PLANTUML_JAR=/usr/share/java/plantuml/plantuml.jar`·`JAVA_TOOL_OPTIONS=-Djava.awt.headless=true`를 명시했다. 현재 기본 wrapper는 Java 경로 문제로 동작하지 않으므로, 환경 지정 없이 통과한 결과로 읽지 않는다. neopp의 비동기 PNG 거부는 `vim.ui.img.set`의 동기 오류가 아니어서 S3 오류 박스로 바뀌지 않았다. 교체 이미지 크기가 달라 예약 높이도 5→7로 바뀌었으므로 M15의 높이 보장은 stub 주입 결과로만 기록한다.
+2026-10-30 Linux 실도구는 JDK21 PATH·`RENDERMARK_PLANTUML_JAR=/usr/share/java/plantuml/plantuml.jar`·`JAVA_TOOL_OPTIONS=-Djava.awt.headless=true`를 명시했다. 현재 기본 wrapper는 Java 경로 문제로 동작하지 않으므로, 환경 지정 없이 통과한 결과로 읽지 않는다. neopp의 비동기 PNG 거부는 `vim.ui.img.set`의 동기 오류가 아니어서 S3 오류 박스로 바뀌지 않았다. 당시 교체 이미지 크기가 달라 예약 높이도 5→7로 바뀌었으므로 해당 Linux 실행의 M15 높이 보장은 stub 주입 결과로만 기록한다. 이후 Windows 동일 크기 교체 결과는 위 표와 구분한다.
 
-미리보기 생성 후 `vim.v.errmsg`에 조용한 `E31: No such mapping`이 남았지만 화면/messages와 기능 실패는 없었다. ftplugin의 `sil! unmap` 경로가 후보이며 원인은 확정하지 않았다. Windows 결과와 남은 한계를 기록한 뒤 이 문서와 [coderunner 인계](coderunner.md)의 전체 완료 여부를 판단한다.
+미리보기 생성 후 `vim.v.errmsg`에 조용한 `E31: No such mapping`이 남았지만 화면/messages와 기능 실패는 없었다. ftplugin의 `sil! unmap` 경로가 후보이며 원인은 확정하지 않았다. Windows W6 결과와 남은 C++ 검증 제약은 [통합 인계](README.md#w6-기능-검증-완료추가-수정-반영-2026-11-02)에 기록했다. W7~W8은 미실행이다.
+
+W6 수정은 접힌 일반 이미지를 제외하되 자기 시작 행에서 접힌 다이어그램의 대체 표시를 유지한다. 확대 영역과 clip 좌표는 분수 셀에서도 정수 픽셀로 보낸다. neopp는 UTF-8 파일 열기와 global grid_clear 후 이미지 재투영을 적용했다. Windows GUI 결과는 사용자 보고이며 이 환경에서 재실행한 결과와 구분한다.
 
 ## 자동 검증 기록과 재실행
 
@@ -141,7 +144,7 @@ HTML이 있는 문서의 전역 파싱·스캔과 입력 시 Tree-sitter 재파�
 
 - 여러 줄 `<img>`와 여러 줄 HTML 주석 내부의 이미지 제외는 지원하지 않는다. 위키 너비 표기와 표 셀 분할의 상호작용도 아직 별도 회귀 스펙이 없다.
 - PNG/JPEG/WebP/GIF만 크기를 읽는다. SVG·BMP 등은 unsupported다. 표 셀·미리보기 float의 표시 실패는 경고와 재시도 억제만 하고 박스를 만들지 않는다.
-- 같은 크기 파일의 mtime만 바뀌면 실패 항목은 재시도하지만 이미 성공한 같은 payload는 다시 보내지 않는다. 확대 탭의 실패 처리도 본문 경로와 분리돼 있다.
+- 파일 감시는 없다. 본문은 다음 sync/refresh에서 파일 revision(경로·mtime·파일 크기·표시 크기)을 비교해 성공처럼 보였던 같은 payload도 재전송한다. 확대 탭의 실패 처리는 본문 경로와 분리돼 있다.
 - 위키 이름을 찾는 첫 비동기 검색 중 확대 명령을 실행하면 대상 없음 알림이 날 수 있다. 검색 후 다시 실행한다. 확대 탭에는 추가 확대·이동 조작이 없다.
 - `.puml` 등 파일타입을 모르는 상태에서는 `plantuml-syntax`의 `FileType plantuml` 지연 로드가 시작되지 않는 기존 문제가 있다. 별도 작업 결정 전에는 변경하지 않는다.
 - 이전 확인에서 mdloom 프로토콜 1 daemon이 남아 있었다. 같은 문제가 재현되면 열린 사용자 세션 종료 후 `mdloom daemon stop`을 고려한다. 실행 중 세션을 임의 종료하지 않는다.
