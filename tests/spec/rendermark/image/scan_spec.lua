@@ -217,6 +217,20 @@ describe('collecting markdown images', function()
     assert.equals('unsupported', found[2].error)
   end)
 
+  it('does not rescan rendered code spans in visual wrap decorations', function()
+    open({ 'Example `![...](...)` remains literal.' })
+    local ns = vim.api.nvim_create_namespace('markdown_visual_wrap')
+    vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, {
+      virt_lines = { { { '![...](...)', 'Normal' } } },
+    })
+    assert.same({}, image.collect_markdown_images(buf, 0, 1))
+    vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+    vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, {
+      virt_text = { { '![...](...)', 'Normal' } }, virt_text_pos = 'overlay',
+    })
+    assert.same({}, image.collect_markdown_images(buf, 0, 1))
+  end)
+
   it('ignores image syntax inside fenced code blocks', function()
     open({ '![a](pic.png)', '```md', '![b](pic.png)', '```', '![c](pic.png)', '~~~', '![d](pic.png)', '~~~', '![e](pic.png)' })
     assert.same({ 0, 4, 8 }, rows(image.collect_markdown_images(buf, 0, 9)))

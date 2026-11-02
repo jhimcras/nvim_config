@@ -130,3 +130,10 @@ UNC는 앞선 미실행 상태에서 **Windows 파일 I/O 수준 검증 통과**
 - 새 실패: (b)의 한 줄 세 이미지에서 79열·40열 분할 시 좁은 창이 넓은 창의 stub 배치를 따라 두 번째·세 번째 이미지가 잘렸다. 넓은 창을 enew로 전환하면 좁은 창이 정상 축소되고, 같은 문서를 복원하면 재발했다. M2 공동 축소/M4 독립 표시 미충족으로 W5 중단. 전체 M3 및 이후는 미검증이다. 증거는 `%TEMP%\mdloom-w5-n4ii2ee9\`의 `repro_width.py`, `width-both-same-buffer.txt`, `width-only-narrow-image-buffer.txt`, `width-both-restored.txt`. 사용자 세션과 임시 루트 데몬 종료, 저장소 수정 없음.
 - 원인: 창별로 계산한 stub 예약과 label을 버퍼·행 기준으로 합쳐 첫 창의 배치가 공유됐다. stub 예약을 창별로 유지하고 같은 버퍼를 여러 창에서 볼 때 창에 한정한 namespace에 표시한다. namespace별 차등 갱신·정리도 처리하고, 해당 장식을 이미지 소스나 외부 장식으로 다시 읽지 않도록 제외했다. 단일 창의 기존 namespace와 GUI 이미지 배치 방식은 유지한다.
 - Linux 검증: 서로 다른 폭의 창에서 stub 범위·namespace 창 범위와 넓은 창 문서 전환/복원 시 정리·재생성 회귀 테스트. 기존 place.lua로 실패(종료 1), 수정 후 display_failure_spec 19개 통과. `bash run_tests.sh tests/spec/rendermark` 전체 417개 통과, 실패·오류 0. 창별 namespace는 현재 검증 환경 Neovim 0.12의 `nvim__ns_set`을 사용한다. Windows 실제 TUI는 재검증 대기이며 W5 전체는 미통과다.
+
+### W5 재중단: 인라인 코드 이미지 오인식과 native wrap 중복 (2026-11-02)
+
+- 사용자 Windows 확인: 79열·40열 stub 독립 크기와 넓은 창 버퍼 전환/복귀 유지, 한 줄·반 화면 스크롤·상단 클리핑·정지 후 안정성, 접기 제거/펼치기 복구·버퍼 전환 정리 통과. 원문·nomodified·픽스처 SHA256 불변.
+- 새 실패: 15행 (b) 제목에서 zt → zM/zR → vsplit → 새 창 9행 설명문에서 zt 시 인라인 코드 `![...](...)`에 not found 오류 virt_lines가 생겼다. resize 45 → set wrap 후 설명문 원문과 가상 줄 표시가 겹쳤다. W5 미통과, M5 이후 미실행. 증거는 `%TEMP%\mdloom-w5-n4ii2ee9\`의 `repro_wrap.py`, `wrap-baseline.txt`, `wrap-split.txt`, `wrap-resized.txt`, `wrap-on.txt`. 사용자 저장소 변경 없음, 시험 편집기와 임시 루트 데몬 종료.
+- 원인과 수정: 원문 스캐너는 code span을 제외하지만 markdown_visual_wrap의 가상 텍스트를 다시 수집하면 백틱 없는 표시 텍스트가 이미지 구문으로 해석됐다. 이 namespace는 원문에서 이미 수집했으므로 virt_text/virt_lines 재수집에서 제외한다. native wrap은 기존 시각적 줄바꿈의 nowrap 전제와 충돌하므로, 시각적 줄바꿈이 활성화된 상태에서는 OptionSet wrap을 처리해 nowrap을 유지한다. 기본 줄바꿈을 사용하려면 먼저 시각적 줄바꿈을 비활성화해야 한다.
+- 검증: 가상 virt_lines/overlay에 표시된 code span을 수집하지 않는 테스트와 시각적 continuation 활성 시 set wrap 중복 방지 테스트가 각각 수정 전 실패했다. 수정 후 `bash run_tests.sh tests/spec/rendermark` 419개 통과, 실패·오류 0. Windows 실제 TUI 재검증 대기이며 W5 완료로 처리하지 않는다.

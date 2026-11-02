@@ -472,10 +472,14 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
   local ok_marks, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, -1, { start_row, 0 }, { end_row, 0 }, { details = true })
   if ok_marks then
     local owned = require('nvim_config.rendermark.image.extmarks').owned_namespaces()
+    local wrap_ns = vim.api.nvim_get_namespaces().markdown_visual_wrap
     for _, mark in ipairs(marks) do
       local row0 = mark[2]
       local col0 = mark[3]
       local details = mark[4] or {}
+      -- Visual wrap renders the source already scanned above. Its code spans
+      -- may have lost their backticks, so they cannot be parsed as Markdown again.
+      if details.ns_id == wrap_ns then goto continue_mark end
       if table_state.table_row(buf, row0) or table_rows[row0] then goto continue_mark end
       if row0 and not owned[details.ns_id] and details.ns_id ~= deps.image_ns() and details.virt_text ~= nil then
         local text = M.virt_text_to_plain(details.virt_text)

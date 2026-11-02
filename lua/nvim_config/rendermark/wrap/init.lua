@@ -626,6 +626,18 @@ function M.setup(opts)
         return
     end
 
+    -- Continuation rows already wrap the text; native wrap would draw it twice.
+    vim.api.nvim_create_autocmd('OptionSet', {
+        group = group,
+        pattern = 'wrap',
+        callback = function()
+            if buffer_enabled(vim.api.nvim_get_current_buf()) and vim.wo.wrap then
+                vim.wo.wrap = false
+                schedule_refresh(vim.api.nvim_get_current_win())
+            end
+        end,
+    })
+
     vim.api.nvim_create_autocmd('FileType', {
         group = group,
         pattern = { 'markdown', 'markdown.mdx' },

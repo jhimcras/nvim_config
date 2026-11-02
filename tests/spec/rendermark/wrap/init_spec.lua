@@ -343,6 +343,23 @@ describe('wrap behavior', function()
         assert.are.equal(3, vim.wo.scrolloff)
     end)
 
+    it('keeps native wrap off while visual continuation rows are active', function()
+        wrap.setup()
+        local long = string.rep('word ', vim.api.nvim_win_get_width(0))
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'cursor', long })
+        vim.bo.filetype = 'markdown'
+        vim.api.nvim_exec_autocmds('FileType', { pattern = 'markdown' })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        wrap.refresh(0)
+        assert.is_true(#continuation_rows(1) > 0)
+        vim.wo.wrap = true
+        -- OptionSet is suppressed during startup in headless tests.
+        vim.api.nvim_exec_autocmds('OptionSet', { pattern = 'wrap' })
+        assert.is_false(vim.wo.wrap)
+        wrap.refresh(0)
+        assert.is_true(#continuation_rows(1) > 0)
+    end)
+
     it('decorates non-cursor long lines and skips the cursor line', function()
         wrap.setup()
         local width = vim.api.nvim_win_get_width(0)
