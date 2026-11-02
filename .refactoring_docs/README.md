@@ -93,3 +93,13 @@
 - `mdloom-w4-multi-20261102-0950\multi.log`
 - `mdloom-w4-final2-20261102-0955\output.log`
 - `mdloom-w4-direct-20261102-1000\output.log`
+
+### W4 실제 콘솔 TUI 키 입력 자동화 통과 (2026-11-02)
+
+사용자 Windows 실행 보고: headless가 아닌 별도 Neovim 콘솔에 Windows 키 down/up 이벤트를 전송해 확인했다. nvim_input·feedkeys·편집기 제어용 RPC는 사용하지 않았다. **사람의 물리 키보드 수동 입력이 아닌 실제 TUI 키 입력 자동화**로 분류한다.
+
+- MdloomMove moved/note.md 후 저장 질문에서 No 선택, echo expand('%:p')가 새 경로를 표시했다.
+- Go로 본문 입력 후 Esc·wall 실행. 파일 존재 결과는 0 1(옛 파일 없음·새 파일 있음), 새 파일 마지막 줄은 `W4 manual input`, 참조 문서는 `[note](moved/note.md)`였다.
+- 콘솔 메시지 행과 실제 저장 파일을 대조했다. Neovim 종료 0, 데몬 종료 0, 잔존 시험 프로세스 0개.
+- 증거: `C:\Users\Admin\AppData\Local\Temp\mdloom-w4-tui2-20261102-1030\`의 `result.json`, `transcript.txt`, `exit-record.txt`, 단계별 `*.screen.txt`.
+- 다른 SID의 named pipe 선점은 여전히 미실행이다. 실제 UNC 네트워크 감시는 앞선 미실행 상태를 유지한다. W4 전체 수용·기존 이슈 종료는 유보하고 W5~W8 미실행도 유지한다. 이번 사용자 검증에서는 저장소 파일을 수정하지 않았다.
