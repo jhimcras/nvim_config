@@ -47,3 +47,10 @@
 - `docs/`에는 [프로젝트 루트 설정](../docs/prjroot.md), [clangd](../docs/clangd.md), [coderunner 사용법](../docs/coderunner.md), [rendermark 이미지 사용법](../docs/rendermark_image.md)을 유지한다. 본문은 이번에 재작성하지 않고 이동한 문서 링크만 고쳤다.
 - `tests/manual/`과 자산·스크립트는 유지한다. 수동 문서의 작업 체크리스트 링크만 새 위치로 연결했다.
 - `.refactoring_docs/`는 Git ignore 예외를 두어 다음 세션과 버전 관리에서 참조할 수 있게 했다. 기존에 추적하던 작업 문서의 원본은 Git 이력에 남는다. ignore 대상이던 이슈의 유효 내용은 이 폴더에 통합했다.
+
+## Windows W4 최초 실패 (2026-11-02)
+
+- 사용자 보고: Windows 10.0.26100.7171 / Neovim 0.12.4에서 실제 init smoke가 initial definition 대기 중 실패했다. PASS 0/11, 종료 1. LSP 초기화·pckr/Oil·codeLens 없음·gW 바인딩까지 확인했고 이후 재실행 및 W5~W8은 진행하지 않았다.
+- 실제 definition 응답은 미기록이므로 제품 탐색 실패와 테스트 경로 비교 실패 중 원인은 미확정이다. smoke의 URI 변환 경로와 기대 경로를 각각 정규화해 비교하고 첫 응답·실패 시 최종 응답 및 정규화 경로를 출력하도록 했다. Windows 재검증은 아직 하지 않았다.
+- Windows에서 수정 커밋을 동기화한 뒤 W4 smoke를 처음부터 재실행하고 INITIAL DEFINITION PROBE 및 종료 코드를 확보한다. 이동 후 버퍼 경로·wall 후 원본 재생성 여부와 나머지 W4 수동 항목은 계속 미검증이며 기존 이동 버퍼 이슈는 열린 상태다.
+- 현장 로그: `%TEMP%\mdloom-w4-20261102\smoke.log`, 실행 환경·명령: 같은 폴더의 `run.cmd`.

@@ -68,6 +68,7 @@ local ok, err = xpcall(function()
     assert(client.server_capabilities.codeLensProvider == nil, 'mdloom must not advertise codeLens')
     assert(api.nvim_buf_get_keymap(a, 'n') and vim.fn.maparg('gW', 'n') ~= '', 'gW mapping')
     local definition_probe
+    local definition_logged = false
     local definition_ok, definition_err = pcall(wait, 'initial definition', function()
         local result = request(a, 'textDocument/definition', at(a, 2, 5)) or {}
         definition_probe = {
@@ -79,7 +80,15 @@ local ok, err = xpcall(function()
             root_dir = client.config.root_dir,
             workspace_folders = client.workspace_folders,
         }
-        return #result == 1 and vim.uri_to_fname(result[1].uri) == path('b.md')
+        local actual = definition_probe.actual_path
+        definition_probe.normalized_actual_path = actual and vim.fs.normalize(actual)
+        definition_probe.normalized_expected_path = vim.fs.normalize(definition_probe.expected_path)
+        if not definition_logged then
+            print('INITIAL DEFINITION PROBE ' .. vim.inspect(definition_probe))
+            definition_logged = true
+        end
+        return #result == 1 and actual ~= nil
+            and definition_probe.normalized_actual_path == definition_probe.normalized_expected_path
     end)
     if not definition_ok then
         print('INITIAL DEFINITION PROBE ' .. vim.inspect(definition_probe))
