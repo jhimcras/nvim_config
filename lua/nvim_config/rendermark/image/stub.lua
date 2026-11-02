@@ -107,6 +107,7 @@ function Module.new(M, state)
           box_w = vim.fn.strdisplaywidth(text),
           text_by_row = { [virt_h > 1 and 1 or 0] = text },
           hl = 'WarningMsg',
+          error = true,
         }
         goto continue_box
       end
@@ -143,8 +144,21 @@ function Module.new(M, state)
 
     table.sort(prepared, function(a, b) return a.start_cell < b.start_cell end)
     local prev_end = -1
-    for _, p in ipairs(prepared) do
+    for i, p in ipairs(prepared) do
       p.col = math.max(p.start_cell, prev_end + 1)
+      -- Failure text must not move the next image out of its fitted slot.
+      local following = prepared[i + 1]
+      if p.error and following then
+        p.box_w = math.min(p.box_w, math.max(0, following.start_cell - p.col))
+        for row, text in pairs(p.text_by_row) do
+          local chars = vim.fn.strchars(text)
+          while vim.fn.strdisplaywidth(text) > p.box_w do
+            chars = chars - 1
+            text = vim.fn.strcharpart(text, 0, chars)
+          end
+          p.text_by_row[row] = text
+        end
+      end
       prev_end = p.col + p.box_w - 1
     end
 

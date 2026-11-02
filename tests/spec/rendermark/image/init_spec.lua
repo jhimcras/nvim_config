@@ -283,6 +283,34 @@ describe('build_stub_box_rows', function()
     assert.equals('+', top:sub(25, 25))   -- second box closes
   end)
 
+  it('keeps the right stub in place when the middle error text is long', function()
+    for _, height in ipairs({ 1, 3 }) do
+      local boxes = {
+        { name = 'red', w_px = 120, h_px = 50, start_cell = 0 },
+        { name = 'bad', w_px = 120, h_px = 50, start_cell = 14 },
+        { name = 'green', w_px = 120, h_px = 50, start_cell = 28 },
+      }
+      local before = image.build_stub_box_rows(boxes, height, 10)
+      boxes[2].error_text = '[neopp: image display failed: 아주긴파일이름.png]'
+      local failed = image.build_stub_box_rows(boxes, height, 10)
+      for row = 0, height - 1 do
+        local function suffix(chunks)
+          local text = row_text(chunks)
+          for n = 0, vim.fn.strchars(text) do
+            if vim.fn.strdisplaywidth(vim.fn.strcharpart(text, 0, n)) == 28 then
+              return vim.fn.strcharpart(text, n)
+            end
+          end
+        end
+        assert.equals(suffix(before[row]), suffix(failed[row]))
+        assert.equals(vim.fn.strdisplaywidth(row_text(before[row])),
+          vim.fn.strdisplaywidth(row_text(failed[row])))
+      end
+      boxes[2].error_text = nil
+      assert.same(before, image.build_stub_box_rows(boxes, height, 10))
+    end
+  end)
+
   it('bumps overlapping boxes right so they never collide', function()
     local rows = image.build_stub_box_rows({
       { name = 'a.png', w_px = 100, h_px = 50, start_cell = 0 },  -- cols 0..9
