@@ -95,6 +95,31 @@ describe('an image the provider refuses', function()
     sync()
   end
 
+  it('emits scan errors once per buffer across split windows', function()
+    write(dir .. '/bad.svg', '<svg/>')
+    open({ '# Errors', '![missing](missing.png)', '![unsupported](bad.svg)', 'tail' })
+    local function check()
+      sync()
+      local counts = {}
+      for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, img.ensure_image_namespace(), 0, -1, { details = true })) do
+        if mark[4].virt_lines then
+          counts[mark[2]] = (counts[mark[2]] or 0) + 1
+        end
+      end
+      assert.equals(1, counts[1])
+      assert.equals(1, counts[2])
+    end
+    check()
+    for _ = 1, 2 do
+      vim.cmd('vsplit')
+      local split = vim.api.nvim_get_current_win()
+      local ok, err = pcall(check)
+      vim.api.nvim_win_close(split, true)
+      assert(ok, err)
+      check()
+    end
+  end)
+
   -- Reserved geometry: virt_lines count per anchor row, source conceals, and the
   -- plain text of every virt_lines/overlay chunk.
   local function summary()

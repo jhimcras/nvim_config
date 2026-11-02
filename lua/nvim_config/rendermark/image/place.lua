@@ -199,7 +199,12 @@ function Module.new(M, state)
         goto continue_image
       end
       if image.error then
-        M.set_image_error_extmark(info.buf, image)
+        -- Extmarks belong to the buffer and appear in every split already.
+        local key = info.buf .. ':' .. image.row .. ':' .. (image.col or 0)
+        if not ctx.image_errors[key] then
+          M.set_image_error_extmark(info.buf, image)
+          ctx.image_errors[key] = true
+        end
         goto continue_image
       end
       local measured_image = image
@@ -634,7 +639,7 @@ function Module.new(M, state)
     local gap_px = tonumber(vim.g.neopp_image_gap_px) or cell_w
     local zoom_scale = tonumber(vim.g.neopp_font_zoom_scale) or 1.0
     local ctx = {
-      payload = payload, cell_w = cell_w, cell_h = cell_h, max_ratio = max_ratio,
+      payload = payload, image_errors = {}, cell_w = cell_w, cell_h = cell_h, max_ratio = max_ratio,
       max_rows = max_rows, gap_px = gap_px, zoom_scale = zoom_scale,
     }
     local wins, buf_ranges = VisibleWindows(max_rows)
