@@ -650,6 +650,7 @@ function Module.new(M, state)
       payload = payload, image_errors = {}, cell_w = cell_w, cell_h = cell_h, max_ratio = max_ratio,
       max_rows = max_rows, gap_px = gap_px, zoom_scale = zoom_scale,
     }
+    M.diagram_cleanup_detached_previews()
     local wins, buf_ranges = VisibleWindows(max_rows)
     ctx.buf_images, ctx.diagram_errors = CollectImages(buf_ranges)
     AddPreviewCarriers(wins)

@@ -137,3 +137,10 @@ UNC는 앞선 미실행 상태에서 **Windows 파일 I/O 수준 검증 통과**
 - 새 실패: 15행 (b) 제목에서 zt → zM/zR → vsplit → 새 창 9행 설명문에서 zt 시 인라인 코드 `![...](...)`에 not found 오류 virt_lines가 생겼다. resize 45 → set wrap 후 설명문 원문과 가상 줄 표시가 겹쳤다. W5 미통과, M5 이후 미실행. 증거는 `%TEMP%\mdloom-w5-n4ii2ee9\`의 `repro_wrap.py`, `wrap-baseline.txt`, `wrap-split.txt`, `wrap-resized.txt`, `wrap-on.txt`. 사용자 저장소 변경 없음, 시험 편집기와 임시 루트 데몬 종료.
 - 원인과 수정: 원문 스캐너는 code span을 제외하지만 markdown_visual_wrap의 가상 텍스트를 다시 수집하면 백틱 없는 표시 텍스트가 이미지 구문으로 해석됐다. 이 namespace는 원문에서 이미 수집했으므로 virt_text/virt_lines 재수집에서 제외한다. native wrap은 기존 시각적 줄바꿈의 nowrap 전제와 충돌하므로, 시각적 줄바꿈이 활성화된 상태에서는 OptionSet wrap을 처리해 nowrap을 유지한다. 기본 줄바꿈을 사용하려면 먼저 시각적 줄바꿈을 비활성화해야 한다.
 - 검증: 가상 virt_lines/overlay에 표시된 code span을 수집하지 않는 테스트와 시각적 continuation 활성 시 set wrap 중복 방지 테스트가 각각 수정 전 실패했다. 수정 후 `bash run_tests.sh tests/spec/rendermark` 419개 통과, 실패·오류 0. Windows 실제 TUI 재검증 대기이며 W5 완료로 처리하지 않는다.
+
+### W5 재중단: 소스 버퍼 전환 후 자동 미리보기 split 잔존 (2026-11-02)
+
+- 사용자 Windows 재검증: 인라인 코드 오류 extmark와 wrap 겹침 해소. M5·M12의 실제 PNG·비활성 대체·자동 미리보기/토글·저장 갱신·같은 문서 블록 이탈 닫힘 확인. M6 실패 소스·오류 줄·render-failed 진단 유지 및 수정/저장·CodeRender! 회복, M7 인접 export 억제·빈 줄 두 개 시 양쪽 표시·실제 CodeExport 중복 억제 확인.
+- 새 실패: c.md의 PlantUML 블록에서 자동 split을 연 뒤 소스 창을 edit e.md로 전환하고 블록 밖에 있어도 이전 미리보기와 이미지가 남았다. 2초 대기 후 동일, `_preview_user=nil`, preview_source 메타데이터도 이전 버퍼·이미지였다. W5 미통과, M8·M9·M10·M14·M15 미실행. 사용자 프로젝트 코드·문서·원본 픽스처 수정 없음, 시험 세션·임시 루트 데몬 종료.
+- 원인: 미리보기 닫힘 판정이 보이는 소스 버퍼의 이미지 수집에 의존해 숨겨진 이전 버퍼를 검사하지 않았다. 동기화의 visible window 수집 전에 cursor lifecycle split의 소스 창이 유효하고 같은 소스 버퍼를 표시하는지 확인하고, 연결이 끊겼으면 split·이미지 payload를 정리한다. persistent lifecycle의 마지막 그림 유지 동작은 보존한다.
+- 회귀 테스트: 자동 split을 연 뒤 다른 버퍼로 전환하면 cursor 모드의 창·이미지가 제거되고, 원본 버퍼로 돌아오면 다시 열림을 확인한다. persistent 모드의 유지도 확인한다. cursor 전환 검사는 수정 전 실패했고, 수정 후 rendermark 전체 421개 통과·실패/오류 0. Windows TUI 동일 순서 재검증 전 W5 통과로 처리하지 않는다.

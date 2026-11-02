@@ -271,6 +271,24 @@ function Module.new(M, state)
     diagram_states[buf] = nil
   end
 
+  -- Hidden source buffers are absent from image collection, so validate their
+  -- preview ownership before gathering the next frame's visible windows.
+  function api.diagram_cleanup_detached_previews()
+    for _, st in pairs(diagram_states) do
+      local preview = st.float
+      local persistent = preview and preview.kind == 'split'
+        and state.preview_cfg.split.lifecycle == 'persistent'
+        and M.preview_active()
+      if preview and preview.kind == 'split' and not persistent then
+        local win = preview.source_win
+        if not win or not vim.api.nvim_win_is_valid(win)
+            or vim.api.nvim_win_get_buf(win) ~= preview.source_buf then
+          diagram_close_float(st)
+        end
+      end
+    end
+  end
+
   -- Block under the cursor, in the focused source window only.
   local function diagram_active_block(buf, items)
     local cur = vim.api.nvim_get_current_win()

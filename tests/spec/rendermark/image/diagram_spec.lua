@@ -186,6 +186,36 @@ describe('rendermark diagram items', function()
       assert.equals(0, #src.live_calls) -- already rendered: no live request
     end)
 
+    for _, lifecycle in ipairs({ 'cursor', 'persistent' }) do
+      it('handles source buffer switches for a ' .. lifecycle .. ' split', function()
+        local cfg = img.preview_config()
+        cfg.mode, cfg.auto = 'split', true
+        cfg.split.lifecycle, cfg.split.direction = lifecycle, 'vertical'
+        enter_block()
+        img.send_images()
+        img.send_images()
+        assert.is_nil(img._preview_user)
+        assert.equals(1, #preview_windows())
+        local other = vim.api.nvim_create_buf(false, true)
+        local ok, err = pcall(function()
+          vim.api.nvim_buf_set_lines(other, 0, -1, false, { '# Other document', 'outside blocks' })
+          vim.bo[other].filetype = 'markdown'
+          vim.api.nvim_set_current_win(win)
+          vim.api.nvim_win_set_buf(win, other)
+          img.send_images()
+          img.send_images()
+          assert.equals(lifecycle == 'cursor' and 0 or 1, #preview_windows())
+          if lifecycle == 'cursor' then assert.same({}, store) end
+        end)
+        vim.api.nvim_win_set_buf(win, buf)
+        img.send_images()
+        img.send_images()
+        assert.equals(1, #preview_windows())
+        vim.api.nvim_buf_delete(other, { force = true })
+        assert(ok, err)
+      end)
+    end
+
     it('asks the provider for a live render once, after the 400 ms debounce', function()
       src.status, src.path = 'none', nil
       img.refresh(buf)
