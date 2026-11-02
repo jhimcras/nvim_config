@@ -67,10 +67,24 @@ local ok, err = xpcall(function()
     assert(package.loaded['pckr'] and package.loaded['oil'], 'real plugins must be loaded')
     assert(client.server_capabilities.codeLensProvider == nil, 'mdloom must not advertise codeLens')
     assert(api.nvim_buf_get_keymap(a, 'n') and vim.fn.maparg('gW', 'n') ~= '', 'gW mapping')
-    wait('initial definition', function()
+    local definition_probe
+    local definition_ok, definition_err = pcall(wait, 'initial definition', function()
         local result = request(a, 'textDocument/definition', at(a, 2, 5)) or {}
+        definition_probe = {
+            request = at(a, 2, 5),
+            result = result,
+            expected_path = path('b.md'),
+            actual_path = result[1] and result[1].uri and vim.uri_to_fname(result[1].uri),
+            buffer_lines = api.nvim_buf_get_lines(a, 0, -1, false),
+            root_dir = client.config.root_dir,
+            workspace_folders = client.workspace_folders,
+        }
         return #result == 1 and vim.uri_to_fname(result[1].uri) == path('b.md')
     end)
+    if not definition_ok then
+        print('INITIAL DEFINITION PROBE ' .. vim.inspect(definition_probe))
+        error(definition_err)
+    end
     for _, action in ipairs(actions(a, 8)) do
         assert(not action.title:match('^Run') and not action.title:match('^Render')
             and not action.title:match('^Export'), vim.inspect(action))
