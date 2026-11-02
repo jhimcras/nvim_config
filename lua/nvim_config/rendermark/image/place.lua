@@ -406,9 +406,10 @@ function Module.new(M, state)
         grid_col = layout.grid_col,
         -- Grid row of the link text to occlude (differs from grid_row when stacked).
         text_grid_row = source_grid_row,
-        -- Grid columns of the full link text to occlude.
-        text_col = layout.grid_col,
-        text_end_col = layout.grid_col + math.max(1, (image.end_col or image.col) - image.col),
+        -- Prose-slot rows are already concealed by Neovim. Occluding their
+        -- original link span in the GUI would also hide the rebuilt prose.
+        text_col = text_layout and -1 or layout.grid_col,
+        text_end_col = text_layout and -1 or (layout.grid_col + math.max(1, (image.end_col or image.col) - image.col)),
         virtual = image.virtual == true,
         win_left = win_left_col,
         win_width = measure_w.width,
