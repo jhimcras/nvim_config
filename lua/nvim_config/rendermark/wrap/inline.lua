@@ -71,11 +71,12 @@ function M.collect_deco(buf, first, last, own_ns, img_ns)
     if not ok then
         return conceals, inserts
     end
+    local image_namespaces = require('nvim_config.rendermark.image.extmarks').owned_namespaces()
     local seq = 0
     for _, m in ipairs(marks) do
         local row, col, d = m[2], m[3], m[4]
         local nsid = d.ns_id
-        if nsid ~= own_ns and nsid ~= img_ns then
+        if nsid ~= own_ns and nsid ~= img_ns and not image_namespaces[nsid] then
             if d.conceal ~= nil and d.end_col and d.end_col > col
                 and (d.end_row == nil or d.end_row == row) then
                 seq = seq + 1

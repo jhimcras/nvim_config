@@ -123,3 +123,10 @@ UNC는 앞선 미실행 상태에서 **Windows 파일 I/O 수준 검증 통과**
 - M4 관련 실패: 없는 PNG·미지원 SVG 위치에서 vsplit 시 각 창에 오류 줄이 두 번 보이고, only 시 복구되며 재분할 시 재발했다. 동일 위치 virt_lines extmark 2개를 확인했다. W5는 미통과이며 나머지 항목 및 W6~W8은 미실행이다. 증거는 `%TEMP%\mdloom-w5-n4ii2ee9\`. 사용자 실행 후 시험 편집기·임시 루트 데몬 종료, 저장소 파일 변경 없음.
 - 원인: 창별 LayoutWindow에서 버퍼 공용 오류 extmark를 반복 생성했다. 동기화 pass마다 버퍼·행·열 기준으로 오류 생성을 중복 제거했다. 창별 이미지 payload 처리는 유지한다.
 - 회귀 검증: missing PNG와 실제 SVG 파일을 표시하는 버퍼에서 분할·닫기·재분할 후 오류 위치당 extmark 1개를 확인한다. 수정 전 2개로 실패, 수정 후 통과. Linux `bash run_tests.sh tests/spec/rendermark/image` 통과 및 SVG 픽스처 보강 후 display_failure_spec 18개 통과. Windows 실제 TUI 재검증 전 W5 완료로 처리하지 않는다.
+
+### W5 재중단: 서로 다른 분할 창 폭의 stub 배치 (2026-11-02)
+
+- 사용자 재검증: 오류 줄 중복 수정 확인(분할 닫기·재분할 후에도 위치당 extmark 1개), M1 재통과, 원문·nomodified·픽스처 SHA256 불변.
+- 새 실패: (b)의 한 줄 세 이미지에서 79열·40열 분할 시 좁은 창이 넓은 창의 stub 배치를 따라 두 번째·세 번째 이미지가 잘렸다. 넓은 창을 enew로 전환하면 좁은 창이 정상 축소되고, 같은 문서를 복원하면 재발했다. M2 공동 축소/M4 독립 표시 미충족으로 W5 중단. 전체 M3 및 이후는 미검증이다. 증거는 `%TEMP%\mdloom-w5-n4ii2ee9\`의 `repro_width.py`, `width-both-same-buffer.txt`, `width-only-narrow-image-buffer.txt`, `width-both-restored.txt`. 사용자 세션과 임시 루트 데몬 종료, 저장소 수정 없음.
+- 원인: 창별로 계산한 stub 예약과 label을 버퍼·행 기준으로 합쳐 첫 창의 배치가 공유됐다. stub 예약을 창별로 유지하고 같은 버퍼를 여러 창에서 볼 때 창에 한정한 namespace에 표시한다. namespace별 차등 갱신·정리도 처리하고, 해당 장식을 이미지 소스나 외부 장식으로 다시 읽지 않도록 제외했다. 단일 창의 기존 namespace와 GUI 이미지 배치 방식은 유지한다.
+- Linux 검증: 서로 다른 폭의 창에서 stub 범위·namespace 창 범위와 넓은 창 문서 전환/복원 시 정리·재생성 회귀 테스트. 기존 place.lua로 실패(종료 1), 수정 후 display_failure_spec 19개 통과. `bash run_tests.sh tests/spec/rendermark` 전체 417개 통과, 실패·오류 0. 창별 namespace는 현재 검증 환경 Neovim 0.12의 `nvim__ns_set`을 사용한다. Windows 실제 TUI는 재검증 대기이며 W5 전체는 미통과다.

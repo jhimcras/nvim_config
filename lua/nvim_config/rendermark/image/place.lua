@@ -144,7 +144,7 @@ function Module.new(M, state)
       reservation_carry_h = 0
 
       image_reservations[buf] = image_reservations[buf] or {}
-      local key = tostring(reserve_row) .. ':' .. tostring(reserve_above)
+      local key = (M._stub_active and tostring(win) .. ':' or '') .. tostring(reserve_row) .. ':' .. tostring(reserve_above)
       local current = image_reservations[buf][key]
       if current then
         current.reserve_h = math.max(current.reserve_h, reserve_h)
@@ -152,6 +152,7 @@ function Module.new(M, state)
         current.label = current.label or label
       else
         image_reservations[buf][key] = {
+          win = M._stub_active and win or nil,
           row = reserve_row,
           reserve_h = reserve_h,
           -- Hiding a source row shifts rows below, so it belongs in the signature.
@@ -544,6 +545,7 @@ function Module.new(M, state)
       for _, reservation in pairs(reservations) do
         reservation_parts[#reservation_parts + 1] = table.concat({
           tostring(buf),
+          tostring(reservation.win),
           tostring(reservation.row),
           tostring(reservation.reserve_h),
           tostring(reservation.span),
@@ -562,10 +564,10 @@ function Module.new(M, state)
     local image_reservations, image_conceals, diagram_errors, cell_w = ctx.image_reservations, ctx.image_conceals, ctx.diagram_errors, ctx.cell_w
     -- Cursor rows per window: the stub skips them so conceal reveals the link.
     -- READ windows are excluded (concealcursor='nvic').
-    local function cursor_rows_for(buf)
+    local function cursor_rows_for(buf, only_win)
       local set = nil
       for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-        if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf
+        if (not only_win or win == only_win) and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf
             and not vim.w[win].read_mode_active then
           set = set or {}
           set[vim.api.nvim_win_get_cursor(win)[1] - 1] = true
@@ -577,6 +579,12 @@ function Module.new(M, state)
     state.stub_source_rows = {}
     for buf, reservations in pairs(image_reservations) do
       for _, reservation in pairs(reservations) do
+        local ns = state.image_ns
+        local visible = vim.fn.win_findbuf(buf)
+        if M._stub_active and #visible > 1 then
+          ns = vim.api.nvim_create_namespace('rendermark_neopp_images_win_' .. reservation.win)
+          vim.api.nvim__ns_set(ns, { wins = { reservation.win } })
+        end
         local label = reservation.label
         if label and label.boxes and not reservation.above then
           -- Stub box or display-failure text over the concealed rows + virt_lines; allocation unchanged.
@@ -585,16 +593,16 @@ function Module.new(M, state)
           for r = reservation.row, reservation.row + span - 1 do
             state.stub_source_rows[buf][r] = true
           end
-          M.draw_stub_footprint_box(buf, state.image_ns, reservation, cell_w, cursor_rows_for(buf))
+          M.draw_stub_footprint_box(buf, ns, reservation, cell_w, cursor_rows_for(buf, reservation.win))
         elseif label and label.text_rows and not reservation.above then
           -- GUI: route gap text into virt_lines / row overlays.
-          emit_band_rows(buf, state.image_ns, reservation.row, reservation.reserve_h,
+          emit_band_rows(buf, ns, reservation.row, reservation.reserve_h,
             label.source_span or 1, label.virt_h or reservation.reserve_h,
-            label.text_rows, cursor_rows_for(buf))
+            label.text_rows, cursor_rows_for(buf, reservation.win))
         else
           local virt_lines = M.make_virt_lines(reservation.reserve_h, label)
           if #virt_lines > 0 then
-            pcall(decorations.set, buf, state.image_ns, reservation.row, 0,
+            pcall(decorations.set, buf, ns, reservation.row, 0,
               { virt_lines = virt_lines, virt_lines_above = reservation.above })
           end
         end

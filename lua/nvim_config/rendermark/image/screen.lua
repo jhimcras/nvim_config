@@ -119,10 +119,11 @@ function Module.new(M, state)
     local ok, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, -1, { start_row, 0 }, { end_row, 0 }, { details = true })
     if not ok then return '' end
 
+    local owned = require('nvim_config.rendermark.image.extmarks').owned_namespaces()
     local parts = {}
     for _, mark in ipairs(marks) do
       local details = mark[4] or {}
-      if details.ns_id ~= state.image_ns then
+      if not owned[details.ns_id] and details.ns_id ~= state.image_ns then
         local virt_width = M.virt_text_width(details.virt_text)
         local virt_text = M.virt_text_to_plain(details.virt_text)
         local virt_image = type(virt_text) == 'string' and virt_text:find('!%[[^%]]*%]%(([^%)%s]+)%)') ~= nil

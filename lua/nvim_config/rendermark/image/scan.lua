@@ -471,12 +471,13 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
 
   local ok_marks, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, -1, { start_row, 0 }, { end_row, 0 }, { details = true })
   if ok_marks then
+    local owned = require('nvim_config.rendermark.image.extmarks').owned_namespaces()
     for _, mark in ipairs(marks) do
       local row0 = mark[2]
       local col0 = mark[3]
       local details = mark[4] or {}
       if table_state.table_row(buf, row0) or table_rows[row0] then goto continue_mark end
-      if row0 and details.ns_id ~= deps.image_ns() and details.virt_text ~= nil then
+      if row0 and not owned[details.ns_id] and details.ns_id ~= deps.image_ns() and details.virt_text ~= nil then
         local text = M.virt_text_to_plain(details.virt_text)
         if M.line_has_image_link(text) then
           M.scan_markdown_image_text(deps, buf, row0, text, result, {
@@ -488,7 +489,7 @@ function M.collect_markdown_images(deps, buf, start_row, end_row)
           })
         end
       end
-      if row0 and details.ns_id ~= deps.image_ns() and details.virt_lines ~= nil then
+      if row0 and not owned[details.ns_id] and details.ns_id ~= deps.image_ns() and details.virt_lines ~= nil then
         local lines = M.virt_lines_to_plain(details.virt_lines)
         for idx, text in ipairs(lines) do
           if text ~= '' then

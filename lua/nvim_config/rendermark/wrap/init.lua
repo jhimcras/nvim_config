@@ -235,13 +235,14 @@ local function foreign_sig(buf, segs)
             own_ns[vim.api.nvim_create_namespace(name)] = true
         end
     end
+    local image_namespaces = require('nvim_config.rendermark.image.extmarks').owned_namespaces()
     local parts = {}
     for _, seg in ipairs(segs) do
         local marks = vim.api.nvim_buf_get_extmarks(buf, -1, { seg[1], 0 }, { seg[2] - 1, -1 },
             { details = true })
         for _, m in ipairs(marks) do
             local d = m[4]
-            if not own_ns[d.ns_id] then
+            if not own_ns[d.ns_id] and not image_namespaces[d.ns_id] then
                 local text = {}
                 for _, ch in ipairs(d.virt_text or {}) do
                     text[#text + 1] = ch[1]

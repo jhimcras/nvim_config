@@ -120,6 +120,37 @@ describe('an image the provider refuses', function()
     end
   end)
 
+  it('keeps stub layouts independent in unequal splits and clears old scopes', function()
+    img._stub_active = true
+    open({ '# Images', '', '![one](pic.png) ![two](pic.png) ![three](pic.png)', 'tail' })
+    vim.cmd('vsplit')
+    local narrow = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_width(narrow, 20)
+    local ok, err = pcall(function()
+      sync()
+      local ns = vim.api.nvim_get_namespaces()['rendermark_neopp_images_win_' .. narrow]
+      assert.is_number(ns)
+      assert.same({ narrow }, vim.api.nvim__ns_get(ns).wins)
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+      assert.is_true(#marks > 0)
+      for _, mark in ipairs(marks) do
+        for _, row in ipairs(mark[4].virt_lines or {}) do
+          local text = ''
+          for _, chunk in ipairs(row) do text = text .. chunk[1] end
+          assert.is_true(vim.fn.strdisplaywidth(text) <= vim.api.nvim_win_get_width(narrow))
+        end
+      end
+      vim.api.nvim_win_set_buf(win, vim.api.nvim_create_buf(false, true))
+      sync()
+      assert.equals(0, #vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}))
+      vim.api.nvim_win_set_buf(win, buf)
+      sync()
+      assert.is_true(#vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}) > 0)
+    end)
+    vim.api.nvim_win_close(narrow, true)
+    assert(ok, err)
+  end)
+
   -- Reserved geometry: virt_lines count per anchor row, source conceals, and the
   -- plain text of every virt_lines/overlay chunk.
   local function summary()
