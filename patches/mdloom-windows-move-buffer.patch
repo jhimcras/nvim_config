@@ -1,0 +1,72 @@
+diff --git a/editors/nvim/lua/mdloom/init.lua b/editors/nvim/lua/mdloom/init.lua
+index 6b885e4..e84c6c3 100644
+--- a/editors/nvim/lua/mdloom/init.lua
++++ b/editors/nvim/lua/mdloom/init.lua
+@@ -316,6 +316,17 @@ function M.move(src, dst, opts)
+       bufs[#bufs + 1] = vim.uri_to_bufnr(uri)
+     end
+   end
++  -- Keep normalized names before rename: Neovim's rename can miss Windows
++  -- buffers when fs_realpath and buffer names use different separators.
++  local moved_buffers = {}
++  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
++    if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buftype == '' then
++      local name = vim.fs.normalize(vim.api.nvim_buf_get_name(buf), { expand_env = false })
++      if name == src or name:sub(1, #src + 1) == src .. '/' then
++        moved_buffers[buf] = { old = name, new = dst .. name:sub(#src + 1) }
++      end
++    end
++  end
+   local ok, e = pcall(function()
+     if M.same_file(src, dst) then
+       local tmp = dst .. '.mdloom-move'
+@@ -328,6 +339,22 @@ function M.move(src, dst, opts)
+   if not ok or vim.uv.fs_lstat(dst) == nil then
+     return fail('moving ' .. src .. ' failed' .. (ok and '' or ': ' .. tostring(e)))
+   end
++  for buf, names in pairs(moved_buffers) do
++    local name = vim.fs.normalize(vim.api.nvim_buf_get_name(buf), { expand_env = false })
++    if name == names.old then
++      -- Match util.rename's saveas semantics: clear write flags and notify LSP.
++      local renamed, rename_err = pcall(vim.api.nvim_buf_call, buf, function()
++        vim.cmd('keepalt saveas! ' .. vim.fn.fnameescape(names.new))
++      end)
++      if not renamed then
++        return fail('file moved but buffer rename failed: ' .. tostring(rename_err))
++      end
++      local old_buf = vim.fn.bufnr(names.old)
++      if old_buf ~= -1 and old_buf ~= buf then
++        vim.cmd('bdelete! ' .. old_buf)
++      end
++    end
++  end
+   local unsaved = 0
+   for _, buf in ipairs(bufs) do
+     if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].modified then
+diff --git a/editors/nvim/tests/move.lua b/editors/nvim/tests/move.lua
+index 508f0d1..1b3c6eb 100644
+--- a/editors/nvim/tests/move.lua
++++ b/editors/nvim/tests/move.lua
+@@ -66,8 +66,22 @@ assert(vim.wait(15000, function()
+ end, 100), 'the daemon index')
+ 
+ -- 1. Success: apply edits then move; report edited open/closed files and unsaved counts.
++local source = T.edit(path('a.md'))
++-- Reproduce a rename that moves the file but misses the open buffer name.
++local rename_file = vim.lsp.util.rename
++vim.lsp.util.rename = function(src, dst)
++  vim.fn.mkdir(vim.fs.dirname(dst), 'p')
++  assert(vim.uv.fs_rename(src, dst))
++end
+ local done, message = mdloom.move(path('a.md'), path('sub/new.md'), { save = false })
++vim.lsp.util.rename = rename_file
+ assert(done, message)
++eq(vim.fs.normalize(path('sub/new.md')), vim.fs.normalize(vim.api.nvim_buf_get_name(source)), 'moved buffer path')
++vim.api.nvim_buf_set_lines(source, -1, -1, false, { 'edited after move' })
++vim.cmd('silent write')
++eq(nil, read('a.md'), 'wall must not recreate the source')
++vim.api.nvim_buf_set_lines(source, -2, -1, false, {})
++vim.cmd('silent write')
+ eq(nil, read('a.md'), 'old path is gone')
+ eq('# A\n', read('sub/new.md'), 'moved file')
+ eq('[x](sub/new.md)\n', lines(s), 'open buffer edited')
