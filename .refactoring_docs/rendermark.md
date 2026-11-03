@@ -6,9 +6,9 @@
 ## 현재 상태
 
 - R1~R7, R9, S3 구현은 완료했다. R8의 Linux 자동 검증도 통과했다.
-- Linux의 실제 TUI stub·neopp 확인을 완료했다. M15의 비동기 디코더 실패 전달 한계는 아래 결과와 구분한다. Windows W6 기능 검증도 완료했다. W7~W8과 C++ 전체 테스트 한계가 남아 작업 전체 완료를 뜻하지 않는다.
-- coderunner도 Linux 자동·실도구·GUI·실제 신뢰 UI·mdloom 연결을 확인했고 Windows W6 실행·신뢰 UI 검증도 완료했으며 W7 프로세스 검증은 남았다. 자세한 내용은 [coderunner 인계](coderunner.md)를 본다.
-- mdloom은 `lsp-scope` / `802b9a5`로 다시 확인했다. Linux 빌드·자동 검사와 nvim_config 실통합은 통과했으며 Windows·MSRV·병합은 남았다.
+- Linux의 실제 TUI stub·neopp 확인을 완료했다. M15의 비동기 디코더 실패 전달 한계는 아래 결과와 구분한다. Windows W6 기능 검증과 W7 복원본 재검증을 완료했고 W8 재검증에서도 결과 반영·예외 분류 완료 판정을 유지했다(사용자 보고). 비동기 PNG 오류 박스·Windows C++ 전체 테스트 제약과 다른 미검증 예외는 남아 전체 완료를 뜻하지 않는다.
+- coderunner도 Linux 자동·실도구·GUI·실제 신뢰 UI·mdloom 연결을 확인했고 Windows W6 실행·신뢰 UI, W7 프로세스 6그룹 × 3회와 전체 75개 스펙/890개 검증도 통과했다(사용자 보고). 자세한 내용은 [coderunner 인계](coderunner.md)를 본다.
+- mdloom은 `lsp-scope` / `802b9a5`로 다시 확인했다. Linux 빌드·자동 검사와 nvim_config 실통합은 통과했다. Windows W1~W7 검증 및 W8 결과 기록·예외 분류도 완료했으며 CI 결과/URL·MSRV 1.88·병합과 기존 예외는 남았다. 이 커밋 표기는 과거 소스 기준이며 Windows 로컬 사본과의 커밋 일치를 보증하지 않는다.
 - 기존 `.issues/open/issue-rendermark_all_drawing.md`의 요구와 결정은 이 문서에 통합했다. 다음 세션에서는 아래 수동 확인 결과와 이 문서의 완료 상태를 갱신한다.
 
 ## 유지할 결정
@@ -96,7 +96,7 @@ M15에서 GUI가 손상 파일을 받아들이면 스텁에서 `vim.ui.img.set =
 
 2026-10-30 Linux 실도구는 JDK21 PATH·`RENDERMARK_PLANTUML_JAR=/usr/share/java/plantuml/plantuml.jar`·`JAVA_TOOL_OPTIONS=-Djava.awt.headless=true`를 명시했다. 현재 기본 wrapper는 Java 경로 문제로 동작하지 않으므로, 환경 지정 없이 통과한 결과로 읽지 않는다. neopp의 비동기 PNG 거부는 `vim.ui.img.set`의 동기 오류가 아니어서 S3 오류 박스로 바뀌지 않았다. 당시 교체 이미지 크기가 달라 예약 높이도 5→7로 바뀌었으므로 해당 Linux 실행의 M15 높이 보장은 stub 주입 결과로만 기록한다. 이후 Windows 동일 크기 교체 결과는 위 표와 구분한다.
 
-미리보기 생성 후 `vim.v.errmsg`에 조용한 `E31: No such mapping`이 남았지만 화면/messages와 기능 실패는 없었다. ftplugin의 `sil! unmap` 경로가 후보이며 원인은 확정하지 않았다. Windows W6 결과와 남은 C++ 검증 제약은 [통합 인계](README.md#w6-기능-검증-완료추가-수정-반영-2026-11-02)에 기록했다. W7~W8은 미실행이다.
+미리보기 생성 후 `vim.v.errmsg`에 조용한 `E31: No such mapping`이 남았지만 화면/messages와 기능 실패는 없었다. ftplugin의 `sil! unmap` 경로가 후보이며 원인은 확정하지 않았다. Windows W6 결과와 남은 C++ 검증 제약은 [통합 인계](README.md#w6-기능-검증-완료추가-수정-반영-2026-11-02)에 기록했다. W6 당시에는 W7~W8을 실행하지 않았다. 이후 W7 PASS·W8 재검증 완료 상태와 남은 작업은 [최종 인계](README.md#windows-w7-복원본-재검증w8-결과-2026-11-02)를 따른다.
 
 W6 수정은 접힌 일반 이미지를 제외하되 자기 시작 행에서 접힌 다이어그램의 대체 표시를 유지한다. 확대 영역과 clip 좌표는 분수 셀에서도 정수 픽셀로 보낸다. neopp는 UTF-8 파일 열기와 global grid_clear 후 이미지 재투영을 적용했다. Windows GUI 결과는 사용자 보고이며 이 환경에서 재실행한 결과와 구분한다.
 

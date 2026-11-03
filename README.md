@@ -113,3 +113,7 @@ Run `bash run_integration_tests.sh` for real-init terminal integration tests,
 and `python3 scripts/check_require_graph.py` to check local dependency layers
 and cycles. Refactoring validation and benchmark results are recorded in
 [.refactoring_docs/README.md](.refactoring_docs/README.md).
+Windows W7 revalidation passed, and W8 evidence/document revalidation retained the
+recording and exception-classification completion status (user-reported, 2026-11-02).
+Windows CI, MSRV 1.88, existing exceptions, and the overall completion decision
+remain separate; see the handoff for details.

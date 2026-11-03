@@ -53,15 +53,15 @@ link_style='markdown', create_attachments_dir='ask', diagnostics=true, render_on
 
 mdloom TOML의 `[runners.python]`은 `runners.python = {...}`, `[renderers.plantuml]`은
 `renderers.plantuml = {...}`로 옮긴다. `match`, `cmd`, `steps`, `formats`는 Lua 배열을 쓴다.
-mdloom의 기존 명령은 병행 기간 동안 유지한다.
+현행 LSP 전용 mdloom에서는 기존 실행·렌더·export·GC·신뢰 명령을 제거했다. 해당 기능은 coderunner 명령을 사용한다.
 rendermark의 plantuml 실행 명령은 위 `renderers.plantuml`로 옮긴다.
-`preview`의 창/자동 표시 옵션은 rendermark에 유지한다. 이미지 그리기 연결과 이전 설정 제거는 별도 rendermark 작업에서 한다.
+`preview`의 창/자동 표시 옵션은 rendermark에 유지한다. 이미지 그리기 연결과 이전 설정 제거는 완료했다.
 
 루트 탐색은 `prjroot.GetProjectRoot`를 사용한다. 기존 `.prjroot`의 무확인 Lua 로드는 이 모듈의
 신뢰 기능과 별개이므로, 명령 정의는 `.coderunner.lua`에 둔다.
 
-플랫폼 상태: Linux/Neovim 0.12.4에서 C0–C9 자동 스펙 697개 통과(Failed/Errors 0).
-Windows W6와 W7의 사용자 로컬 검증은 통과했다. Job Object 구현을 원본에 반영했으며 복원본 Windows 재검증은 대기 중이다.
+이전 Linux/Neovim 0.12.4 검증에서 C0–C9 자동 스펙 697개가 통과했다(Failed/Errors 0). 당시 검사 범위의 수치다.
+Windows W6 기능 검증과 W7 복원본 재검증은 통과했다(사용자 보고). W7은 6그룹 × 3회·전체 75개 스펙/890개 성공이며 W8 재검증에서도 결과 반영·예외 분류 완료 판정을 유지했다. CI/MSRV와 기존 예외는 남아 있다.
 Windows 실행 엔진은 프로세스를 일시 정지 상태로 생성하고 Job Object에 등록한 뒤 재개한다.
 리더 종료·취소·timeout에는 Job 전체를 종료하며 마지막 Job handle 종료 시에도 트리를 정리한다.
 실행 파일 검색은 `CreateProcessW` 기본 동작을 사용한다. 자식 환경 PATH나 PATHEXT를 이용하는 별도 검색은 없으며,
@@ -303,5 +303,5 @@ rm -rf "$smoke_runtime"
 2026-11-02 Windows W6 사용자 검증: 실제 Python/PlantUML·preview·저장·실패 복구·export/stale 해제,
 View→trust→재로드·변경 후 재승인·Deny·Untrust, 절대/상대·양쪽 슬래시·공백/한글 경로를 확인했다.
 위 C9 표는 당시 기록이며 최신 진행 상태는 [통합 인계](../.refactoring_docs/README.md)를 따른다.
-W7 복원본 Windows 재검증은 6그룹 × 3회·전체 75개 스펙/890개 통과, W8은 결과 반영·예외 분류 완료다(사용자 보고).
+W7 복원본 Windows 재검증은 6그룹 × 3회·전체 75개 스펙/890개 통과, W8은 보존 증거·문서 재검증 후에도 결과 반영·예외 분류 완료 판정을 유지했다(사용자 보고). W1~W7 기능 재실행은 아니다.
 Windows CI·MSRV와 기존 보류·미검증 예외는 유지하며 전체 완료·이슈 종료는 별도 결정이다.

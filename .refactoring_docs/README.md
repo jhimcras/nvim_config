@@ -11,6 +11,17 @@
 | [followups.md](followups.md) | Mermaid 설정, 표 이미지 중복 전송, PlantUML 감지, 이미지 붙여넣기 | 개별 후속 작업 대기 |
 | [module_refactoring.md](module_refactoring.md) | 공통 모듈 구조·이벤트·호환과 과거 검증 요약 | 2026-10-07 종료, 현재 의존성 검사 결과 별도 기록 |
 
+## 남은 작업과 완료 판정
+
+1. **사용자 결정으로 보류:** Windows CI 결과/URL 확보와 MSRV 1.88 실행. 현재 미확인·미설치/미실행 상태를 유지한다.
+2. **사용자 결정으로 보류:** 기존 예외의 해소·수용 여부 판단. W4 다른 SID pipe 선점, W6 비동기 PNG 오류 박스·Windows C++ 전체 테스트 제약, terminal focus 건너뜀을 유지하고 통과로 집계하지 않는다.
+위 두 항목은 다음 실행 작업에서 제외한다. 보류 결정 자체를 전체 완료·이슈 종료 승인으로 해석하지 않는다. 다음은 문서 변경 커밋·푸시와 아래 완료 판정이다.
+
+3. C9/통합 전체 완료·관련 이슈 종료·병합·태그를 별도로 결정한다. 기존 coderunner 순환 그룹 1은 미해소다.
+4. Mermaid 설정·실도구, 표 이미지 중복 전송 재현, PlantUML 파일 형식 감지, 클립보드 이미지 붙여넣기는 [별도 후속 작업](followups.md)으로 관리한다.
+
+Windows 검증 당시의 "로컬 적용·commit/push 없음"은 그 실행 시점의 기록이다. 이후 nvim_config 문서·수동 검사 변경은 `39bc64c`로 커밋해 `origin/mdloom_integration`에 푸시했다. mdloom 문서 5개는 `8681ca7`로 로컬 커밋했으며 원격 미등록으로 푸시하지 못했다. 그 뒤의 W8 재검증 보고는 별도 문서 갱신으로 구분한다.
+
 ## 다음 세션 진행 순서
 
 1. `git status --short`와 관련 구현을 확인한다. 외부 `~/workspace/markdown_lsp`의 브랜치·설정·daemon 상태는 마지막 기록과 다를 수 있으므로 다시 확인한다.
@@ -19,6 +30,8 @@
 4. 결과에 날짜·환경·명령·통과/실패를 기록한다. 항목을 완료하면 해당 문서의 상태와 이 표를 함께 갱신한다.
 
 과거 테스트 수와 성능은 각 작업 시점의 기록이다. 아래 통합 검증은 앞선 문서 정리와 구분한다. require graph는 재실행에서도 108모듈·276간선·레이어 위반 0·기존 coderunner 순환 그룹 1, 종료 1이었다. 순환을 해소한 결과가 아니다.
+
+아래 단계별 기록의 미통과·미실행·재검증 대기는 해당 실행 당시의 이력이다. 현재 Windows 판정은 문서 상단과 마지막 W7/W8 기록을 따른다.
 
 ## 2026-10-30 mdloom 통합 검증
 
@@ -36,7 +49,7 @@
 ### Windows W1 소스 불일치 보고 (해소됨)
 
 - 사용자 보고: Windows `mdloom_integration` / `8348dd6`에는 coderunner가 있지만 새 통합 smoke, `diagnostics=true`, 외부 `mdloom_dir` 보존, tmux 종료 대기가 빠져 W1 준비가 완료되지 않았다. W2는 보류한다. 이는 제품 테스트 실패가 아니라 검증할 소스의 불일치다.
-- Linux도 현재 같은 브랜치·HEAD이며 위 변경은 미커밋/미추적 상태에 있다. 브랜치 체크아웃만으로 전달되지 않으므로 `init.lua`, `tests/integration/tmux_case.py`, `tests/manual/mdloom_integration_smoke.lua` 세 파일을 작업 트리에서 복사하고 SHA256을 대조한다. 기대 해시와 재확인 방법은 mdloom [Windows 기록](../../markdown_lsp/doc/windows-test-log.md#w1-재확인-소스-불일치)에 둔다.
+- Linux도 현재 같은 브랜치·HEAD이며 위 변경은 미커밋/미추적 상태에 있다. 브랜치 체크아웃만으로 전달되지 않으므로 `init.lua`, `tests/integration/tmux_case.py`, `tests/manual/mdloom_integration_smoke.lua` 세 파일을 작업 트리에서 복사하고 SHA256을 대조한다. 기대 해시와 재확인 방법은 mdloom [Windows 기록](../../markdown_lsp/doc/windows-test-log.md#w1-재확인-소스-불일치-해소됨)에 둔다.
 - Windows에서 추가한 `doc/windows-test-log.md` 기록은 Linux 원본에 아직 없으므로 문서 전체를 덮어쓰지 않는다. 현장 기록을 유지하고 새 결과만 병합한다. 소스 재동기화 확인과 W1의 실제 경로·도구·Java/jar 환경 출력이 모두 확보된 뒤 W2로 진행한다.
 
 ## 정리 범위
@@ -63,7 +76,7 @@
 - 현장 로그: `%TEMP%\mdloom-w4-retry-20261102-0925\smoke.log`, `%TEMP%\mdloom-w4-move-20261102-0930\move.log`.
 
 
-### W4 자동·headless 재검증 통과 (2026-11-02, 현재 상태)
+### W4 자동·headless 재검증 통과 (2026-11-02, 당시 중간 판정)
 
 사용자 Windows 실행 보고를 반영한 기록이며 이 Linux 세션에서 Windows 검사를 실행한 결과는 아니다. mdloom 수정은 rsync로 전달할 수 있으므로 패치 중복 적용은 필요 없다.
 
@@ -183,7 +196,7 @@ UNC는 앞선 미실행 상태에서 **Windows 파일 I/O 수준 검증 통과**
 
 **W7 복원본 Windows 재검증 PASS, W8 결과 반영·예외 분류 완료**(2026-11-02, 사용자 Windows 실행 보고). 이 Linux 세션에서 Windows 검사를 재실행한 결과는 아니다. 이전의 복원본 재검증 대기 상태를 이 결과로 갱신한다.
 
-환경: Windows 10.0.26100.7171, Neovim 0.12.4, Python 3.8.0, OpenJDK 22.0.2. 검증 대상은 앞서 Job Object 구현을 복원한 로컬 소스다. Windows 사본의 Git 메타데이터가 없어 특정 커밋과의 소스 일치 검증으로 확대하지 않는다. 이번 재검증에서는 제품 코드 `exec.lua`, `windows_process.lua`를 수정하지 않았으며 모든 변경은 로컬에만 적용했다. commit/push/repo 업로드는 하지 않았다.
+환경: Windows 10.0.26100.7171, Neovim 0.12.4, Python 3.8.0, OpenJDK 22.0.2. 검증 대상은 앞서 Job Object 구현을 복원한 로컬 소스다. Windows 사본의 Git 메타데이터가 없어 특정 커밋과의 소스 일치 검증으로 확대하지 않는다. 이번 재검증에서는 제품 코드 `exec.lua`, `windows_process.lua`를 수정하지 않았으며 모든 변경은 로컬에만 적용했다. 이 Windows 재검증 시점에는 commit/push/repo 업로드를 하지 않았다. 이후 전달 상태는 상단 기록을 따른다.
 
 | 검증 | 복원본 Windows 결과 |
 | --- | --- |
@@ -217,8 +230,25 @@ nvim --headless -u tests/minimal_init.lua -i NONE -l tests/run_unit.lua
 
 W8 완료는 결과 기록과 예외 분류 완료다. Windows CI 결과/URL 미확인, MSRV 1.88 미설치·미실행, W4 다른 SID named pipe 선점 보류·미실행, W6 비동기 PNG 오류 박스·Windows C++ 전체 테스트 제약, Windows terminal focus 검사 건너뜀을 통과로 처리하지 않는다. 이동 버퍼 이슈는 W4 우회 구현·재검증 통과로 기록하되 열림 상태를 유지한다. 전체 완료·기존 이슈 종료·병합·태그는 별도 결정이다.
 
+### W8 재검증 (2026-11-02, 사용자 보고)
+
+보존 증거를 재집계해 75개 스펙·890개 성공·실패/오류 0·모든 종료 코드 0, 프로세스 로그 6그룹 × 3회 PASS, 핸들 178→178, PNG 전체 chunk CRC·IDAT 압축 해제 및 SVG 형식 정상을 확인했다. 최신 문서의 판정·예외 분류도 일치했다. **W8 결과 반영·예외 분류 완료 판정을 유지한다.** W1~W7 기능 테스트를 다시 실행하거나 전체 완료·이슈 종료를 판정한 결과가 아니다.
+
+Windows 사본에서 문서 5개를 한 번에 검사하면 하위 `issues/open` 문서가 범위 밖으로 거부돼 종료 2였다. 각 디렉터리에서 분리 검사한 결과 수정 후에도 진단 0·종료 0이었다. 이 절차 차이는 기능 테스트 실패나 CI/MSRV 통과를 뜻하지 않는다. 외부·하위 전체 링크를 검증한 결과로 확대하지 않는다.
+
+```bat
+cd /d D:\workspace\mdloom\doc
+mdloom check --no-daemon --json manual-test.md windows-test-log.md verification.md lsp-scope.md
+echo %errorlevel%
+cd issues\open
+mdloom check --no-daemon --json issue-windows_move_buffer_slash.md
+echo %errorlevel%
+```
+
+CI 결과/URL 미확인·MSRV 1.88 미설치/미실행, W4 다른 SID named pipe 선점 보류, W6 비동기 PNG 오류 박스·Windows C++ 전체 테스트 제약과 terminal focus 건너뜀은 유지한다.
+
 ### Linux 인계 반영 확인 (2026-11-02)
 
 - 사용자 보고의 state 디렉터리 준비·편집기 단독 강제 종료 검사를 수동 스크립트에 반영했다. 제품 코드 두 파일은 변경하지 않았다.
 - `nvim --headless -u NONE -i NONE`에서 `loadfile`로 수동 스크립트 문법 검사 통과. `bash run_tests.sh tests/spec/coderunner/exec_spec.lua`는 11개 성공·실패/오류 0·종료 0이었다. Windows 전용 6그룹은 이 세션에서 실행하지 않았다.
-- mdloom `doc` cwd에서 `mdloom check --no-daemon --json manual-test.md windows-test-log.md verification.md lsp-scope.md issues/open/issue-windows_move_buffer_slash.md`는 진단 0·종료 0이었다. 두 저장소 `git diff --check`도 종료 0이었다.
+- mdloom `doc` cwd에서 `mdloom check --no-daemon --json manual-test.md windows-test-log.md verification.md lsp-scope.md issues/open/issue-windows_move_buffer_slash.md`는 진단 0·종료 0이었다. 이는 Linux checkout에서의 당시 결과이며 Windows 사본의 범위 거부를 대체하지 않는다. Windows 재실행은 위 W8 분리 검사 절차를 따른다. 두 저장소 `git diff --check`도 종료 0이었다.
