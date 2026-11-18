@@ -33,7 +33,7 @@ function M.describe(block, opts)
     opts = opts or {}
     if block.duplicate then return nil, 'duplicate-code-id: ' .. block.id end
     if block.lang == 'output' then return nil, 'output blocks cannot be rendered' end
-    local cfg, status = require('nvim_config.coderunner').resolve(block.root, opts.explicit == true)
+    local cfg, status = require('nvim_config.coderunner.settings').resolve(block.root, opts.explicit == true)
     if not trust.can_select(status) then return nil, 'workspace configuration must be loaded with :CodeRunnerLoad' end
     local entry, name = config.select(cfg, 'renderers', block.lang)
     if not entry then return nil, 'no renderer for ' .. tostring(block.lang) end
@@ -60,7 +60,7 @@ function M.lookup(block, opts)
 end
 local function event(buf)
     if buf and api.nvim_buf_is_valid(buf) then
-        require('nvim_config.coderunner.diagnostics').refresh(buf)
+        api.nvim_exec_autocmds('User', { pattern = 'CodeRunnerResults', modeline = false, data = { buf = buf } })
         api.nvim_exec_autocmds('User', { pattern = 'CodeRunnerDiagrams', modeline = false, data = { buf = buf } })
     end
 end
@@ -86,7 +86,7 @@ function M.protected(root)
                 if not list then return nil, err end
                 for _, block in ipairs(list) do
                     if not block.duplicate and block.lang ~= 'output' then
-                        local cfg, status = require('nvim_config.coderunner').resolve(root, false)
+                        local cfg, status = require('nvim_config.coderunner.settings').resolve(root, false)
                         if not trust.can_select(status) then return nil, 'workspace configuration is not loaded' end
                         if config.select(cfg, 'renderers', block.lang) then
                             local entry = config.select(cfg, 'renderers', block.lang)
@@ -241,7 +241,7 @@ function M.setup()
         local list, err = blocks.get(buf, runner.root(buf))
         if not list then vim.notify(err, vim.log.levels.ERROR); return end
         for _, block in ipairs(list) do
-            local cfg = require('nvim_config.coderunner').resolve(block.root, false)
+            local cfg = require('nvim_config.coderunner.settings').resolve(block.root, false)
             if config.select(cfg, 'renderers', block.lang) and not block.duplicate then
                 local _, message = M.start(block, { buf = buf, batch = true })
                 if message then vim.notify(message, vim.log.levels.ERROR) end
@@ -267,6 +267,5 @@ function M.setup()
                 #result.removed, result.skipped and ' (busy workspace skipped)' or '')) end
         end
     end, { nargs = '?', bang = true })
-    require('nvim_config.coderunner.diagnostics').setup()
 end
 return M

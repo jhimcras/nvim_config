@@ -130,7 +130,7 @@ function M.start(buf, selector, opts)
     local block, err = M.select(buf, selector, root)
     local function reject(reason) vim.notify('coderunner: ' .. reason, vim.log.levels.WARN); return nil, reason end
     if not block then return reject(err) end
-    local settings, trust = require('nvim_config.coderunner').resolve(root, true)
+    local settings, trust = require('nvim_config.coderunner.settings').resolve(root, true)
     if not require('nvim_config.coderunner.trust').can_select(trust) then
         return reject('workspace configuration is not loaded; use :CodeRunnerLoad (global fallback is blocked)')
     end

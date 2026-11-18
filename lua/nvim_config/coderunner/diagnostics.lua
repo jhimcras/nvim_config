@@ -5,7 +5,7 @@ function M.refresh(buf)
     if not api.nvim_buf_is_valid(buf) or not api.nvim_buf_is_loaded(buf) then return end
     local runner = require('nvim_config.coderunner.run')
     local root = runner.root(buf)
-    local cfg = require('nvim_config.coderunner').resolve(root, false)
+    local cfg = require('nvim_config.coderunner.settings').resolve(root, false)
     if not cfg.diagnostics then vim.diagnostic.reset(M.namespace, buf); return end
     local list = require('nvim_config.coderunner.blocks').get(buf, root)
     if not list then vim.diagnostic.reset(M.namespace, buf); return end
@@ -36,6 +36,9 @@ function M.setup()
     api.nvim_create_autocmd({ 'BufReadPost', 'TextChanged', 'TextChangedI', 'BufWritePost' }, {
         group = group, pattern = { '*.md', '*.markdown' }, callback = function(args) M.refresh(args.buf) end,
     })
+    -- render/export announce changed results instead of requiring this module.
+    api.nvim_create_autocmd('User', { group = group, pattern = 'CodeRunnerResults',
+        callback = function(args) M.refresh(args.data.buf) end })
     for _, buf in ipairs(api.nvim_list_bufs()) do
         if api.nvim_buf_is_loaded(buf) and api.nvim_buf_get_name(buf):match('%.md$') then M.refresh(buf) end
     end

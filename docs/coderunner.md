@@ -129,6 +129,8 @@ Windows는 미검증이다.
 현재 키가 없으면 마지막 성공 이미지를 stale로 조회한다. 렌더 실패는 현재 키에만 기록하며
 `render-failed` warning을 코드블록 첫 줄에 표시한다. 성공하거나 키가 바뀌면 사라진다.
 `duplicate-code-id`는 각 중복 블록에 error로 표시한다. `diagnostics=false`면 모두 숨긴다.
+렌더 완료와 export 적용은 `User CodeRunnerResults`(data={buf=bufnr})를 발행하고 진단 모듈이 이를 받아 갱신한다.
+하위 모듈은 부모 `nvim_config.coderunner` 대신 `coderunner.settings.resolve`로 설정을 얻는다(순환 require 금지).
 
 용량 정리는 저장 후 오래된 수정 시각 순으로 삭제하며, 저장 문서의 현재 이미지와 필요한 마지막 성공 이미지,
 사용·갱신 중인 이미지를 보존한다. 보호 이미지만으로 상한을 넘으면 유지하고 알린다.

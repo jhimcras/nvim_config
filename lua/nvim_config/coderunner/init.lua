@@ -1,7 +1,7 @@
 local M = {}
 local config = require('nvim_config.coderunner.config')
 local trust = require('nvim_config.coderunner.trust')
-local global = config.validate({}, 'global')
+local settings = require('nvim_config.coderunner.settings')
 
 local function root()
     local file = vim.api.nvim_buf_get_name(0)
@@ -16,19 +16,10 @@ local function report(status)
     if status.error then vim.notify(status.error, vim.log.levels.ERROR) end
 end
 
--- explicit=true is reserved for commands initiated by the user. Automatic
--- consumers use false and cannot cause a secure.read prompt.
-function M.resolve(workspace, explicit)
-    local status = trust.status(workspace)
-    if explicit and status.state ~= 'loaded' and status.state ~= 'absent' then
-        status = trust.load(workspace)
-    end
-    return config.merge(global, status.config), status
-end
+function M.resolve(workspace, explicit) return settings.resolve(workspace, explicit) end
 
 function M.setup(opts)
-    local diagnostics
-    global, diagnostics = config.validate(opts or {}, 'global')
+    local global, diagnostics = settings.set_global(opts)
     for _, d in ipairs(diagnostics) do
         vim.notify(d.message, d.level == 'error' and vim.log.levels.ERROR or vim.log.levels.WARN)
     end
@@ -41,6 +32,7 @@ function M.setup(opts)
     end, {})
     require('nvim_config.coderunner.run').setup()
     require('nvim_config.coderunner.render').setup()
+    require('nvim_config.coderunner.diagnostics').setup()
     require('nvim_config.coderunner.autorender').setup()
     require('nvim_config.coderunner.export').setup()
     require('nvim_config.coderunner.provider').setup()

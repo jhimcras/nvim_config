@@ -21,7 +21,7 @@ end
 local function snapshot(list, state)
     local cfg, trust
     if list and list[1] then
-        cfg, trust = require('nvim_config.coderunner').resolve(list[1].root, false)
+        cfg, trust = require('nvim_config.coderunner.settings').resolve(list[1].root, false)
         if state.snapshot_blocks == list and vim.deep_equal(state.config, cfg)
             and state.trust_state == trust.state and state.trust_hash == trust.hash then return state.baseline end
     end

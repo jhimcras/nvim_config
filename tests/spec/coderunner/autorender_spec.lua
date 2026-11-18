@@ -97,12 +97,12 @@ describe('coderunner automatic rendering', function()
     end)
     it('rechecks disabled automatic rendering during debounce', function()
         save(text:gsub('\na\n', '\nchanged\n'))
-        local resolve = require('nvim_config.coderunner').resolve
-        require('nvim_config.coderunner').resolve = function(...)
+        local resolve = require('nvim_config.coderunner.settings').resolve
+        require('nvim_config.coderunner.settings').resolve = function(...)
             local cfg, status = resolve(...); cfg.auto_render = false; return cfg, status
         end
         settle()
-        require('nvim_config.coderunner').resolve = resolve
+        require('nvim_config.coderunner.settings').resolve = resolve
         assert.equals(0, #calls)
     end)
     it('does not prompt or render for unloaded or invalidated workspace configuration', function()

@@ -211,7 +211,7 @@ function M.apply(buf, plan, tick)
     return { action = plan.action, path = plan.target }
 end
 local function prepare(buf, block, opts, callback)
-    local cfg, status = require('nvim_config.coderunner').resolve(block.root, opts.explicit ~= false)
+    local cfg, status = require('nvim_config.coderunner.settings').resolve(block.root, opts.explicit ~= false)
     if not require('nvim_config.coderunner.trust').can_select(status) then callback(nil, 'workspace configuration must be loaded with :CodeRunnerLoad'); return end
     local folder, err = ensure_folder(block, cfg)
     if not folder then callback(nil, err); return end
@@ -261,7 +261,7 @@ function M.start(buf, selector, opts, callback)
         if not plan then callback(nil, message); return end
         local result; result, message = M.apply(buf, plan, plan.tick)
         cache.use(plan.source, -1)
-        require('nvim_config.coderunner.diagnostics').refresh(buf)
+        api.nvim_exec_autocmds('User', { pattern = 'CodeRunnerResults', modeline = false, data = { buf = buf } })
         callback(result, message)
     end)
 end
@@ -270,7 +270,7 @@ function M.all(buf, callback)
     callback = callback or function() end
     if api.nvim_buf_get_name(buf) == '' then callback({ applied = {}, failed = { { error = 'save the document before exporting' } } }); return end
     local root = runner.root(buf)
-    local cfg, status = require('nvim_config.coderunner').resolve(root, false)
+    local cfg, status = require('nvim_config.coderunner.settings').resolve(root, false)
     if not require('nvim_config.coderunner.trust').can_select(status) then
         callback({ applied = {}, failed = { { error = 'workspace configuration must be loaded with :CodeRunnerLoad' } } }); return
     end
@@ -292,7 +292,7 @@ function M.all(buf, callback)
                 if result then report.applied[#report.applied + 1] = result
                 else report.failed[#report.failed + 1] = { key = plan.block.key, error = message } end
             end
-            require('nvim_config.coderunner.diagnostics').refresh(buf)
+            api.nvim_exec_autocmds('User', { pattern = 'CodeRunnerResults', modeline = false, data = { buf = buf } })
             callback(report); return
         end
         prepare(buf, targets[i], { existing_only = true, explicit = false, batch = true }, function(plan, message)
