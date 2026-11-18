@@ -241,9 +241,15 @@ local function get_image_anchor_sig()
         for i, line in ipairs(lines) do
           local row = start_row + i - 1
           local key = tostring(buf) .. ':' .. tostring(row)
-          if not seen[key] and image_scan.line_has_image_link(line, buf) then
-            seen[key] = true
-            parts[#parts + 1] = key .. '=' .. M.image_anchor_extmark_sig(buf, row, row + 1)
+          if image_scan.line_has_image_link(line, buf) then
+            if not seen[key] then
+              seen[key] = true
+              parts[#parts + 1] = key .. '=' .. M.image_anchor_extmark_sig(buf, row, row + 1)
+            end
+            -- Opening a fold need not move topline/botline (a hidden image left
+            -- no reservation), so each window's fold state must resync too.
+            local fold = vim.api.nvim_win_call(win, function() return vim.fn.foldclosed(row + 1) end)
+            parts[#parts + 1] = tostring(win) .. ':' .. tostring(row) .. '@' .. tostring(fold)
           end
         end
       end

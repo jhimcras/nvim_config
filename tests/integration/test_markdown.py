@@ -82,6 +82,31 @@ class Markdown(TmuxCase):
         self.wait_lua("return vim.fn.getline(4)", '![b](tall.png)')
         self.wait_lua(state, before)
 
+    def test_tall_image_returns_when_its_fold_opens(self):
+        (self.project / 'tall.png').write_bytes(b'\x89PNG\r\n\x1a\n' + bytes(8)
+                                                + (548).to_bytes(4, 'big') + (5000).to_bytes(4, 'big'))
+        self.file('image.md', 'before\n![image](tall.png)\nafter\n' + ''.join('l%d\n' % i for i in range(1, 6)))
+        self.command("lua vim.g.rendermark_img_stub=true; require('nvim_config.rendermark.image').setup({})")
+        self.command('edit image.md')
+        self.command('setlocal foldmethod=manual')
+        self.keys('2', 'G')
+        self.wait_lua("return vim.fn.line('.')", 2)
+        self.wait_screen('548x5000px y=0/')
+        count = "local n=0 for _ in pairs(_G.__rendermark_image_backend.stub_store) do n=n+1 end return n"
+        self.keys('z', 'f', 'j')
+        self.keys('z', 'c')
+        self.wait_lua('return vim.fn.foldclosed(2)', 2)
+        self.wait_lua(count, 0)
+        self.keys('z', 'o')
+        # No further input: the box must come back by itself within 1s.
+        self.timeout = 1
+        try:
+            self.wait_lua(count, 1)
+            self.wait_screen('548x5000px y=0/')
+        finally:
+            del self.timeout
+        self.assertEqual(-1, self.lua('return vim.fn.foldclosed(2)'))
+
     def test_image_scroll_keys_keep_typeahead_order_like_plain_text(self):
         self.command("lua vim.g.rendermark_img_stub=true; require('nvim_config.rendermark.image').setup({})")
         results = {}
