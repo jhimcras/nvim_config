@@ -104,7 +104,8 @@ function Module.new(M, state)
             rhs = vim.fn.eval(rhs)
           end
           local prefix = vim.v.count > 0 and tostring(vim.v.count) or ''
-          vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(prefix .. rhs, true, false, true), 'n', false)
+          -- 'i' inserts before keys already typed ahead (jx, @a), keeping their order.
+          vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(prefix .. rhs, true, false, true), 'ni', false)
         end, { buffer = buf, silent = true, desc = 'Scroll tall image or move normally' })
       end
     end

@@ -45,6 +45,29 @@ class Markdown(TmuxCase):
         self.assertEqual(source.splitlines(), self.lua('return vim.api.nvim_buf_get_lines(0,0,-1,false)'))
         self.assertFalse(self.lua('return vim.bo.modified'))
 
+    def test_image_scroll_keys_keep_typeahead_order_like_plain_text(self):
+        self.command("lua vim.g.rendermark_img_stub=true; require('nvim_config.rendermark.image').setup({})")
+        results = {}
+        for name in ('m.txt', 'm.md'):
+            self.file(name, 'aaa\nbbb\nccc\nddd\n')
+            self.command('edit ' + name)
+            if name == 'm.md':
+                self.wait_lua("return vim.fn.maparg('j', 'n', false, true).buffer", 1)
+            self.keys('g', 'g')
+            self.wait_lua("return vim.fn.line('.')", 1)
+            # Both keys in one send: x is already in typeahead when j's mapping runs.
+            self.keys('j', 'x')
+            self.wait_lua('return vim.bo.modified', True)
+            typed = self.lua("return {vim.api.nvim_buf_get_lines(0,0,-1,false), vim.fn.line('.')}")
+            self.command("call setreg('a', 'jx')")
+            self.keys('@', 'a')
+            self.wait_lua("return #table.concat(vim.api.nvim_buf_get_lines(0,0,-1,false))", 10)
+            replayed = self.lua("return {vim.api.nvim_buf_get_lines(0,0,-1,false), vim.fn.line('.')}")
+            results[name] = (typed, replayed)
+        self.assertEqual([[['aaa', 'bb', 'ccc', 'ddd'], 2], [['aaa', 'bb', 'cc', 'ddd'], 3]],
+                         list(map(list, results['m.txt'])))
+        self.assertEqual(results['m.txt'], results['m.md'])
+
     def test_table_wrap_checkbox_and_read_mode_render_without_editing_source(self):
         source = ("# Heading\n\n- [ ] task\n\n"
                   "| Name | Value |\n| --- | --- |\n| 한글 | content |\n\n"
