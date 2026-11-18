@@ -5,16 +5,42 @@ function Module.new(M, state)
   local api = {}
   local windows, mapped = {}, {}
 
-  function api.image_scroll_viewport(win, buf, row, key, height, viewport)
-    local tick = vim.api.nvim_buf_get_changedtick(buf)
-    local w = windows[win]
-    if not w or w.buf ~= buf or w.tick ~= tick then
-      w = { buf = buf, tick = tick, rows = {} }
-      windows[win] = w
+  -- The name prefix marks it as image-owned, so wrap/scan signatures skip it.
+  local ns = vim.api.nvim_create_namespace('rendermark_neopp_images_win_scroll')
+
+  -- Offsets survive edits: each item rides an extmark on its source row, and a
+  -- new changedtick only re-keys rows from those marks (deleted rows drop out).
+  local function sync(w)
+    local tick = vim.api.nvim_buf_get_changedtick(w.buf)
+    if w.tick == tick then return w end
+    local rows = {}
+    for _, item in pairs(w.rows) do
+      local pos = vim.api.nvim_buf_get_extmark_by_id(w.buf, ns, item.mark, { details = true })
+      if pos[1] and not pos[3].invalid and not rows[pos[1]] then
+        rows[pos[1]] = item
+      else
+        pcall(vim.api.nvim_buf_del_extmark, w.buf, ns, item.mark)
+      end
     end
+    w.rows, w.tick = rows, tick
+    return w
+  end
+
+  local function drop(win)
+    local w = windows[win]
+    if not w then return end
+    for _, item in pairs(w.rows) do pcall(vim.api.nvim_buf_del_extmark, w.buf, ns, item.mark) end
+    windows[win] = nil
+  end
+
+  function api.image_scroll_viewport(win, buf, row, key, height, viewport)
+    if windows[win] and windows[win].buf ~= buf then drop(win) end
+    windows[win] = windows[win] or { buf = buf, rows = {} }
+    local w = sync(windows[win])
     local item = w.rows[row]
     if not item or item.key ~= key then
-      item = { key = key, offset = 0 }
+      if item then vim.api.nvim_buf_del_extmark(buf, ns, item.mark) end
+      item = { key = key, offset = 0, mark = vim.api.nvim_buf_set_extmark(buf, ns, row, 0, { invalidate = true }) }
       w.rows[row] = item
     end
     -- The GUI snaps image origins to screen rows. Round the last offset up
@@ -29,8 +55,8 @@ function Module.new(M, state)
     if not M.is_active() or vim.fn.mode() ~= 'n' then return end
     local win = vim.api.nvim_get_current_win()
     local w = windows[win]
-    if not w or w.buf ~= vim.api.nvim_get_current_buf()
-        or w.tick ~= vim.api.nvim_buf_get_changedtick(w.buf) then return end
+    if not w or w.buf ~= vim.api.nvim_get_current_buf() then return end
+    sync(w)
     local row = vim.api.nvim_win_get_cursor(win)[1] - 1
     if vim.fn.foldclosed(row + 1) ~= -1 then return end
     return w.rows[row], w, row
@@ -42,8 +68,12 @@ function Module.new(M, state)
     local item, w, row = current_item()
     local win = vim.api.nvim_get_current_win()
     local previous = state.image_scroll_cursor
-    state.image_scroll_cursor = { win = win, buf = vim.api.nvim_get_current_buf(), row = vim.api.nvim_win_get_cursor(win)[1] - 1 }
-    if item and previous and previous.win == win and previous.buf == w.buf and previous.row ~= row then
+    local buf = vim.api.nvim_get_current_buf()
+    local tick = vim.api.nvim_buf_get_changedtick(buf)
+    state.image_scroll_cursor = { win = win, buf = buf, tick = tick, row = vim.api.nvim_win_get_cursor(win)[1] - 1 }
+    -- An edit may shift rows under a still cursor; only plain motions re-enter.
+    if item and previous and previous.win == win and previous.buf == w.buf and previous.tick == tick
+        and previous.row ~= row then
       item.offset = previous.row > row and item.maximum or 0
       return true
     end
@@ -113,7 +143,7 @@ function Module.new(M, state)
       group = group, callback = function(args) attach(args.buf) end,
     })
     vim.api.nvim_create_autocmd('WinClosed', {
-      group = group, callback = function(args) windows[tonumber(args.match)] = nil end,
+      group = group, callback = function(args) drop(tonumber(args.match)) end,
     })
     vim.api.nvim_create_autocmd('BufWipeout', {
       group = group, callback = function(args)

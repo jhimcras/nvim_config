@@ -45,6 +45,43 @@ class Markdown(TmuxCase):
         self.assertEqual(source.splitlines(), self.lua('return vim.api.nvim_buf_get_lines(0,0,-1,false)'))
         self.assertFalse(self.lua('return vim.bo.modified'))
 
+    def test_tall_image_offset_survives_edits_on_other_lines(self):
+        (self.project / 'tall.png').write_bytes(b'\x89PNG\r\n\x1a\n' + bytes(8)
+                                                + (200).to_bytes(4, 'big') + (1500).to_bytes(4, 'big'))
+        self.file('image2.md', 'before\n![a](tall.png)\nmid\n![b](tall.png)\nafter\ntail\n')
+        self.command("lua vim.g.rendermark_img_stub=true; require('nvim_config.rendermark.image').setup({})")
+        self.command('edit image2.md')
+        self.keys('2', 'G')
+        self.wait_lua("return vim.fn.line('.')", 2)
+        self.wait_screen('200x1500px y=0/')
+        # Image a's GUI origin and the y= offsets shown by every stub label, by source row.
+        state = ("local a for _, e in pairs(_G.__rendermark_image_backend.stub_store) do "
+                 "if e.opts.row == 1 then a = e.opts.dest_y_px end end "
+                 "local labels = {} for _, m in ipairs(vim.api.nvim_buf_get_extmarks(0, -1, 0, -1, {details=true})) do "
+                 "for _, l in ipairs(m[4].virt_lines or {}) do for _, c in ipairs(l) do "
+                 "local y = type(c[1]) == 'string' and c[1]:match('y=(%d+)/') "
+                 "if y then labels[#labels+1] = tonumber(y) end end end end "
+                 "return {a, labels}")
+        height = self.lua('return vim.api.nvim_win_get_height(0)')
+        maximum = ((1500 - height * 18 + 17) // 18) * 18
+        self.keys(str(maximum // 18), 'j')
+        self.wait_screen('y=%d/' % maximum)
+        self.assertEqual(2, self.lua("return vim.fn.line('.')"))
+        self.keys('j')
+        self.wait_lua("return vim.fn.line('.')", 3)
+        self.keys('j')
+        self.wait_lua("return vim.fn.line('.')", 4)
+        before = self.lua(state)
+        self.assertIn(maximum, before[1])
+        self.keys('A', 'X', 'Escape')
+        self.wait_lua("return vim.fn.getline(4)", '![b](tall.png)X')
+        self.wait_lua('return vim.fn.mode()', 'n')
+        # Trailing text makes b an inline (unscrolled) image; a keeps its offset.
+        self.wait_lua(state, [before[0], [maximum]])
+        self.keys('u')
+        self.wait_lua("return vim.fn.getline(4)", '![b](tall.png)')
+        self.wait_lua(state, before)
+
     def test_image_scroll_keys_keep_typeahead_order_like_plain_text(self):
         self.command("lua vim.g.rendermark_img_stub=true; require('nvim_config.rendermark.image').setup({})")
         results = {}
