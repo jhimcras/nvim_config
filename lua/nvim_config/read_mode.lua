@@ -138,10 +138,14 @@ local function ensure_keymaps(buf)
     mapped_bufs[buf] = true
     ut.nnoremap('j', function()
         local win = vim.api.nvim_get_current_win()
+        local image = package.loaded['nvim_config.rendermark.image']
+        if image and image.scroll_image(1, vim.v.count1) then return end
         feed(vim.v.count1 .. (M.is_active(win) and '<C-e>' or 'j'))
     end, { buffer = buf })
     ut.nnoremap('k', function()
         local win = vim.api.nvim_get_current_win()
+        local image = package.loaded['nvim_config.rendermark.image']
+        if image and image.scroll_image(-1, vim.v.count1) then return end
         feed(vim.v.count1 .. (M.is_active(win) and '<C-y>' or 'k'))
     end, { buffer = buf })
     -- Capture the existing <Esc> mapping to call it directly when falling through.

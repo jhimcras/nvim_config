@@ -144,7 +144,7 @@ function Module.new(M, state)
       reservation_carry_h = 0
 
       image_reservations[buf] = image_reservations[buf] or {}
-      local key = (M._stub_active and tostring(win) .. ':' or '') .. tostring(reserve_row) .. ':' .. tostring(reserve_above)
+      local key = tostring(win) .. ':' .. tostring(reserve_row) .. ':' .. tostring(reserve_above)
       local current = image_reservations[buf][key]
       if current then
         current.reserve_h = math.max(current.reserve_h, reserve_h)
@@ -152,7 +152,7 @@ function Module.new(M, state)
         current.label = current.label or label
       else
         image_reservations[buf][key] = {
-          win = M._stub_active and win or nil,
+          win = win,
           row = reserve_row,
           reserve_h = reserve_h,
           -- Hiding a source row shifts rows below, so it belongs in the signature.
@@ -313,6 +313,8 @@ function Module.new(M, state)
             name = vim.fn.fnamemodify(path, ':t'),
             w_px = layout.display_width_px or 0,
             h_px = layout.display_height_px or 0,
+            offset = layout.scroll_offset,
+            maximum = layout.scroll_maximum,
             start_cell = math.max(0, layout.grid_col - text_left_cell),
             error_text = failed and M.image_error_text({
               error = 'display_failed', raw_path = image.raw_path or image.path }) or nil,
@@ -370,6 +372,7 @@ function Module.new(M, state)
     local payload, image_conceals = ctx.payload, ctx.image_conceals
     local cell_w, cell_h, above_floats = ctx.cell_w, ctx.cell_h, r.above_floats
     for idx, layout in ipairs(layouts) do
+      if layout.scroll_offset ~= nil and layout.clip_height_px <= 0 then goto continue_layout end
       local image = layout.image
       local payload_buf = image.payload_buf or info.buf
       -- Conceal the link text (text-layout lines conceal the whole row).
@@ -428,7 +431,7 @@ function Module.new(M, state)
         source_width = image.source_width,
         source_height = image.source_height,
         dest_x_px = layout.dest_x_px,
-        dest_y_px = layout.dest_y_px,
+        dest_y_px = math.floor(layout.dest_y_px - (layout.scroll_offset or 0) + 0.5),
         display_width_px = layout.display_width_px,
         display_height_px = layout.display_height_px,
         clip_x_px = layout.clip_x_px,
@@ -439,6 +442,7 @@ function Module.new(M, state)
         zindex = 50 + idx,
         above_floats = above_floats,
       }
+      ::continue_layout::
     end
   end
 
@@ -495,6 +499,16 @@ function Module.new(M, state)
       end
       -- Text layout: re-render the prose around links in the gaps (width capped).
       local text_layout = TextLayout(line_images, measure_buf, row, text_left_px, cell_w, gap_px)
+      -- Standalone body images fit the text width; their height is browsed
+      -- inside a bounded viewport. Tables, prose bands and previews retain
+      -- their own sizing/navigation rules.
+      local scrollable = not above_floats and text_layout ~= nil
+      if text_layout then
+        for _, seg in ipairs(text_layout.segs) do
+          if seg ~= '' then scrollable = false break end
+        end
+      end
+      if scrollable then layout_max_rows = 0 end
 
       local layouts, image_rows = M.layout_image_line(line_images, {
         cell_w = cell_w,
@@ -515,6 +529,26 @@ function Module.new(M, state)
         gaps_px = text_layout and text_layout.gaps_px,
         trailing_px = text_layout and text_layout.trailing_px,
       })
+
+      if scrollable and #layouts > 0 then
+        local viewport_rows = math.min(image_rows, math.max(1, measure_w.height))
+        local viewport_height = math.min(layouts[1].display_height_px, math.floor(viewport_rows * cell_h + 0.5))
+        local keys = {}
+        for _, layout in ipairs(layouts) do keys[#keys + 1] = layout.image.path end
+        local offset, maximum = M.image_scroll_viewport(measure_win, measure_buf, row, table.concat(keys, '\0'),
+          layouts[1].display_height_px, viewport_height)
+        for _, layout in ipairs(layouts) do
+          if image_rows > viewport_rows then
+            layout.scroll_offset = offset
+            layout.scroll_maximum = maximum
+            local top = math.max(layout.clip_y_px, layout.dest_y_px)
+            local bottom = math.min(layout.clip_y_px + layout.clip_height_px, layout.dest_y_px + viewport_height)
+            layout.clip_y_px = top
+            layout.clip_height_px = math.max(0, bottom - top)
+          end
+        end
+        image_rows = viewport_rows
+      end
 
       local r = {
         row = row, info = info, line_images = line_images,
@@ -589,7 +623,7 @@ function Module.new(M, state)
       for _, reservation in pairs(reservations) do
         local ns = state.image_ns
         local visible = vim.fn.win_findbuf(buf)
-        if M._stub_active and #visible > 1 then
+        if #visible > 1 then
           ns = vim.api.nvim_create_namespace('rendermark_neopp_images_win_' .. reservation.win)
           vim.api.nvim__ns_set(ns, { wins = { reservation.win } })
         end

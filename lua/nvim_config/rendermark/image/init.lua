@@ -41,6 +41,7 @@ end
 export(require('nvim_config.rendermark.image.screen').new(M, state))
 export(require('nvim_config.rendermark.image.stub').new(M, state))
 export(require('nvim_config.rendermark.image.layout').new(M, state))
+export(require('nvim_config.rendermark.image.scroll').new(M, state))
 export(require('nvim_config.rendermark.image.preview').new(M, state))
 export(require('nvim_config.rendermark.image.diagram').new(M, state))
 export(require('nvim_config.rendermark.image.place').new(M, state))
@@ -298,8 +299,9 @@ end
 
 -- Re-render on CursorMoved only when block (or stub row) membership changes.
 function M.handle_cursor_moved()
+  local scrolled = M.image_scroll_cursor_moved()
   local sig = M.cursor_active_block_sig() .. '\0' .. M.stub_cursor_sig()
-  if sig == cursor_block_sig then return end
+  if sig == cursor_block_sig and not scrolled then return end
   cursor_block_sig = sig
   M.send_images()
   notify_redraw()
@@ -366,6 +368,7 @@ function M._init()
   if not backend.img_available() then return end
   M.ensure_image_namespace()
   autocmd_group = vim.api.nvim_create_augroup('rendermark_image', { clear = true })
+  M.image_scroll_setup(autocmd_group)
 
   -- Show/hide overrides M._preview_user, which wins over the configured `auto`.
   vim.api.nvim_create_user_command('RendermarkPreviewShow', function()

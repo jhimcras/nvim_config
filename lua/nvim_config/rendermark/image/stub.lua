@@ -113,6 +113,9 @@ function Module.new(M, state)
       end
       local name = b.name or '?'
       local size = string.format('%dx%dpx  (%d rows)', b.w_px or 0, b.h_px or 0, virt_h)
+      if b.offset ~= nil then
+        size = string.format('%dx%dpx y=%d/%d', b.w_px, b.h_px, b.offset, b.maximum)
+      end
       -- Width follows the image, not the label; floored so borders render.
       local box_w = math.min(200, math.max(4, math.floor((b.w_px or 0) / cell_w + 0.5)))
       local inner = box_w - 2

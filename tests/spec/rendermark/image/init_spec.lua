@@ -1337,7 +1337,7 @@ describe('partially visible inline image link rendering', function()
   local IMG = 5          -- 0-based row of the image link line
   local CELL_H = 18
 
-  -- 100x600 PNG header: 29 reserved virt_lines, so topfill scrolling is possible.
+  -- 100x600 PNG header: a tall image with a window-sized viewport.
   local TALL_PNG = bytes({
     137, 80, 78, 71, 13, 10, 26, 10,  -- signature
     0, 0, 0, 13,                      -- IHDR length
@@ -1403,31 +1403,27 @@ describe('partially visible inline image link rendering', function()
     return nil
   end
 
-  it('keeps the reservation and emits (clipped) when the link scrolls above the window', function()
+  it('keeps the reservation but emits nothing when the bounded viewport scrolls fully above the window', function()
     local img, buf, win, store, teardown = setup_e2e(40, 6)
     scroll(win, IMG + 2)    -- topline right below the link line
     img.send_images()       -- first send reserves virt_lines, skips apply
     img.send_images()       -- second send applies the payload
-    local w = vim.fn.getwininfo(win)[1]
-
     local entry = buf_image(store)
-    assert.is_truthy(entry)
-    assert.is_true(entry.opts.grid_row < w.winrow - 1)  -- anchored above the window top
-    assert.equals((w.winrow - 1) * CELL_H, entry.opts.clip_y_px)
-    assert.equals(w.height * CELL_H, entry.opts.clip_height_px)
+    assert.is_nil(entry)
 
     -- The reservation survives, keeping topfill valid for C-e/C-y.
-    assert.is_truthy(reservation_mark(img, buf))
+    local mark = reservation_mark(img, buf)
+    assert.is_truthy(mark)
+    assert.equals(vim.api.nvim_win_get_height(win) - 1, #mark[4].virt_lines)
     teardown()
   end)
 
-  it('shifts the anchor one grid row per topfill step through the virt_lines', function()
+  it('clips a partially visible viewport to its remaining filler rows', function()
     local img, _, win, store, teardown = setup_e2e(40, 6)
     scroll(win, IMG + 2)
     img.send_images(); img.send_images()
     local a = buf_image(store)
-    assert.is_truthy(a)
-    local row_a = a.opts.grid_row
+    assert.is_nil(a)
 
     scroll(win, IMG + 2, 1)
     local applied_fill = vim.api.nvim_win_call(win, function()
@@ -1437,7 +1433,13 @@ describe('partially visible inline image link rendering', function()
     img.send_images()
     local b = buf_image(store)
     assert.is_truthy(b)
-    assert.equals(row_a + 1, b.opts.grid_row)
+    assert.equals(CELL_H, b.opts.clip_height_px)
+    local row_b = b.opts.grid_row
+    scroll(win, IMG + 2, 2)
+    img.send_images()
+    local c = buf_image(store)
+    assert.equals(row_b + 1, c.opts.grid_row)
+    assert.equals(2 * CELL_H, c.opts.clip_height_px)
     teardown()
   end)
 end)
