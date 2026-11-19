@@ -27,6 +27,54 @@ function M.setup()
         end
     end
 
+    -- keys[i] = bufnr * 2^32 + lnum of item i. Returns 0-based item indices
+    -- ordered by buffer name, then lnum; ties keep input order ('asc').
+    M._sort_perm = function(keys, order)
+        -- Group by name (buffers sharing a name sort together, as before);
+        -- grep output is usually already in lnum order inside each group.
+        local names, groups, group_names, lnums = {}, {}, {}, {}
+        for i, key in ipairs(keys) do
+            local bufnr = math.floor(key / 4294967296)
+            lnums[i] = key - bufnr * 4294967296
+            local name = names[bufnr]
+            if not name then
+                name = vim.fn.bufname(bufnr)
+                names[bufnr] = name
+            end
+            local group = groups[name]
+            if not group then
+                group = {}
+                groups[name] = group
+                table.insert(group_names, name)
+            end
+            group[#group + 1] = i
+        end
+        table.sort(group_names)
+
+        local perm = {}
+        local asc = order == 'asc'
+        local first, last, step = 1, #group_names, 1
+        if not asc then first, last, step = last, first, -1 end
+        for g = first, last, step do
+            local group = groups[group_names[g]]
+            for i = 2, #group do
+                if lnums[group[i - 1]] > lnums[group[i]] then
+                    table.sort(group, function(a, b)
+                        if lnums[a] ~= lnums[b] then return lnums[a] < lnums[b] end
+                        return a < b
+                    end)
+                    break
+                end
+            end
+            local from, to = 1, #group
+            if not asc then from, to = to, from end
+            for i = from, to, step do
+                perm[#perm + 1] = group[i] - 1
+            end
+        end
+        return perm
+    end
+
     M.sort_list = function()
         local winid = vim.api.nvim_get_current_win()
         if vim.w[winid].grep_status == 'searching' or vim.w[winid].sorting then
@@ -36,35 +84,41 @@ function M.setup()
 
         local info = vim.fn.getwininfo(winid)[1]
         local is_loclist = info.loclist == 1
-        local get_items = is_loclist and function() return vim.fn.getloclist(0) end or function() return vim.fn.getqflist() end
-        local set_items = is_loclist and function(items) vim.fn.setloclist(0, {}, 'r', { items = items }) end or function(items) vim.fn.setqflist({}, 'r', { items = items }) end
-
-        local items = get_items()
-        if #items == 0 then return end
+        local get_info = function()
+            local what = { id = 0, changedtick = 0, size = 0 }
+            return is_loclist and vim.fn.getloclist(0, what) or vim.fn.getqflist(what)
+        end
+        local list = get_info()
+        if list.size == 0 then return end
 
         vim.w[winid].sorting = true
         local current_order = vim.w[winid].sort_order or 'desc' -- first press toggles to 'asc'
         local new_order = current_order == 'asc' and 'desc' or 'asc'
         vim.w[winid].sort_order = new_order
 
-        table.sort(items, function(a, b)
-            local a_name = vim.fn.bufname(a.bufnr)
-            local b_name = vim.fn.bufname(b.bufnr)
-            if a_name ~= b_name then
-                if new_order == 'asc' then
-                    return a_name < b_name
-                else
-                    return a_name > b_name
-                end
-            end
-            if new_order == 'asc' then
-                return a.lnum < b.lnum
-            else
-                return a.lnum > b.lnum
-            end
-        end)
+        -- Items stay in Vim's native list: converting 100k quickfix dicts to Lua
+        -- and back costs far more than the sort. Lua only orders the
+        -- (bufnr, lnum) keys and hands back a permutation.
+        local get = is_loclist and 'getloclist(0)' or 'getqflist()'
+        local set = is_loclist and 'setloclist(0, [], ' or 'setqflist([], '
+        local sorted = vim.w[winid].sorted_list
+        if sorted and sorted.id == list.id and sorted.changedtick == list.changedtick then
+            -- Unchanged since our last sort: the other direction is its reverse.
+            vim.api.nvim_exec2('call ' .. set .. "'r', {'items': reverse(" .. get .. ')})', {})
+        else
+            vim.api.nvim_exec2(table.concat({
+                'let s:sort_items = ' .. get,
+                "let s:sort_keys = map(copy(s:sort_items), 'v:val.bufnr * 4294967296 + v:val.lnum')",
+                "let s:sort_perm = luaeval('require\"nvim_config.qflist.edit\"._sort_perm(_A[1], _A[2])', [s:sort_keys, '" .. new_order .. "'])",
+                -- List indexing walks the linked list, so index through 256-item chunks.
+                "let s:sort_chunks = map(range(0, len(s:sort_items) - 1, 256), 's:sort_items[v:val : v:val + 255]')",
+                'call ' .. set .. "'r', {'items': map(s:sort_perm, 's:sort_chunks[v:val / 256][v:val % 256]')})",
+                'unlet s:sort_items s:sort_keys s:sort_perm s:sort_chunks',
+            }, '\n'), {})
+        end
+        list = get_info()
+        vim.w[winid].sorted_list = { id = list.id, changedtick = list.changedtick }
 
-        set_items(items)
         vim.w[winid].sorting = false
         vim.notify(string.format("Sorted by name (%s)", new_order))
     end

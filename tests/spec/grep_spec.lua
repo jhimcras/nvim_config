@@ -143,4 +143,100 @@ describe('qflist filtering and editing', function()
         items = vim.fn.getloclist(origin)
         assert.are.same({ 3, 2, 1 }, { items[1].lnum, items[2].lnum, items[3].lnum })
     end)
+
+    local function by_text(items)
+        local copy = vim.deepcopy(items)
+        table.sort(copy, function(a, b) return a.text < b.text end)
+        return copy
+    end
+
+    local function assert_sorted(items, order)
+        for i = 2, #items do
+            local a, b = items[i - 1], items[i]
+            local an, bn = vim.fn.bufname(a.bufnr), vim.fn.bufname(b.bufnr)
+            if order == 'desc' then a, b, an, bn = b, a, bn, an end
+            assert.is_true(an < bn or (an == bn and a.lnum <= b.lnum),
+                string.format('items %d and %d are out of %s order', i - 1, i, order))
+        end
+    end
+
+    it('keeps every item field, the title, context and owner window when sorting', function()
+        local list_win = vim.api.nvim_get_current_win()
+        vim.fn.setloclist(origin, {}, 'r', {
+            context = { source = 'spec' },
+            items = {
+                { filename = paths[2], lnum = 9, col = 1, end_lnum = 9, end_col = 5, text = 'b9', type = 'E',
+                    module = 'beta-mod', user_data = { id = 1 } },
+                { filename = paths[1], lnum = 4, col = 2, text = 'a4', type = 'W', valid = 0, nr = 7 },
+                { filename = paths[2], lnum = 2, col = 3, vcol = 1, pattern = 'pat', text = 'b2' },
+                { filename = paths[1], lnum = 1, col = 4, end_col = 8, text = 'a1', user_data = 'u' },
+            },
+        })
+        local before = by_text(vim.fn.getloclist(origin))
+
+        edit.sort_list()
+        local items = vim.fn.getloclist(origin)
+        assert_sorted(items, 'asc')
+        assert.are.same(before, by_text(items))
+        assert.are.equal('asc', vim.w.sort_order)
+        assert.are.equal(list_win, vim.api.nvim_get_current_win())
+        local info = vim.fn.getloclist(origin, { title = 1, context = 1 })
+        assert.are.equal('owned location list', info.title)
+        assert.are.same({ source = 'spec' }, info.context)
+
+        edit.sort_list()
+        items = vim.fn.getloclist(origin)
+        assert_sorted(items, 'desc')
+        assert.are.same(before, by_text(items))
+        assert.are.equal('desc', vim.w.sort_order)
+        assert.are.equal(3, #vim.fn.getqflist())
+    end)
+
+    it('sorts the quickfix window without touching the location list', function()
+        vim.cmd('copen')
+        edit.sort_list()
+        local items = vim.fn.getqflist()
+        assert_sorted(items, 'asc')
+        assert.are.equal('independent quickfix', vim.fn.getqflist({ title = 1 }).title)
+        assert.are.same({ 'keep first', 'keep second', 'drop third' },
+            vim.tbl_map(function(item) return item.text end, vim.fn.getloclist(origin)))
+        vim.cmd('cclose')
+    end)
+
+    it('re-sorts a list that changed after the previous sort', function()
+        edit.sort_list()
+        vim.fn.setloclist(origin, {}, 'a', { items = {
+            { filename = paths[1], lnum = 9, text = 'late alpha' },
+            { filename = paths[2], lnum = 1, text = 'late beta' },
+        } })
+        edit.sort_list()
+        local items = vim.fn.getloclist(origin)
+        assert.are.equal(5, #items)
+        assert_sorted(items, 'desc')
+    end)
+
+    it('sorts large shuffled lists across many buffers in both directions', function()
+        local names, items = {}, {}
+        for f = 1, 30 do names[f] = vim.fn.tempname() .. '_many.txt' end
+        local seed = 7
+        for i = 1, 3000 do
+            seed = (seed * 1103515245 + 12345) % 2147483648
+            local f = seed % 30 + 1
+            items[i] = { filename = names[f], lnum = seed % 997 + 1, col = i, text = 'item ' .. i }
+        end
+        vim.fn.setloclist(origin, {}, 'r', { items = items })
+        local before = by_text(vim.fn.getloclist(origin))
+
+        for _, order in ipairs({ 'asc', 'desc', 'asc' }) do
+            edit.sort_list()
+            local sorted = vim.fn.getloclist(origin)
+            assert.are.equal(order, vim.w.sort_order)
+            assert_sorted(sorted, order)
+            assert.are.same(before, by_text(sorted))
+        end
+        for _, name in ipairs(names) do
+            local buf = vim.fn.bufnr(name)
+            if buf > 0 then vim.api.nvim_buf_delete(buf, { force = true }) end
+        end
+    end)
 end)
