@@ -131,7 +131,7 @@ function M.setup()
         pattern = 'qf',
         callback = function()
             vim.keymap.set('n', 'dd', function()
-                delete_lines(vim.fn.line('.'), vim.fn.line('.'))
+                delete_lines(vim.fn.line('.'), vim.fn.line('.') + vim.v.count1 - 1)
             end, { buffer = true, silent = true })
 
             vim.keymap.set('n', 'd', function()

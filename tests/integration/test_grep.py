@@ -34,3 +34,14 @@ class Grep(TmuxCase):
         self.assertEqual(self.lua(f"return vim.w[{owner}].loclist_tag"),
                          self.lua("return vim.w.loclist_tag"))
         self.assertEqual(0, self.lua("return #require('nvim_config.launcher').GetRunningProcesses()"))
+
+    def test_dd_honors_count(self):
+        self.file("main.txt", "needle alpha\nneedle bravo\nneedle charlie\nneedle delta\n")
+        self.command("Grep needle")
+        self.wait_lua("return vim.bo.buftype", "quickfix")
+        self.wait_lua("return vim.w.grep_status", "done")
+        self.wait_lua("return #vim.fn.getloclist(0)", 4)
+        self.keys("g", "g", "2", "d", "d")
+        self.wait_lua("return #vim.fn.getloclist(0)", 2)
+        self.assertEqual([3, 4], self.lua(
+            "local l={}; for _, i in ipairs(vim.fn.getloclist(0)) do l[#l+1]=i.lnum end; return l"))
