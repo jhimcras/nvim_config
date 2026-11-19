@@ -32,3 +32,23 @@ class Windows(TmuxCase):
         self.assertEqual(options, self.lua(
             "return {vim.wo.cursorline, vim.wo.relativenumber, vim.wo.scrolloff}"))
         self.assertNotIn("StatuslineGeneralActive_1_read", self.statusline())
+
+    def test_read_mode_buffer_switch_restores_editing_of_previous_file(self):
+        self.file("other.txt", "beta\ncharlie\n")
+        self.keys("Space", "r")
+        self.wait_lua("return vim.w.read_mode_active == true", True)
+        self.command("edit other.txt")
+        self.wait_lua("return vim.fn.expand('%:t')", "other.txt")
+        self.assertTrue(self.lua("return vim.w.read_mode_active == true"))
+        self.assertFalse(self.lua("return vim.bo.modifiable"))
+        self.keys("Escape")
+        self.wait_lua("return vim.w.read_mode_active == true", False)
+        self.command("edit main.txt")
+        self.wait_lua("return vim.fn.expand('%:t')", "main.txt")
+        self.assertEqual([True, True], self.lua(
+            "return {vim.bo[vim.fn.bufnr('main.txt')].modifiable, "
+            "vim.bo[vim.fn.bufnr('other.txt')].modifiable}"))
+        self.keys("i")
+        self.tmux("send-keys", "-t", "test:0.0", "-l", "X")
+        self.keys("Escape")
+        self.wait_lua("return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]", "Xalpha")

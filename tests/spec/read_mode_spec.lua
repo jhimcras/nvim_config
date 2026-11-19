@@ -270,4 +270,100 @@ describe('read_mode', function()
         assert.is_true(read_mode.is_active(win))
         assert.is_false(vim.bo[new_buf].modifiable)
     end)
+
+    it('restores every buffer it locked across an in-window switch once READ ends', function()
+        read_mode.setup()
+        local win = vim.api.nvim_get_current_win()
+        local buf_a = vim.api.nvim_get_current_buf()
+        -- Non-empty, or :enew reuses the empty unnamed buffer.
+        vim.api.nvim_buf_set_lines(buf_a, 0, -1, false, { 'a' })
+        read_mode.enter(win)
+
+        vim.cmd('enew')
+        local buf_b = vim.api.nvim_get_current_buf()
+        assert.is_true(read_mode.is_active(win))
+        assert.is_false(vim.bo[buf_b].modifiable)
+        -- A is no longer shown in a READ window, so it is editable again.
+        assert.is_true(vim.bo[buf_a].modifiable)
+
+        read_mode.exit(win)
+        assert.is_true(vim.bo[buf_a].modifiable)
+        assert.is_true(vim.bo[buf_b].modifiable)
+    end)
+
+    it('keeps an originally nomodifiable buffer protected across a switch', function()
+        read_mode.setup()
+        local win = vim.api.nvim_get_current_win()
+        local buf_a = vim.api.nvim_get_current_buf()
+        -- Non-empty, or :enew reuses the empty unnamed buffer.
+        vim.api.nvim_buf_set_lines(buf_a, 0, -1, false, { 'a' })
+        vim.bo[buf_a].modifiable = false
+        read_mode.enter(win)
+
+        vim.cmd('enew')
+        local buf_b = vim.api.nvim_get_current_buf()
+        vim.api.nvim_win_set_buf(win, buf_a)
+        assert.is_false(vim.bo[buf_a].modifiable)
+        assert.is_true(vim.bo[buf_b].modifiable)
+
+        read_mode.exit(win)
+        assert.is_false(vim.bo[buf_a].modifiable)
+        assert.is_true(vim.bo[buf_b].modifiable)
+    end)
+
+    it('keeps a buffer locked while another READ window still shows it', function()
+        read_mode.setup()
+        local win_a = vim.api.nvim_get_current_win()
+        local buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'a' })
+        vim.cmd('vsplit')
+        local win_b = vim.api.nvim_get_current_win()
+
+        read_mode.enter(win_a)
+        read_mode.enter(win_b)
+        read_mode.exit(win_a)
+        assert.is_false(vim.bo[buf].modifiable)
+
+        read_mode.exit(win_b)
+        assert.is_true(vim.bo[buf].modifiable)
+
+        read_mode.enter(win_a)
+        read_mode.enter(win_b)
+        vim.api.nvim_set_current_win(win_b)
+        vim.cmd('enew')
+        assert.is_false(vim.bo[buf].modifiable) -- still READ in win_a
+        read_mode.exit(win_a)
+        assert.is_true(vim.bo[buf].modifiable)
+
+        read_mode.exit(win_b)
+        vim.api.nvim_win_close(win_b, true)
+    end)
+
+    it('restores the buffer when a READ window closes', function()
+        read_mode.setup()
+        local buf = vim.api.nvim_get_current_buf()
+        vim.cmd('vsplit')
+        local win = vim.api.nvim_get_current_win()
+        read_mode.enter(win)
+
+        vim.api.nvim_win_close(win, true)
+
+        assert.is_true(vim.bo[buf].modifiable)
+    end)
+
+    it('does not error when a buffer switched away from was wiped', function()
+        read_mode.setup()
+        local win = vim.api.nvim_get_current_win()
+        local buf_a = vim.api.nvim_get_current_buf()
+        -- Non-empty, or :enew reuses the empty unnamed buffer.
+        vim.api.nvim_buf_set_lines(buf_a, 0, -1, false, { 'a' })
+        read_mode.enter(win)
+
+        vim.cmd('enew')
+        local buf_b = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_delete(buf_a, { force = true })
+
+        assert.has_no.errors(function() read_mode.exit(win) end)
+        assert.is_true(vim.bo[buf_b].modifiable)
+    end)
 end)

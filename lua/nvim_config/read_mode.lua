@@ -6,6 +6,7 @@ local ut = require('nvim_config.util.map')
 local M = {}
 
 local win_state = {}     -- win -> { buf, saved_* options }
+local locked_bufs = {}   -- buf -> { modifiable = original, wins = { [win] = true } }
 local mapped_bufs = {}   -- buf -> true once keymaps are installed
 local saved_guicursor = nil
 local global_applied = false -- guicursor suppression active
@@ -192,11 +193,36 @@ local function ensure_keymaps(buf)
     ut.nnoremap('N', search_repeat('N'), { buffer = buf })
 end
 
--- Save and clear 'modifiable' (buffer-local: affects all its windows).
+-- 'modifiable' is buffer-local, so the original value is kept per buffer and
+-- restored only once no READ window shows it.
+local function release_buffer(win, buf)
+    local lock = buf and locked_bufs[buf]
+    if not lock then
+        return
+    end
+    lock.wins[win] = nil
+    if next(lock.wins) then
+        return
+    end
+    locked_bufs[buf] = nil
+    if vim.api.nvim_buf_is_valid(buf) then
+        vim.bo[buf].modifiable = lock.modifiable
+    end
+end
+
+-- Save and clear 'modifiable'; release the buffer the window showed before.
 local function apply_buffer(win, buf)
     local st = win_state[win]
+    if st.buf ~= buf then
+        release_buffer(win, st.buf)
+    end
     st.buf = buf
-    st.saved_modifiable = vim.bo[buf].modifiable
+    local lock = locked_bufs[buf]
+    if not lock then
+        lock = { modifiable = vim.bo[buf].modifiable, wins = {} }
+        locked_bufs[buf] = lock
+    end
+    lock.wins[win] = true
     vim.bo[buf].modifiable = false
     ensure_keymaps(buf)
 end
@@ -248,10 +274,7 @@ function M.exit(win)
         vim.wo[win].concealcursor = st.saved_concealcursor or ''
         vim.w[win].read_mode_active = nil
     end
-    local buf = st.buf
-    if buf and vim.api.nvim_buf_is_valid(buf) then
-        vim.bo[buf].modifiable = st.saved_modifiable
-    end
+    release_buffer(win, st.buf)
     clear_search_highlight(win)
     search_state[win] = nil
 
@@ -307,6 +330,10 @@ function M.setup()
         group = group,
         callback = function(args)
             local win = tonumber(args.match)
+            local st = win_state[win]
+            if st then
+                release_buffer(win, st.buf)
+            end
             win_state[win] = nil
             search_state[win] = nil
         end,
@@ -316,6 +343,10 @@ function M.setup()
         group = group,
         callback = function(args)
             mapped_bufs[args.buf] = nil
+            -- :bdelete keeps the buffer and its options; release restores it later.
+            if args.event == 'BufWipeout' then
+                locked_bufs[args.buf] = nil
+            end
         end,
     })
 
