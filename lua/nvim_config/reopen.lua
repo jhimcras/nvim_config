@@ -14,6 +14,7 @@ local stack = {}      -- oldest .. newest
 local pending = {}    -- [tabpage handle] = snapshot taken at first WinClosed
 local burst_base = nil -- #stack when the current burst began
 local scheduled = false
+local discarding = false -- closing a half-built restore; not a user close
 
 ----------------------------------------------------------------------------------------------------
 -- capture
@@ -206,7 +207,7 @@ end
 
 local function on_win_closed(ev)
     -- Set by mksession files while rebuilding; not a user close.
-    if vim.g.SessionLoad == 1 then return end
+    if vim.g.SessionLoad == 1 or discarding then return end
 
     local win = tonumber(ev.match)
     if not win or skippable(win) then return end
@@ -352,6 +353,7 @@ end
 
 local function restore_tab(entry)
     local snap = entry.snap
+    local prev = api.nvim_get_current_tabpage()
     vim.cmd('$tabnew')
     local tab = api.nvim_get_current_tabpage()
 
@@ -359,7 +361,21 @@ local function restore_tab(entry)
     pcall(vim.cmd, 'tabmove ' .. (target - 1))
 
     local mapping = {}
-    build(snap.tree, api.nvim_get_current_win(), mapping)
+    local ok, err = pcall(build, snap.tree, api.nvim_get_current_win(), mapping)
+    if not ok then
+        -- Undo the half-built tab so the user is left where they were.
+        local scratch = api.nvim_get_current_buf()
+        discarding = true
+        pcall(vim.cmd, 'tabclose! ' .. api.nvim_tabpage_get_number(tab))
+        discarding = false
+        if api.nvim_tabpage_is_valid(prev) then api.nvim_set_current_tabpage(prev) end
+        if api.nvim_buf_is_valid(scratch) and vim.fn.bufwinid(scratch) == -1 then
+            pcall(api.nvim_buf_delete, scratch, {})
+        end
+        -- E36: Not enough room. Keep the record so a retry after resizing works.
+        if tostring(err):find('E36') then return false, 'no_room' end
+        return false
+    end
 
     local restored = 0
     for old, win in pairs(mapping) do
@@ -386,8 +402,14 @@ end
 function M.restore()
     while #stack > 0 do
         local entry = table.remove(stack)
-        local ok, done = pcall(entry.kind == 'tab' and restore_tab or restore_win, entry)
+        local ok, done, why = pcall(entry.kind == 'tab' and restore_tab or restore_win, entry)
         if ok and done then return true end
+        if ok and why == 'no_room' then
+            stack[#stack + 1] = entry
+            vim.notify('Not enough room to reopen the closed tab; enlarge the screen and retry',
+                vim.log.levels.WARN)
+            return false
+        end
     end
     vim.notify('No recently closed window or tab', vim.log.levels.INFO)
     return false

@@ -18,6 +18,36 @@ class Windows(TmuxCase):
         self.assertEqual(side, self.lua(
             "return vim.fn.winlayout()[2][2][2] == vim.api.nvim_get_current_win()"))
 
+    def test_reopen_tab_without_room_keeps_record_until_resized(self):
+        names = [f"part{i}.txt" for i in range(1, 6)]
+        for name in names:
+            self.file(name, name + "\n")
+        self.command("tabnew part1.txt")
+        for name in names[1:]:
+            self.command("split " + name)
+        self.wait_lua("return #vim.api.nvim_tabpage_list_wins(0)", 5)
+        self.command("tabclose")
+        self.wait_lua("return require('nvim_config.reopen').depth()", 1)
+        self.tmux("resize-window", "-t", "test:0", "-x", "120", "-y", "8")
+        self.wait_lua("return vim.o.lines", 8)
+        self.command("Reopen")
+        self.assertIn("Not enough room", self.lua(
+            "return vim.api.nvim_exec2('messages', {output=true}).output"))
+        self.assertEqual([1, 1, "main.txt", 1], self.lua(
+            "return {vim.fn.tabpagenr('$'), #vim.api.nvim_tabpage_list_wins(0), "
+            "vim.fn.expand('%:t'), require('nvim_config.reopen').depth()}"))
+        self.assertEqual("", self.lua("return vim.v.errmsg"))
+        self.tmux("resize-window", "-t", "test:0", "-x", "120", "-y", "40")
+        self.wait_lua("return vim.o.lines", 40)
+        self.command("Reopen")
+        self.wait_lua("return vim.fn.tabpagenr('$')", 2)
+        # :split puts each new window above, so the last split is on top.
+        self.assertEqual(list(reversed(names)), self.lua(
+            "local names = {} for _, leaf in ipairs(vim.fn.winlayout()[2]) do "
+            "names[#names + 1] = vim.fn.fnamemodify(vim.api.nvim_buf_get_name("
+            "vim.api.nvim_win_get_buf(leaf[2])), ':t') end return names"))
+        self.assertEqual(0, self.lua("return require('nvim_config.reopen').depth()"))
+
     def test_read_mode_mapping_restores_editing_and_statusline(self):
         cursor = self.lua("return vim.o.guicursor")
         options = self.lua("return {vim.wo.cursorline, vim.wo.relativenumber, vim.wo.scrolloff}")
