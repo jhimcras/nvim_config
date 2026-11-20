@@ -129,6 +129,42 @@ describe('qflist filtering and editing', function()
         assert.are.same({ 'beta', '!drop' }, filter.get_filter_chain(0))
     end)
 
+    it('keeps quotes in patterns, filename-only inverse matches and per-item fields', function()
+        local user_data = { id = 7 }
+        vim.fn.setloclist(origin, {}, 'r', { items = {
+            { filename = paths[1], lnum = 1, text = "it's here", user_data = user_data },
+            { filename = paths[2], lnum = 2, text = 'plain' },
+            { filename = paths[1], lnum = 3, text = 'other' },
+        } })
+        vim.cmd("Lfilter /it's/")
+        local items = vim.fn.getloclist(origin)
+        assert.are.equal(1, #items)
+        assert.are.same(user_data, items[1].user_data)
+        assert.are.equal('owned location list', vim.fn.getloclist(origin, { title = 0 }).title)
+        vim.fn.setloclist(origin, {}, 'r', { items = {
+            { filename = paths[1], lnum = 1, text = 'one' },
+            { filename = paths[2], lnum = 2, text = 'two' },
+            { filename = paths[1], lnum = 3, text = 'three' },
+        } })
+        vim.cmd('Lfilter! /alpha/')
+        items = vim.fn.getloclist(origin)
+        assert.are.equal(1, #items)
+        assert.are.equal('two', items[1].text)
+    end)
+
+    it('matches an empty-name pattern against items whose buffer was wiped', function()
+        local gone = vim.fn.tempname() .. '_gone.txt'
+        vim.fn.setloclist(origin, {}, 'r', { items = {
+            { filename = gone, lnum = 1, text = 'orphan' },
+            { filename = paths[1], lnum = 2, text = 'named' },
+        } })
+        vim.cmd('bwipe ' .. vim.fn.bufnr(gone))
+        vim.cmd('Lfilter /^$/')
+        local items = vim.fn.getloclist(origin)
+        assert.are.equal(1, #items)
+        assert.are.equal(1, items[1].lnum)
+    end)
+
     it('filters quickfix without changing the window-owned location list', function()
         vim.cmd('Cfilter! /drop/')
         assert.are.equal(2, #vim.fn.getqflist())
