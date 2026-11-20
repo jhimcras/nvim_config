@@ -334,6 +334,8 @@ function M.setup()
             if st then
                 release_buffer(win, st.buf)
             end
+            -- The extmark is buffer-scoped; other windows on the buffer still show it.
+            clear_search_highlight(win)
             win_state[win] = nil
             search_state[win] = nil
         end,

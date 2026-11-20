@@ -351,6 +351,43 @@ describe('read_mode', function()
         assert.is_true(vim.bo[buf].modifiable)
     end)
 
+    it('clears only the closed READ window\'s search highlight from a shared buffer', function()
+        read_mode.setup()
+        local ns = vim.api.nvim_create_namespace('read_mode_search')
+        local buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'heading', 'one prefix NEEDLE suffix', 'ending' })
+        local win_keep = vim.api.nvim_get_current_win()
+        vim.cmd('vsplit')
+        local win_a = vim.api.nvim_get_current_win()
+        vim.cmd('vsplit')
+        local win_b = vim.api.nvim_get_current_win()
+
+        local function search_in(win, expected)
+            vim.api.nvim_set_current_win(win)
+            read_mode.enter(win)
+            vim.api.nvim_win_set_cursor(win, { 1, 0 })
+            vim.cmd('normal /NEEDLE\r')
+            vim.wait(200, function()
+                return #vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}) == expected
+            end)
+        end
+        search_in(win_a, 1)
+        local mark_a = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {})[1][1]
+        search_in(win_b, 2)
+        assert.are.equal(2, #vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}))
+
+        -- Closing one READ window leaves the other READ window's highlight alone.
+        vim.api.nvim_win_close(win_a, true)
+        local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {})
+        assert.are.equal(1, #marks)
+        assert.are_not.equal(mark_a, marks[1][1])
+
+        -- Closing the last READ window leaves nothing for the normal window.
+        vim.api.nvim_win_close(win_b, true)
+        assert.are.equal(0, #vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}))
+        assert.is_false(read_mode.is_active(win_keep))
+    end)
+
     it('does not error when a buffer switched away from was wiped', function()
         read_mode.setup()
         local win = vim.api.nvim_get_current_win()
