@@ -48,6 +48,45 @@ class Windows(TmuxCase):
             "vim.api.nvim_win_get_buf(leaf[2])), ':t') end return names"))
         self.assertEqual(0, self.lua("return require('nvim_config.reopen').depth()"))
 
+    def test_reopen_window_without_room_keeps_records_until_resized(self):
+        names = [f"part{i}.txt" for i in range(1, 5)]
+        for name in names:
+            self.file(name, name + "\n")
+        for name in names:
+            self.command("split " + name)
+        self.wait_lua("return #vim.api.nvim_tabpage_list_wins(0)", 5)
+        layout = (
+            "local names = {} for _, leaf in ipairs(vim.fn.winlayout()[2]) do "
+            "names[#names + 1] = vim.fn.fnamemodify(vim.api.nvim_buf_get_name("
+            "vim.api.nvim_win_get_buf(leaf[2])), ':t') end return names")
+        # An older record below the one that will not fit.
+        self.command("execute bufwinnr('part1.txt') .. 'close'")
+        self.wait_lua("return require('nvim_config.reopen').depth()", 1)
+        self.command("execute bufwinnr('part3.txt') .. 'close'")
+        self.wait_lua("return require('nvim_config.reopen').depth()", 2)
+        before = ["part4.txt", "part2.txt", "main.txt"]
+        self.assertEqual(before, self.lua(layout))
+        current = self.lua("return vim.api.nvim_get_current_win()")
+        self.tmux("resize-window", "-t", "test:0", "-x", "120", "-y", "8")
+        self.wait_lua("return vim.o.lines", 8)
+        sizes = self.lua("return vim.fn.winrestcmd()")
+        self.command("Reopen")
+        self.assertIn("Not enough room to reopen the closed window", self.lua(
+            "return vim.api.nvim_exec2('messages', {output=true}).output"))
+        self.assertEqual(before, self.lua(layout))
+        self.assertEqual(sizes, self.lua("return vim.fn.winrestcmd()"))
+        self.assertEqual([1, current, 2], self.lua(
+            "return {vim.fn.tabpagenr('$'), vim.api.nvim_get_current_win(), "
+            "require('nvim_config.reopen').depth()}"))
+        self.assertEqual("", self.lua("return vim.v.errmsg"))
+        self.tmux("resize-window", "-t", "test:0", "-x", "120", "-y", "40")
+        self.wait_lua("return vim.o.lines", 40)
+        self.command("Reopen")
+        self.wait_lua("return #vim.api.nvim_tabpage_list_wins(0)", 4)
+        self.assertEqual(["part4.txt", "part3.txt", "part2.txt", "main.txt"], self.lua(layout))
+        self.assertEqual("part3.txt", self.lua("return vim.fn.expand('%:t')"))
+        self.assertEqual(1, self.lua("return require('nvim_config.reopen').depth()"))
+
     def test_read_mode_mapping_restores_editing_and_statusline(self):
         cursor = self.lua("return vim.o.guicursor")
         options = self.lua("return {vim.wo.cursorline, vim.wo.relativenumber, vim.wo.scrolloff}")

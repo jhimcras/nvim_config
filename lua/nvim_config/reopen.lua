@@ -301,6 +301,7 @@ end
 local function restore_win(entry)
     -- No original tab, no layout to restore into.
     if not api.nvim_tabpage_is_valid(entry.tab) then return false end
+    local prev = api.nvim_get_current_win()
     api.nvim_set_current_tabpage(entry.tab)
 
     local state = entry.state
@@ -322,7 +323,27 @@ local function restore_win(entry)
     end
 
     api.nvim_set_current_win(anchor)
-    if not pcall(vim.cmd, modifier .. ' ' .. split) then return false end
+    local ok, err = pcall(vim.cmd, modifier .. ' ' .. split)
+    if not ok and tostring(err):find('E36') then
+        -- With 'noequalalways' a shrunken anchor stays small after the screen grows:
+        -- borrow room from its neighbours for the closed window and retry.
+        local sizes = vim.fn.winrestcmd()
+        if split == 'split' then
+            pcall(api.nvim_win_set_height, anchor, api.nvim_win_get_height(anchor) + state.height + 1)
+        else
+            pcall(api.nvim_win_set_width, anchor, api.nvim_win_get_width(anchor) + state.width + 1)
+        end
+        ok, err = pcall(vim.cmd, modifier .. ' ' .. split)
+        if not ok then vim.cmd(sizes) end
+    end
+    if not ok then
+        -- E36: Not enough room. Leave the user where they were and keep the record.
+        if tostring(err):find('E36') then
+            if api.nvim_win_is_valid(prev) then api.nvim_set_current_win(prev) end
+            return false, 'no_room'
+        end
+        return false
+    end
 
     local win = api.nvim_get_current_win()
     if not fill_buffer(win, state) then
@@ -406,8 +427,8 @@ function M.restore()
         if ok and done then return true end
         if ok and why == 'no_room' then
             stack[#stack + 1] = entry
-            vim.notify('Not enough room to reopen the closed tab; enlarge the screen and retry',
-                vim.log.levels.WARN)
+            vim.notify(('Not enough room to reopen the closed %s; enlarge the screen and retry')
+                :format(entry.kind == 'tab' and 'tab' or 'window'), vim.log.levels.WARN)
             return false
         end
     end
