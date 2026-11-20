@@ -278,10 +278,16 @@ local function apply_view(win, state)
 end
 
 -- A restored loclist loses filewinid (used by grep.lua); :lopen from the origin rebuilds it.
-local function restore_loclist(state)
+local function restore_loclist(state, prev)
     if not api.nvim_win_is_valid(state.filewinid) then return false end
     api.nvim_set_current_win(state.filewinid)
-    if not pcall(vim.cmd, 'lopen') then return false end
+    local ok, err = pcall(vim.cmd, 'lopen')
+    if not ok then
+        if api.nvim_win_is_valid(prev) then api.nvim_set_current_win(prev) end
+        -- E36: Not enough room. Keep the record so a retry after resizing works.
+        if tostring(err):find('E36') then return false, 'no_room' end
+        return false
+    end
     apply_view(api.nvim_get_current_win(), state)
     return true
 end
@@ -306,7 +312,7 @@ local function restore_win(entry)
 
     local state = entry.state
     if state.buftype == 'quickfix' and state.filewinid then
-        return restore_loclist(state)
+        return restore_loclist(state, prev)
     end
 
     local anchor = pick_anchor(entry.place, entry.tab)
