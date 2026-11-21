@@ -4,6 +4,7 @@ local ut = require('nvim_config.util.buffer')
 local LIST_EXT_QF = ".qf.lua"
 local LIST_EXT_LOC = ".loc"
 local LIST_EXT_LAUNCHER = ".launcher.lua"
+local LIST_EXT_QF_WINS = ".qfwins.lua"
 
 local function ensure_dir(path)
     if vim.fn.isdirectory(path) == 0 then
@@ -196,6 +197,22 @@ local function save_quickfix(path, session_prefix)
 end
 
 
+-- mksession saves quickfix/loclist windows as blank windows; record where
+-- they are so restore can close only those, not real unnamed windows.
+local function save_qf_window_positions(path, session_prefix)
+    ensure_dir(path)
+    local positions = {}
+    for tab_nr, tabpage in ipairs(vim.api.nvim_list_tabpages()) do
+        for winidx, winid in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+            if vim.bo[vim.api.nvim_win_get_buf(winid)].buftype == 'quickfix' then
+                table.insert(positions, { tab_nr = tab_nr, winidx = winidx })
+            end
+        end
+    end
+    return write_list_file(positions, string.format("%s/%s%s", path, session_prefix, LIST_EXT_QF_WINS))
+end
+
+
 local function clear_session_lists(abs_path, session_prefix)
     -- Only our list/launcher files; keep the session script
     local qf_pat = string.format("%s/%s%s", abs_path, session_prefix, LIST_EXT_QF)
@@ -210,6 +227,7 @@ local function clear_session_lists(abs_path, session_prefix)
     for _, file in ipairs(vim.fn.glob(lc_pat, false, true)) do
         vim.fn.delete(file)
     end
+    vim.fn.delete(string.format("%s/%s%s", abs_path, session_prefix, LIST_EXT_QF_WINS))
 end
 
 
@@ -253,14 +271,28 @@ local function find_target_window(origin)
     return nil
 end
 
--- Close empty quickfix/loclist windows left by mksession.
-local function close_empty_qf_loc_windows()
-    for _, winid in ipairs(vim.api.nvim_list_wins()) do
-        local bufnr = vim.api.nvim_win_get_buf(winid)
-        if vim.api.nvim_buf_get_name(bufnr) == '' and vim.bo[bufnr].buftype == '' then
-            pcall(vim.api.nvim_win_close, winid, true)
+local function is_blank_window(winid)
+    local bufnr = vim.api.nvim_win_get_buf(winid)
+    return vim.api.nvim_buf_get_name(bufnr) == '' and vim.bo[bufnr].buftype == ''
+end
+
+-- Blank windows that mksession left in place of quickfix/loclist windows.
+-- Sessions saved without the position file fall back to every blank window.
+local function find_qf_placeholder_windows(path)
+    local ok, positions = pcall(dofile, path)
+    if not ok or type(positions) ~= "table" then
+        return vim.tbl_filter(is_blank_window, vim.api.nvim_list_wins())
+    end
+    local tabpages = vim.api.nvim_list_tabpages()
+    local out = {}
+    for _, pos in ipairs(positions) do
+        local tabpage = tabpages[pos.tab_nr]
+        local winid = tabpage and vim.api.nvim_tabpage_list_wins(tabpage)[pos.winidx]
+        if winid and is_blank_window(winid) then
+            table.insert(out, winid)
         end
     end
+    return out
 end
 
 
@@ -316,6 +348,7 @@ function M.save(path)
     save_all_loclists(dir, prefix)
     save_all_launchers(dir, prefix)
     save_quickfix(dir, prefix)
+    save_qf_window_positions(dir, prefix)
     ensure_dir(dir)
 end
 
@@ -323,6 +356,8 @@ function M.restore(sess_path)
     -- Set every list first so winidx values stay stable, then open windows.
     local prefix = vim.fn.fnamemodify(sess_path, ':t')
     local dir = vim.fn.fnamemodify(sess_path, ':h')
+    -- Resolve placeholders before lopen/copen shift window indexes.
+    local placeholders = find_qf_placeholder_windows(string.format('%s/%s%s', dir, prefix, LIST_EXT_QF_WINS))
     local patterns = {
         string.format('%s/%s%s', dir, prefix, LIST_EXT_QF),
         string.format('%s/%s%s.*.lua', dir, prefix, LIST_EXT_LOC),
@@ -362,7 +397,11 @@ function M.restore(sess_path)
             end
         end
     end
-    close_empty_qf_loc_windows()
+    for _, winid in ipairs(placeholders) do
+        if vim.api.nvim_win_is_valid(winid) and is_blank_window(winid) then
+            pcall(vim.api.nvim_win_close, winid, true)
+        end
+    end
 end
 
 return M

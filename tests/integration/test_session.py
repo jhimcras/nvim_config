@@ -46,6 +46,26 @@ class Session(TmuxCase):
         owner = self.lua("return vim.fn.getloclist(0, {filewinid=0}).filewinid")
         self.assertEqual([3, 1], self.lua(f"return vim.api.nvim_win_get_cursor({owner})"))
 
+    def test_round_trip_keeps_unnamed_blank_split(self):
+        self.assertEqual(1, self.lua("return vim.tbl_contains(vim.opt.sessionoptions:get(), 'blank') and 1 or 0"))
+        self.command("vnew")
+        self.wait_lua("return #vim.api.nvim_tabpage_list_wins(0)", 2)
+        self.command("SaveSession draft")
+        self.wait_lua("return vim.fn.filereadable(vim.fn.stdpath('data') .. '/sessions/draft')", 1)
+        self.command("CloseSession")
+        self.wait_lua("return vim.v.this_session", "")
+        self.command("lua require('nvim_config.session').OpenSession('draft')")
+        self.wait_lua("return vim.fn.fnamemodify(vim.v.this_session, ':t')", "draft")
+        wins = self.lua("local out = {} for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do "
+                        "local b = vim.api.nvim_win_get_buf(w) table.insert(out, "
+                        "{vim.fn.fnamemodify(vim.api.nvim_buf_get_name(b), ':t'), vim.bo[b].buftype}) end "
+                        "return out")
+        self.assertEqual(2, len(wins))
+        self.assertIn(["main.txt", ""], wins)
+        self.assertIn(["", ""], wins)
+        self.assertEqual("", self.lua("return vim.api.nvim_buf_get_name(0)"))
+        self.assertEqual("", self.lua("return vim.bo.buftype"))
+
     def test_typed_quit_all_cancel_preserves_hidden_running_job(self):
         self.command("lua require('nvim_config.launcher').Launch('sleep', {'30'}, vim.fn.getcwd(), "
                      "nil, nil, nil, 'use', nil, nil, 'guard-build')")
