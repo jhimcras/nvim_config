@@ -18,6 +18,29 @@ class Windows(TmuxCase):
         self.assertEqual(side, self.lua(
             "return vim.fn.winlayout()[2][2][2] == vim.api.nvim_get_current_win()"))
 
+    def test_reopen_restores_full_height_window_beside_nested_split(self):
+        for name in ("left.txt", "upper.txt", "lower.txt", "right.txt"):
+            self.file(name, name + "\n")
+        self.command("edit left.txt")
+        self.command("rightbelow vsplit upper.txt")
+        self.command("belowright split lower.txt")
+        self.command("botright vsplit right.txt")
+        self.wait_lua("return #vim.api.nvim_tabpage_list_wins(0)", 4)
+        layout = (
+            "local function walk(node) if node[1] == 'leaf' then return "
+            "vim.fn.fnamemodify(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(node[2])), ':t') "
+            "end local kids = {} for _, child in ipairs(node[2]) do kids[#kids + 1] = walk(child) end "
+            "return {node[1], kids} end return walk(vim.fn.winlayout())")
+        before = self.lua(layout)
+        self.assertEqual(["row", ["left.txt", ["col", ["upper.txt", "lower.txt"]], "right.txt"]],
+                         before)
+        self.command("close")
+        self.wait_lua("return require('nvim_config.reopen').depth()", 1)
+        self.command("Reopen")
+        self.wait_lua("return #vim.api.nvim_tabpage_list_wins(0)", 4)
+        self.assertEqual(before, self.lua(layout))
+        self.assertEqual("right.txt", self.lua("return vim.fn.expand('%:t')"))
+
     def test_reopen_tab_without_room_keeps_record_until_resized(self):
         names = [f"part{i}.txt" for i in range(1, 6)]
         for name in names:

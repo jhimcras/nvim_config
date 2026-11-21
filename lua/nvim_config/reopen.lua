@@ -130,7 +130,17 @@ local function placement(tree, target)
     local kind, idx, siblings, is_root = find_container(tree, target, true)
     if not kind then return nil end
 
-    local sib_idx = idx > 1 and idx - 1 or idx + 1
+    -- Splitting a leaf sibling inserts into this container; splitting inside a
+    -- container sibling would nest the window in it, so prefer a leaf neighbour.
+    local prev_sib, next_sib = siblings[idx - 1], siblings[idx + 1]
+    local sib_idx
+    if prev_sib and prev_sib[1] == 'leaf' then
+        sib_idx = idx - 1
+    elseif next_sib and next_sib[1] == 'leaf' then
+        sib_idx = idx + 1
+    else
+        sib_idx = prev_sib and idx - 1 or idx + 1
+    end
     local sibling = siblings[sib_idx]
     if not sibling then return nil end
 
@@ -142,8 +152,9 @@ local function placement(tree, target)
         for i = #leaves, 1, -1 do reversed[#reversed + 1] = leaves[i] end
         leaves = reversed
     end
-    -- Split against the tab edge only when the sibling is everything else.
-    local spans_tab = is_root and #siblings == 2
+    -- At either end of the root container the tab edge is the right place, unless a
+    -- leaf neighbour already anchors the split.
+    local spans_tab = is_root and sibling[1] ~= 'leaf' and (idx == 1 or idx == #siblings)
     return { dir = kind, before = before, root = spans_tab, anchors = leaves }
 end
 
