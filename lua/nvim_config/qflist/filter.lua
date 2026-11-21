@@ -1,34 +1,43 @@
 local M = {}
 local api = vim.api
 local tag = require('nvim_config.qflist.tag')
-local filter_chains = {}
+local filter_chains = {}  -- list id -> chain (window ids change on lclose/lopen)
+
+-- Id of the list shown in winid: the quickfix list for the quickfix window,
+-- else the window's location list.
+local function list_id(winid)
+    if winid == 0 then winid = vim.api.nvim_get_current_win() end
+    local info = vim.fn.getwininfo(winid)[1]
+    if info and info.quickfix == 1 and info.loclist == 0 then
+        return vim.fn.getqflist({ id = 0 }).id
+    end
+    return vim.fn.getloclist(winid, { id = 0 }).id
+end
 
 function M.record_filter(loclist_winid, term, bang)
     if loclist_winid == 0 then
         loclist_winid = vim.api.nvim_get_current_win()
     end
     local label = bang and ('!' .. term) or term
-    filter_chains[loclist_winid] = filter_chains[loclist_winid] or {}
-    table.insert(filter_chains[loclist_winid], label)
+    local id = list_id(loclist_winid)
+    filter_chains[id] = filter_chains[id] or {}
+    table.insert(filter_chains[id], label)
     tag.update_loclist_sl(loclist_winid)
     vim.cmd 'redrawstatus!'
 end
 
 function M.get_filter_chain(loclist_winid)
-    if loclist_winid == 0 then
-        loclist_winid = vim.api.nvim_get_current_win()
-    end
-    return filter_chains[loclist_winid]
+    return filter_chains[list_id(loclist_winid)]
 end
 
 function M.set_filter_chain(loclist_winid, chain)
-    filter_chains[loclist_winid] = chain
+    filter_chains[list_id(loclist_winid)] = chain
     tag.update_loclist_sl(loclist_winid)
     vim.cmd 'redrawstatus!'
 end
 
 function M.clear_filter_chain(winid)
-    filter_chains[winid] = nil
+    filter_chains[list_id(winid)] = nil
 end
 
 function M.setup()
