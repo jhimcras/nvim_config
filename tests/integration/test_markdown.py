@@ -2,6 +2,13 @@ from tmux_case import TmuxCase
 
 
 class Markdown(TmuxCase):
+    def test_markdown_does_not_start_an_lsp_client(self):
+        # core excludes external LSP processes even when the host has mdloom.
+        self.file('plain.md', '# title\n\ntext\n')
+        self.command('edit plain.md')
+        self.wait_lua('return vim.bo.filetype', 'markdown')
+        self.assertEqual('', self.lua("return table.concat(vim.tbl_map(function(c) return c.name end, vim.lsp.get_clients()), ',')"))
+
     def test_tall_image_scrolls_inside_a_bounded_viewport(self):
         image = self.project / 'tall.png'
         image.write_bytes(b'\x89PNG\r\n\x1a\n' + bytes(8)

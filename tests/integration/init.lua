@@ -4,6 +4,7 @@
 vim.opt.rtp:prepend(vim.env.NVIM_TEST_ROOT)
 package.loaded['nvim_config.plugins'] = { setup = function() end }
 vim.lsp.enable = function() end
+vim.lsp.start = function() end
 
 vim.g.integration_errors = {}
 local notify = vim.notify
