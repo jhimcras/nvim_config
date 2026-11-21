@@ -324,17 +324,26 @@ describe('HTML and wiki images in a document', function()
     end)
 
     it('searches the document folder tree when there is no project root', function()
+      -- A marker above the temp folder (a sandbox's /tmp/.git) would make that
+      -- folder the root, so the lookup is told there is none.
+      local prjroot = require('nvim_config.prjroot')
+      local old_get_root = prjroot.GetProjectRoot
+      prjroot.GetProjectRoot = function() return nil end
       local bare = vim.fs.normalize(vim.fn.tempname())
-      write(bare .. '/n/sub/shot.png')
-      pcall(vim.api.nvim_buf_delete, buf, { force = true })
-      buf = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_name(buf, bare .. '/n/doc.md')
-      vim.bo[buf].filetype = 'markdown'
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { '![[shot.png]]' })
-      collect()
-      wait_for(function() return ready > 0 end)
-      assert.equals(bare .. '/n/sub/shot.png', collect()[1].path)
+      local ok, err = pcall(function()
+        write(bare .. '/n/sub/shot.png')
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+        buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(buf, bare .. '/n/doc.md')
+        vim.bo[buf].filetype = 'markdown'
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { '![[shot.png]]' })
+        collect()
+        wait_for(function() return ready > 0 end)
+        assert.equals(bare .. '/n/sub/shot.png', collect()[1].path)
+      end)
+      prjroot.GetProjectRoot = old_get_root
       vim.fn.delete(bare, 'rf')
+      if not ok then error(err, 0) end
     end)
 
     it('keeps answering from the old index while a stale one is re-walked', function()
