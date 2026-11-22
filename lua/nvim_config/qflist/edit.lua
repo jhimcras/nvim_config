@@ -5,23 +5,23 @@ function M.setup()
     local function delete_lines(start_line, end_line)
         if start_line < 1 or end_line < start_line then return end
         local info = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1]
-        local new_items = {}
-        if info.loclist == 1 then
-            for i, item in ipairs(vim.fn.getloclist(0)) do
-                if i < start_line or i > end_line then
-                    table.insert(new_items, item)
-                end
-            end
-            vim.fn.setloclist(0, {}, 'r', { items = new_items })
-        else
-            for i, item in ipairs(vim.fn.getqflist()) do
-                if i < start_line or i > end_line then
-                    table.insert(new_items, item)
-                end
-            end
-            vim.fn.setqflist({}, 'r', { items = new_items })
-        end
-        local new_line = math.min(start_line, #new_items)
+        local is_loclist = info.loclist == 1
+        local what = { size = 0 }
+        local size = (is_loclist and vim.fn.getloclist(0, what) or vim.fn.getqflist(what)).size
+        end_line = math.min(end_line, size)
+        if end_line < start_line then return end
+
+        -- Keep item dictionaries in Vim's native list while removing the range.
+        local get = is_loclist and 'getloclist(0)' or 'getqflist()'
+        local set = is_loclist and 'setloclist(0, [], ' or 'setqflist([], '
+        api.nvim_exec2(table.concat({
+            'let s:delete_items = ' .. get,
+            ('call remove(s:delete_items, %d, %d)'):format(start_line - 1, end_line - 1),
+            'call ' .. set .. "'r', {'items': s:delete_items})",
+            'unlet s:delete_items',
+        }, '\n'), {})
+
+        local new_line = math.min(start_line, size - (end_line - start_line + 1))
         if new_line > 0 then
             vim.api.nvim_win_set_cursor(0, { new_line, 0 })
         end
