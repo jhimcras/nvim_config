@@ -91,3 +91,36 @@ class Grep(TmuxCase):
         self.assertEqual(["keep"], self.lua("return require('nvim_config.qflist.filter').get_filter_chain(0)"))
         self.wait_screen("Search: needle → keep")
         self.assert_no_errors()
+
+    def test_cfilter_label_belongs_to_quickfix_from_either_window(self):
+        self.file("main.txt", "LOC alpha\nLOC beta\nQF KEEP one\nQF drop two\n")
+        self.command("edit")
+        owner = self.lua("return vim.api.nvim_get_current_win()")
+        self.command("lvimgrep /LOC/ %")
+        self.command("lopen")
+        self.command("Lfilter /LOC/")
+        location_status = ":lvimgrep /LOC/ main.txt → LOC"
+        self.wait_screen(location_status)
+        location_items = self.lua("return vim.fn.getloclist(0)")
+        self.assertEqual(2, len(location_items))
+        self.keys("C-w", "p")
+        self.wait_lua("return vim.api.nvim_get_current_win()", owner)
+        self.command("vimgrep /QF/ %")
+        self.assertEqual(2, self.lua("return #vim.fn.getqflist()"))
+        self.command("Cfilter /KEEP/")
+        self.command("copen")
+        self.assertEqual(self.lua("return vim.fn.getqflist({winid=0}).winid"),
+                         self.lua("return vim.api.nvim_get_current_win()"))
+        self.wait_screen(":vimgrep /QF/ main.txt → KEEP")
+        self.assertEqual(["QF KEEP one"], self.lua(
+            "return vim.tbl_map(function(item) return item.text end, vim.fn.getqflist())"))
+        self.assertEqual(location_items, self.lua(f"return vim.fn.getloclist({owner})"))
+        self.wait_screen(location_status)
+        self.assertNotIn(location_status + " →", self.screen())
+
+        self.command("Cfilter /one/")
+        self.wait_screen(":vimgrep /QF/ main.txt → KEEP → one")
+        self.assertEqual(1, self.lua("return #vim.fn.getqflist()"))
+        self.assertEqual(location_items, self.lua(f"return vim.fn.getloclist({owner})"))
+        self.wait_screen(location_status)
+        self.assertNotIn(location_status + " →", self.screen())

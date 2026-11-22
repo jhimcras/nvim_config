@@ -14,15 +14,10 @@ local function list_id(winid)
     return vim.fn.getloclist(winid, { id = 0 }).id
 end
 
-function M.record_filter(loclist_winid, term, bang)
-    if loclist_winid == 0 then
-        loclist_winid = vim.api.nvim_get_current_win()
-    end
+local function record_filter(id, term, bang)
     local label = bang and ('!' .. term) or term
-    local id = list_id(loclist_winid)
     filter_chains[id] = filter_chains[id] or {}
     table.insert(filter_chains[id], label)
-    tag.update_loclist_sl(loclist_winid)
     vim.cmd 'redrawstatus!'
 end
 
@@ -96,14 +91,13 @@ function M.setup()
         local info = vim.fn.getloclist(winid, { filewinid = 0 })
         local owner = (info.filewinid and info.filewinid ~= 0) and info.filewinid or winid
         filter_list('getloclist(' .. owner .. ')', 'setloclist(' .. owner .. ', [], ', term, opts.bang)
-        M.record_filter(winid, term, opts.bang)
+        record_filter(list_id(winid), term, opts.bang)
     end
 
     local function handle_cfilter(opts)
-        local winid = vim.api.nvim_get_current_win()
         local term = strip_pat(opts.args)
         filter_list('getqflist()', 'setqflist([], ', term, opts.bang)
-        M.record_filter(winid, term, opts.bang)
+        record_filter(vim.fn.getqflist({ id = 0 }).id, term, opts.bang)
     end
 
     api.nvim_create_user_command('Lfilter', handle_lfilter, { nargs = '+', bang = true, force = true })
