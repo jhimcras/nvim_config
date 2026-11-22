@@ -46,6 +46,32 @@ class Session(TmuxCase):
         owner = self.lua("return vim.fn.getloclist(0, {filewinid=0}).filewinid")
         self.assertEqual([3, 1], self.lua(f"return vim.api.nvim_win_get_cursor({owner})"))
 
+    def _assert_loclist_round_trip(self, session_name):
+        self.file("hits.txt", "first HIT\nbetween\nlast HIT\n")
+        self.command("edit hits.txt")
+        self.command("lvimgrep /HIT/ %")
+        self.command("lopen")
+        self.wait_lua("return vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].loclist", 1)
+        self.command(f"SaveSession {session_name}")
+        self.command("CloseSession")
+        self.wait_lua("return vim.v.this_session", "")
+        self.command(f"lua require('nvim_config.session').OpenSession('{session_name}')")
+        self.assertEqual(session_name, self.lua("return vim.fn.fnamemodify(vim.v.this_session, ':t')"))
+        self.assertEqual(["hits.txt", 1, 3], self.lua(
+            "for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do "
+            "if vim.fn.getwininfo(w)[1].loclist == 1 then "
+            "local owner = vim.fn.getloclist(w, {filewinid=0}).filewinid "
+            "local file = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(owner)) "
+            "local result = {vim.fn.fnamemodify(file, ':t')} "
+            "for _, item in ipairs(vim.fn.getloclist(w)) do table.insert(result, item.lnum) end "
+            "return result end end return {}"))
+
+    def test_round_trip_restores_loclist_with_brackets_in_session_name(self):
+        self._assert_loclist_round_trip("draft[1]")
+
+    def test_round_trip_restores_loclist_with_plain_session_name(self):
+        self._assert_loclist_round_trip("draft1")
+
     def test_round_trip_keeps_unnamed_blank_split(self):
         self.assertEqual(1, self.lua("return vim.tbl_contains(vim.opt.sessionoptions:get(), 'blank') and 1 or 0"))
         self.command("vnew")

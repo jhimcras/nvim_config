@@ -213,18 +213,29 @@ local function save_qf_window_positions(path, session_prefix)
 end
 
 
+local function session_list_files(dir, prefix)
+    if vim.fn.isdirectory(dir) == 0 then return {} end
+    local names = vim.fn.readdir(dir)
+    local patterns = {
+        '^' .. vim.pesc(prefix .. LIST_EXT_QF) .. '$',
+        '^' .. vim.pesc(prefix .. LIST_EXT_LOC) .. '%.%d+%.lua$',
+        '^' .. vim.pesc(prefix .. LIST_EXT_LAUNCHER) .. '%.%d+%.lua$',
+    }
+    local files = {}
+    for _, pattern in ipairs(patterns) do
+        for _, name in ipairs(names) do
+            if name:match(pattern) then
+                files[#files + 1] = dir .. '/' .. name
+            end
+        end
+    end
+    return files
+end
+
+
 local function clear_session_lists(abs_path, session_prefix)
     -- Only our list/launcher files; keep the session script
-    local qf_pat = string.format("%s/%s%s", abs_path, session_prefix, LIST_EXT_QF)
-    local loc_pat = string.format("%s/%s%s.*.lua", abs_path, session_prefix, LIST_EXT_LOC)
-    local lc_pat = string.format("%s/%s%s.*.lua", abs_path, session_prefix, LIST_EXT_LAUNCHER)
-    for _, file in ipairs(vim.fn.glob(qf_pat, false, true)) do
-        vim.fn.delete(file)
-    end
-    for _, file in ipairs(vim.fn.glob(loc_pat, false, true)) do
-        vim.fn.delete(file)
-    end
-    for _, file in ipairs(vim.fn.glob(lc_pat, false, true)) do
+    for _, file in ipairs(session_list_files(abs_path, session_prefix)) do
         vim.fn.delete(file)
     end
     vim.fn.delete(string.format("%s/%s%s", abs_path, session_prefix, LIST_EXT_QF_WINS))
@@ -358,17 +369,10 @@ function M.restore(sess_path)
     local dir = vim.fn.fnamemodify(sess_path, ':h')
     -- Resolve placeholders before lopen/copen shift window indexes.
     local placeholders = find_qf_placeholder_windows(string.format('%s/%s%s', dir, prefix, LIST_EXT_QF_WINS))
-    local patterns = {
-        string.format('%s/%s%s', dir, prefix, LIST_EXT_QF),
-        string.format('%s/%s%s.*.lua', dir, prefix, LIST_EXT_LOC),
-        string.format('%s/%s%s.*.lua', dir, prefix, LIST_EXT_LAUNCHER),
-    }
     local to_open = {}
-    for _, pat in ipairs(patterns) do
-        for _, file in ipairs(vim.fn.glob(pat, false, true)) do
-            local result = load_qflist_no_open(file)
-            if result then table.insert(to_open, result) end
-        end
+    for _, file in ipairs(session_list_files(dir, prefix)) do
+        local result = load_qflist_no_open(file)
+        if result then table.insert(to_open, result) end
     end
     local tag = require('nvim_config.qflist.tag')
     local filter = require('nvim_config.qflist.filter')
