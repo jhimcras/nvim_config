@@ -222,7 +222,8 @@ local function render()
         end
     end
     for i = tab_offset, visible_end do
-        s[#s+1] = string.format('%%%dT%%#TabLineEdge%d#%s%%#TabLine%d# %d %s ', i, i, EDGE_L, i, i, titles[i])
+        local title = titles[i]:gsub('%%', '%%%%')
+        s[#s+1] = string.format('%%%dT%%#TabLineEdge%d#%s%%#TabLine%d# %d %s ', i, i, EDGE_L, i, i, title)
         s[#s+1] = string.format('%%#TabLineEdge%d#%s', i, EDGE_R)
     end
     if right_hidden > 0 then

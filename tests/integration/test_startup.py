@@ -19,6 +19,23 @@ class Startup(TmuxCase):
         self.command("FileInfo")
         self.wait_screen("main.txt")
 
+    def test_tabline_preserves_literal_percent_pairs_in_file_names(self):
+        percent_name = "report%%done.txt"
+        ordinary_name = "ordinary.txt"
+        self.file(percent_name, "report\n")
+        self.file(ordinary_name, "ordinary\n")
+        self.command(r"edit report\%\%done.txt")
+        self.command("tabedit ordinary.txt")
+
+        for index, current_name in enumerate((ordinary_name, percent_name, ordinary_name)):
+            if index:
+                self.keys("g", "t")
+            self.wait_lua("return vim.fn.expand('%:t')", current_name)
+            self.command("redraw!")
+            tabline = self.tmux("capture-pane", "-p", "-t", "test:0.0").splitlines()[0]
+            self.assertIn(percent_name, tabline)
+            self.assertIn(ordinary_name, tabline)
+
     def test_header_detection_and_external_file_reload_use_real_autocmds(self):
         self.file("header.h", "int value;\n")
         self.command("edit header.h")
