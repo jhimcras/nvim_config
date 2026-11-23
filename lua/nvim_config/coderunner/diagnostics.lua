@@ -1,5 +1,6 @@
 local M = {}
 local api = vim.api
+local config = require('nvim_config.coderunner.config')
 M.namespace = api.nvim_create_namespace('coderunner')
 function M.refresh(buf)
     if not api.nvim_buf_is_valid(buf) or not api.nvim_buf_is_loaded(buf) then return end
@@ -14,17 +15,17 @@ function M.refresh(buf)
         local code, message, severity
         if block.duplicate then
             code, message, severity = 'duplicate-code-id', 'duplicate code id: ' .. block.id, vim.diagnostic.severity.ERROR
-        elseif block.lang ~= 'output' then
+        elseif block.lang ~= 'output' and config.select(cfg, 'renderers', block.lang) then
             local result = require('nvim_config.coderunner.render').lookup(block)
             if result.status == 'failed' then
                 code, message, severity = 'render-failed', (result.error or 'render failed'):match('[^\r\n]+'), vim.diagnostic.severity.WARN
             end
-        end
-        if not block.duplicate and block.lang ~= 'output' then
-            local image = require('nvim_config.coderunner.export').stale(block, cfg)
-            if image then diagnostics[#diagnostics + 1] = { lnum = image.row, col = image.col,
-                severity = vim.diagnostic.severity.INFO, source = 'coderunner', code = 'stale-export',
-                message = 'exported image is stale; use :CodeExport to update' } end
+            if #block.images > 0 then
+                local image = require('nvim_config.coderunner.export').stale(block, cfg)
+                if image then diagnostics[#diagnostics + 1] = { lnum = image.row, col = image.col,
+                    severity = vim.diagnostic.severity.INFO, source = 'coderunner', code = 'stale-export',
+                    message = 'exported image is stale; use :CodeExport to update' } end
+            end
         end
         if code then diagnostics[#diagnostics + 1] = { lnum = block.start_row, col = 0,
             severity = severity, source = 'coderunner', code = code, message = message } end

@@ -175,6 +175,43 @@ describe('coderunner blocks', function()
         vim.fn.delete(root, 'rf')
     end)
 
+    it('keeps the live Markdown tree consistent with string parsing after edits', function()
+        local root = H.workspace()
+        local buf = H.buffer(root, table.concat({
+            'Summary', '',
+            '> ```dot {#graph}', '> 한글', '> ```', '>',
+            '> ![[graph.png]]', '>',
+            '> ```py', '> original', '> ```', '>',
+            '> ```output', '> result', '> ```', '',
+            '```py', 'tail', '```', '',
+        }, '\n'))
+        vim.bo[buf].filetype = 'markdown'
+        local function check()
+            local source = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n')
+                .. (vim.bo[buf].endofline and '\n' or '')
+            local actual = assert(B.get(buf, root))
+            assert.same(assert(B.parse(source, { root = root, path = root .. '/note.md' })), actual)
+            return actual
+        end
+        local original = check()
+        assert.equals('graph.png', original[1].images[1].target)
+        assert.equals(original[3], original[2].output)
+        assert.is_true(original[4].closed)
+        vim.api.nvim_buf_set_lines(buf, 6, 7, false, { '> ![[updated.png]]' })
+        vim.api.nvim_buf_set_lines(buf, 9, 10, false, { '> changed' })
+        vim.api.nvim_buf_set_lines(buf, -2, -1, false, {})
+        vim.api.nvim_buf_set_lines(buf, 0, 0, false, { 'Added line', '' })
+        local edited = check()
+        assert.equals('updated.png', edited[1].images[1].target)
+        assert.equals('changed\n', edited[2].code)
+        assert.equals('tail\n', edited[4].code)
+        assert.is_false(edited[4].closed)
+        vim.bo[buf].endofline = false
+        assert.equals('tail', check()[4].code)
+        vim.api.nvim_buf_delete(buf, { force = true })
+        vim.fn.delete(root, 'rf')
+    end)
+
     it('returns an explicit error when markdown parser is unavailable', function()
         local original = vim.treesitter.get_string_parser
         vim.treesitter.get_string_parser = function() error('missing parser') end

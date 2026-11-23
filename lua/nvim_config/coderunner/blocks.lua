@@ -148,29 +148,29 @@ local function images(node, text)
     return found
 end
 
-function M.parse(text, opts)
-    opts = opts or {}
-    text = text:gsub('\r\n', '\n')
-    -- The markdown grammar requires a final newline to recognize an EOF
-    -- closing fence. Keep source bytes unchanged for unclosed code hashes.
-    local root, err = parser(text:sub(-1) == '\n' and text or text .. '\n', 'markdown')
-    if not root then return nil, err end
-    local lines = vim.split(text, '\n', { plain = true })
-    local blocks, nodes, by_node, counts, ids = {}, {}, {}, {}, {}
+local function collect_blocks(root, text, lines, opts)
+    local blocks, counts, ids = {}, {}, {}
     local path = (opts.path or ''):gsub('\\', '/')
     local workspace = opts.root and vim.fs.normalize(opts.root):gsub('\\', '/')
     if workspace then path = vim.fs.relpath(workspace, path) or path end
-    walk(root, function(node)
-        if node:type() ~= 'fenced_code_block' then return end
+    local function fence(node, parent_type)
         local delimiters, info, continuations = {}, '', {}
-        walk(node, function(child)
-            if child:type() == 'fenced_code_block_delimiter' then delimiters[#delimiters + 1] = child
-            elseif child:type() == 'info_string' then info = vim.treesitter.get_node_text(child, text)
-            elseif child:type() == 'block_continuation' then
-                local r = range(child)
-                continuations[r[1]] = math.max(continuations[r[1]] or 0, r[4])
+        local function continuation(child)
+            local row, _, _, col = child:range()
+            continuations[row] = math.max(continuations[row] or 0, col)
+        end
+        for _, child in ipairs(node:named_children()) do
+            local child_type = child:type()
+            if child_type == 'fenced_code_block_delimiter' then delimiters[#delimiters + 1] = child
+            elseif child_type == 'info_string' then info = vim.treesitter.get_node_text(child, text)
+            elseif child_type == 'block_continuation' then
+                continuation(child)
+            elseif child_type == 'code_fence_content' then
+                for _, part in ipairs(child:named_children()) do
+                    if part:type() == 'block_continuation' then continuation(part) end
+                end
             end
-        end)
+        end
         local open = range(delimiters[1])
         local close = delimiters[2] and range(delimiters[2]) or nil
         -- Treesitter includes up to three indentation spaces in delimiters.
@@ -186,8 +186,7 @@ function M.parse(text, opts)
         -- indentation (up to three spaces) is removed without touching code indent.
         local prefix = lines[open[1] + 1]:sub(1, open[2])
         local indent = #(prefix:match(' *$') or '')
-        local parent = node:parent()
-        if parent and (parent:type() == 'list_item' or parent:type() == 'block_quote') then
+        if parent_type == 'list_item' or parent_type == 'block_quote' then
             -- In containers the continuation already includes the container indent.
             local continuation = continuations[open[1] + 1] or 0
             indent = math.max(0, open[2] - continuation)
@@ -211,7 +210,7 @@ function M.parse(text, opts)
         b.range = { open[1], open[2], b.end_row, close and close[4] or nr[4] }
         b.prefix = prefix
         b.close_prefix = close and lines[close[1] + 1]:sub(1, close[2]) or prefix
-        b.top_level = open[2] == 0 and parent and parent:type() == 'section'
+        b.top_level = open[2] == 0 and parent_type == 'section'
         b.closed = close ~= nil
         b.path, b.root = path, opts.root
         b.images = {}
@@ -224,26 +223,43 @@ function M.parse(text, opts)
             if ids[b.id] then b.duplicate = true; ids[b.id].duplicate = true
             else ids[b.id] = b end
         end
-        blocks[#blocks + 1], nodes[#nodes + 1] = b, node
-        by_node[node:id()] = b
-    end)
-    for i, b in ipairs(blocks) do
-        if b.lang ~= 'output' and b.closed then
-            local next_node = nodes[i]:next_named_sibling()
-            while next_node and next_node:type() == 'block_continuation' do next_node = next_node:next_named_sibling() end
-            if next_node then
-                local start = next_node:start()
-                if start - b.end_row <= 2 then
-                    local following = by_node[next_node:id()]
-                    if following and following.lang == 'output' then b.output = following
-                    elseif next_node:type() == 'paragraph' or next_node:type() == 'html_block' then
-                        b.images = images(next_node, text)
+        blocks[#blocks + 1] = b
+        return b
+    end
+    -- Track adjacent named siblings in one pass, including under lists and quotes.
+    local function collect(node, node_type)
+        local previous
+        for _, child in ipairs(node:named_children()) do
+            local child_type = child:type()
+            local block
+            if child_type == 'fenced_code_block' then
+                block = fence(child, node_type)
+            else
+                collect(child, child_type)
+            end
+            if child_type ~= 'block_continuation' then
+                if previous and previous.lang ~= 'output' and previous.closed
+                    and child:start() - previous.end_row <= 2 then
+                    if block and block.lang == 'output' then previous.output = block
+                    elseif child_type == 'paragraph' or child_type == 'html_block' then
+                        previous.images = images(child, text)
                     end
                 end
+                previous = block
             end
         end
     end
+    collect(root, root:type())
     return blocks
+end
+
+function M.parse(text, opts)
+    text = text:gsub('\r\n', '\n')
+    -- The markdown grammar requires a final newline to recognize an EOF
+    -- closing fence. Keep source bytes unchanged for unclosed code hashes.
+    local root, err = parser(text:sub(-1) == '\n' and text or text .. '\n', 'markdown')
+    if not root then return nil, err end
+    return collect_blocks(root, text, vim.split(text, '\n', { plain = true }), opts or {})
 end
 
 function M.get(buf, root)
@@ -254,7 +270,21 @@ function M.get(buf, root)
     if old and old.tick == tick and old.root == root and old.path == path and old.eol == eol then return old.blocks, old.error end
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local text = table.concat(lines, '\n') .. (eol and '\n' or '')
-    local blocks, err = M.parse(text, { path = path, root = root })
+    local opts = { path = path, root = root }
+    local blocks, err
+    if eol and not text:find('\r\n', 1, true) and vim.bo[buf].filetype == 'markdown' then
+        -- Reuse the incrementally updated root without requesting a new injection scan.
+        local p = vim.treesitter.get_parser(buf, 'markdown')
+        local regions = p and p:included_regions()
+        if regions and #regions == 1 and #regions[1] == 0 then
+            local ok, trees = pcall(p.parse, p)
+            if ok and trees and trees[1] then
+                lines[#lines + 1] = ''
+                blocks = collect_blocks(trees[1]:root(), text, lines, opts)
+            end
+        end
+    end
+    if not blocks then blocks, err = M.parse(text, opts) end
     cache[buf] = { tick = tick, path = path, root = root, eol = eol, blocks = blocks, error = err }
     return blocks, err
 end

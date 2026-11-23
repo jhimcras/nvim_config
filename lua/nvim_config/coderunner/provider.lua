@@ -1,18 +1,23 @@
 local M = {}
 local api = vim.api
 local blocks = require('nvim_config.coderunner.blocks')
+local config = require('nvim_config.coderunner.config')
 local render = require('nvim_config.coderunner.render')
 local runner = require('nvim_config.coderunner.run')
+local settings = require('nvim_config.coderunner.settings')
 local live, observed = {}, {}
 
 function M.diagrams(buf)
     buf = buf == 0 and api.nvim_get_current_buf() or buf
     if not api.nvim_buf_is_valid(buf) or not api.nvim_buf_is_loaded(buf) then return {} end
-    local list = blocks.get(buf, runner.root(buf))
+    local root = runner.root(buf)
+    local list = blocks.get(buf, root)
+    if not list or #list == 0 then return {} end
+    local cfg = settings.resolve(root, false)
     local items = {}
-    for _, block in ipairs(list or {}) do
-        if render.describe(block) then
-            local found = render.lookup(block)
+    for _, block in ipairs(list) do
+        local found = config.select(cfg, 'renderers', block.lang) and render.lookup(block)
+        if found and found.key then
             items[#items + 1] = { start_row = block.start_row, end_row = block.end_row,
                 key = block.key, lang = block.lang, path = found.path, format = found.format,
                 stale = found.stale == true, status = found.status,
