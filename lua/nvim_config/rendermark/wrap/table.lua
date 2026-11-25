@@ -400,7 +400,7 @@ function M.render_table(buf, t_start, t_end, avail, cursor_lnum, inline, config,
         local out = {}
         for k = 1, height do
             local chunks = {}
-            push_chunk(chunks, '│', config.hl)
+            push_chunk(chunks, '│', 'RendermarkTableBorder')
             for c = 1, N do
                 local row = cols[c][k] or {}
                 local used = 0
@@ -433,7 +433,7 @@ function M.render_table(buf, t_start, t_end, avail, cursor_lnum, inline, config,
                     col = col + it.w
                 end
                 push_chunk(chunks, string.rep(' ', rpad + 1), config.hl)
-                push_chunk(chunks, '│', config.hl)
+                push_chunk(chunks, '│', 'RendermarkTableBorder')
             end
             out[k] = chunks
         end
@@ -457,7 +457,7 @@ function M.render_table(buf, t_start, t_end, avail, cursor_lnum, inline, config,
     end
 
     -- Header: top border above, content overlaid, continuations below.
-    vlines(t_start, { { hl_chunk(top, config.hl) } }, true)
+    vlines(t_start, { { hl_chunk(top, 'RendermarkTableBorder') } }, true)
     if t_start + 1 ~= cursor_lnum then
         local block = row_block(header, t_start)
         overlay(t_start, block[1])
@@ -471,7 +471,7 @@ function M.render_table(buf, t_start, t_end, avail, cursor_lnum, inline, config,
     -- Delimiter row: separator, or bottom border if there is no data.
     local d_lnum = t_start + 1
     if d_lnum + 1 ~= cursor_lnum then
-        overlay(d_lnum, { hl_chunk(#data > 0 and sep or bot, config.hl) })
+        overlay(d_lnum, { hl_chunk(#data > 0 and sep or bot, 'RendermarkTableBorder') })
     end
 
     -- Data rows, each followed by a separator (bottom border for the last).
@@ -485,10 +485,10 @@ function M.render_table(buf, t_start, t_end, avail, cursor_lnum, inline, config,
             for k = 2, #block do
                 rest[#rest + 1] = block[k]
             end
-            rest[#rest + 1] = { hl_chunk(below, config.hl) }
+            rest[#rest + 1] = { hl_chunk(below, 'RendermarkTableBorder') }
             vlines(lnum0, rest, false)
         else
-            vlines(lnum0, { { hl_chunk(below, config.hl) } }, false)
+            vlines(lnum0, { { hl_chunk(below, 'RendermarkTableBorder') } }, false)
         end
     end
 end

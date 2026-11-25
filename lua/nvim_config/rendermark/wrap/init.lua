@@ -20,6 +20,7 @@ local defaults = {
     table = true,               -- render markdown tables with wrapped cells
     table_max_col_width = 30,   -- per-column width cap (display columns)
     table_min_col_width = 5,    -- per-column floor when the table must shrink
+    table_border_fade = 0.5,    -- table border fade: 0 = text color, 1 = background
 }
 
 local config = vim.deepcopy(defaults)
@@ -577,12 +578,32 @@ local function apply_current_window()
     end
 end
 
+local function blend(fg, bg, t)
+    local function ch(shift)
+        local a, b = bit.band(bit.rshift(fg, shift), 255), bit.band(bit.rshift(bg, shift), 255)
+        return math.floor(a + (b - a) * t + 0.5)
+    end
+    return ch(16) * 65536 + ch(8) * 256 + ch(0)
+end
+
+local function define_border_hl()
+    local normal = vim.api.nvim_get_hl(0, { name = 'Normal', link = false })
+    local fade = math.max(0, math.min(1, tonumber(config.table_border_fade) or defaults.table_border_fade))
+    if not normal.fg or not normal.bg then
+        vim.api.nvim_set_hl(0, 'RendermarkTableBorder', { link = 'Comment', default = true })
+        return
+    end
+    vim.api.nvim_set_hl(0, 'RendermarkTableBorder', { fg = blend(normal.fg, normal.bg, fade) })
+end
+
 function M.setup(opts)
     config = vim.tbl_deep_extend('force', vim.deepcopy(defaults), opts or {})
+    define_border_hl()
     table_state.set_enabled(config.table)
     vim.g.markdown_visual_wrap_enabled = config.markdown
 
     group = vim.api.nvim_create_augroup('markdown_visual_wrap', { clear = true })
+    vim.api.nvim_create_autocmd('ColorScheme', { group = group, callback = define_border_hl })
     vim.api.nvim_create_autocmd('User', {
         group = group,
         pattern = 'ReadModeChanged',

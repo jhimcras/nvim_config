@@ -856,3 +856,20 @@ describe('wrap behavior', function()
         assert.is_true(vim.g.markdown_visual_wrap_enabled)
     end)
 end)
+
+describe('wrap table border fade', function()
+    local wrap = require('nvim_config.rendermark.wrap')
+    local function border_fg()
+        return vim.api.nvim_get_hl(0, { name = 'RendermarkTableBorder' }).fg
+    end
+
+    it('defaults to 0.5 and follows table_border_fade', function()
+        vim.api.nvim_set_hl(0, 'Normal', { fg = 0xffffff, bg = 0x000000 })
+        wrap.setup({})
+        assert.are.equal(0x808080, border_fg())
+        wrap.setup({ table_border_fade = 0 })
+        assert.are.equal(0xffffff, border_fg())
+        wrap.setup({ table_border_fade = 1 })
+        assert.are.equal(0x000000, border_fg())
+    end)
+end)
