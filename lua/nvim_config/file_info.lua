@@ -61,7 +61,7 @@ function M.show()
 
     local cursor = vim.api.nvim_win_get_cursor(winid)
     local total_lines = vim.api.nvim_buf_line_count(bufnr)
-    add_line("Cursor", string.format("Line %d, Col %d (%d%%)", cursor[1], cursor[2], math.floor(cursor[1] / (total_lines > 0 and total_lines or 1) * 100)))
+    add_line("Cursor", string.format("Line %d, Col %d (%d%%)", cursor[1], cursor[2] + 1, math.floor(cursor[1] / (total_lines > 0 and total_lines or 1) * 100)))
 
     local symbol = require 'nvim_config.symbol'
     local cur_func = symbol.current_function()
@@ -82,12 +82,18 @@ function M.show()
         width = math.max(width, vim.fn.strdisplaywidth(line))
     end
     width = width + 4
-    local height = #lines
 
     -- Clamp to the editor width
     if width > vim.o.columns - 2 then
         width = vim.o.columns - 2
     end
+
+    -- Long lines (e.g. Path) wrap instead of scrolling horizontally.
+    local height = 0
+    for _, line in ipairs(lines) do
+        height = height + math.max(1, math.ceil(vim.fn.strdisplaywidth(line) / width))
+    end
+    height = math.min(height, vim.o.lines - 4)
 
     local win_pos = vim.api.nvim_win_get_position(winid)
     local win_width = vim.api.nvim_win_get_width(winid)
@@ -115,6 +121,7 @@ function M.show()
         title_pos = 'center',
     }
     local win = vim.api.nvim_open_win(buf, true, opts)
+    vim.wo[win].wrap = true
 
     local function close()
         if vim.api.nvim_win_is_valid(win) then

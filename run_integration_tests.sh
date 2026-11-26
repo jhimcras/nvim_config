@@ -3,7 +3,7 @@ set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 if [[ ${1:-} == --help ]]; then
     echo 'Usage: bash run_integration_tests.sh [feature | feature.Class.test_method]'
-    echo 'Features: startup, launcher, grep, session, markdown, windows'
+    echo 'Features: startup, fileinfo, launcher, grep, session, markdown, windows'
     echo 'Requires: nvim >= 0.11, tmux, Python 3, rg. Failures retain /tmp artifacts.'
     echo 'Runs real init.lua with plugin installation and external LSP launches disabled.'
     exit 0
