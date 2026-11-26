@@ -71,6 +71,20 @@ class Grep(TmuxCase):
         self.assertEqual([2, 0], self.lua("return vim.api.nvim_win_get_cursor(0)"))
         self.assert_no_errors()
 
+    def test_cfilter_keeping_most_of_50k_results_jumps_to_source(self):
+        self.file("labels.txt", "".join(
+            f"{'DROP_LABEL' if line == 0 or line % 100 == 99 else 'KEEP_LABEL'} {line}\n"
+            for line in range(50000)))
+        self.command("vimgrep /LABEL/j labels.txt")
+        self.command("copen")
+        self.wait_lua("return vim.fn.getqflist({size=0}).size", 50000)
+        self.command("Cfilter /KEEP_LABEL/")
+        self.wait_lua("return vim.fn.getqflist({size=0}).size", 49499)
+        self.assertEqual(0, self.lua("return vim.fn.getqflist()[1].text:find('DROP') and 1 or 0"))
+        self.keys("g", "g", "Enter")
+        self.wait_lua("return vim.api.nvim_win_get_cursor(0)[1]", 2)
+        self.assert_no_errors()
+
     def test_lfilter_label_survives_lclose_and_lopen(self):
         self.file("main.txt", "needle keep alpha\nneedle drop beta\nneedle keep gamma\n")
         self.command("Grep needle")

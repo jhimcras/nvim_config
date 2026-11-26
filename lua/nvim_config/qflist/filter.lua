@@ -52,6 +52,17 @@ function M.setup()
         return keep
     end
 
+    -- 0-based indices of the texts matching the Vim regex `pat`. A Vimscript
+    -- match() loop costs ~6us per hit; vim.regex does the scan in Lua.
+    M._hits = function(texts, pat)
+        local re = vim.regex(pat)
+        local hits = {}
+        for i, text in ipairs(texts) do
+            if re:match_str(text) then hits[#hits + 1] = i - 1 end
+        end
+        return hits
+    end
+
     -- Items stay in Vim's native list: converting 100k quickfix dicts to Lua
     -- and back costs far more than the filtering. match() over the list of
     -- texts compiles the pattern once, and buffer names are matched once per
@@ -61,12 +72,7 @@ function M.setup()
         vim.api.nvim_exec2(table.concat({
             'let s:flt_items = ' .. get,
             "let s:flt_texts = map(copy(s:flt_items), 'v:val.text')",
-            'let s:flt_hits = []',
-            'let s:flt_i = match(s:flt_texts, ' .. p .. ')',
-            'while s:flt_i >= 0',
-            '  call add(s:flt_hits, s:flt_i)',
-            '  let s:flt_i = match(s:flt_texts, ' .. p .. ', s:flt_i + 1)',
-            'endwhile',
+            "let s:flt_hits = luaeval('require\"nvim_config.qflist.filter\"._hits(_A[1], _A[2])', [s:flt_texts, " .. p .. '])',
             -- Candidate buffers: every existing one plus 0 (bufname(0) is the
             -- alternate buffer, as before). A pattern that matches an empty
             -- name also matches items whose buffer no longer exists, so then
@@ -78,7 +84,7 @@ function M.setup()
             -- List indexing walks the linked list, so index through 256-item chunks.
             "let s:flt_chunks = map(range(0, len(s:flt_items) - 1, 256), 's:flt_items[v:val : v:val + 255]')",
             'call ' .. set .. "'r', {'items': map(s:flt_keep, 's:flt_chunks[v:val / 256][v:val % 256]')})",
-            'unlet s:flt_items s:flt_texts s:flt_hits s:flt_i s:flt_named s:flt_bufs s:flt_keep s:flt_chunks',
+            'unlet s:flt_items s:flt_texts s:flt_hits s:flt_named s:flt_bufs s:flt_keep s:flt_chunks',
         }, '\n'), {})
     end
 
