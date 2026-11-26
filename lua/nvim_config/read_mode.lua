@@ -137,17 +137,43 @@ local function ensure_keymaps(buf)
         return
     end
     mapped_bufs[buf] = true
+    -- Outside READ, run the mapping that j/k had before this buffer-local one
+    -- (feeding a bare key would skip it, e.g. the display-line gj/gk remap).
+    local function fall_through(key, prev)
+        local rhs = prev.rhs
+        if prev.callback then
+            rhs = prev.callback()
+        elseif prev.expr == 1 then
+            rhs = vim.api.nvim_eval(rhs)
+        end
+        if not rhs or rhs == '' then
+            rhs = key
+        end
+        local count = vim.v.count
+        local keys = (count > 0 and count or '') .. rhs
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), 'n', false)
+    end
+    local prev_j = vim.fn.maparg('j', 'n', false, true)
+    local prev_k = vim.fn.maparg('k', 'n', false, true)
     ut.nnoremap('j', function()
         local win = vim.api.nvim_get_current_win()
         local image = package.loaded['nvim_config.rendermark.image']
         if image and image.scroll_image(1, vim.v.count1) then return end
-        feed(vim.v.count1 .. (M.is_active(win) and '<C-e>' or 'j'))
+        if M.is_active(win) then
+            feed(vim.v.count1 .. '<C-e>')
+        else
+            fall_through('j', prev_j)
+        end
     end, { buffer = buf })
     ut.nnoremap('k', function()
         local win = vim.api.nvim_get_current_win()
         local image = package.loaded['nvim_config.rendermark.image']
         if image and image.scroll_image(-1, vim.v.count1) then return end
-        feed(vim.v.count1 .. (M.is_active(win) and '<C-y>' or 'k'))
+        if M.is_active(win) then
+            feed(vim.v.count1 .. '<C-y>')
+        else
+            fall_through('k', prev_k)
+        end
     end, { buffer = buf })
     -- Capture the existing <Esc> mapping to call it directly when falling through.
     local prev_esc = vim.fn.maparg('<esc>', 'n', false, true)
@@ -172,14 +198,20 @@ local function ensure_keymaps(buf)
                 return
             end
             local st = search_state[win]
+            local before = vim.fn.winsaveview()
             resolving_search = true
             if st and st.anchor then
                 -- Restore the true match so native n/N continues from it (guarded:
                 -- this fires CursorMoved).
                 pcall(vim.api.nvim_win_set_cursor, win, st.anchor)
             end
-            local ok = pcall(vim.cmd, 'normal! ' .. vim.v.count1 .. cmd)
+            local ok, err = pcall(vim.cmd, 'normal! ' .. vim.v.count1 .. cmd)
             local pos = vim.api.nvim_win_get_cursor(win)
+            if not ok then
+                -- Keep the READ view; report the boundary like native search.
+                pcall(vim.fn.winrestview, before)
+                vim.api.nvim_echo({ { tostring(err):match('E%d+:.*') or tostring(err) } }, true, { err = true })
+            end
             resolving_search = false
             if ok then
                 -- Deferred so other CursorMoved handlers place highlights first.

@@ -42,3 +42,54 @@ class ReadMode(TmuxCase):
         self.wait_lua("return vim.w.read_mode_active == true", False)
         self.assertEqual(0, self.lua(MARKS))
         self.assert_plain_needle_after_nohlsearch()
+
+
+class ReadModeExit(TmuxCase):
+    def test_j_after_exit_moves_by_display_line(self):
+        self.file("wrap.txt", "0123456789" * 26 + "\nNEXT LINE\n")
+        self.command("edit wrap.txt")
+        self.command("setlocal wrap")
+        self.keys("g", "g", "0")
+        self.keys("j")
+        self.wait_lua("return vim.api.nvim_win_get_cursor(0)[2] > 0", True)
+        self.assertEqual(1, self.lua("return vim.api.nvim_win_get_cursor(0)[1]"))
+        self.keys("g", "g", "0")
+        self.wait_lua("return vim.api.nvim_win_get_cursor(0)[2]", 0)
+        self.keys("Space", "r")
+        self.wait_lua("return vim.w.read_mode_active == true", True)
+        self.keys("Escape")
+        self.wait_lua("return vim.w.read_mode_active == true", False)
+        self.assertTrue(self.lua("return vim.bo.modifiable"))
+        self.keys("j")
+        self.wait_lua("return vim.api.nvim_win_get_cursor(0)[2] > 0", True)
+        self.assertEqual(1, self.lua("return vim.api.nvim_win_get_cursor(0)[1]"))
+
+
+class ReadModeSearchEnd(TmuxCase):
+    def test_n_past_last_match_reports_and_keeps_view(self):
+        lines = ["x"] * 40
+        lines[9] = lines[29] = "NEEDLE"
+        self.file("note.txt", "\n".join(lines) + "\n")
+        self.command("edit note.txt")
+        self.command("set nowrapscan")
+        self.keys("Space", "r")
+        self.wait_lua("return vim.w.read_mode_active == true", True)
+        self.keys("/")
+        self.wait_lua("return vim.fn.getcmdtype()", "/")
+        self.tmux("send-keys", "-t", "test:0.0", "-l", "NEEDLE")
+        self.keys("Enter")
+        self.wait_lua("return vim.api.nvim_win_get_cursor(0)[1]", 10)
+        self.keys("n")
+        self.wait_lua("return vim.api.nvim_win_get_cursor(0)[1]", 30)
+        self.wait_lua("return #vim.api.nvim_buf_get_extmarks(0, "
+                      "vim.api.nvim_get_namespaces().read_mode_search, 0, -1, {})", 1)
+        top = self.lua("return vim.fn.winsaveview().topline")
+        self.keys("n")
+        self.wait_screen("E385")
+        self.assertIn("E385", self.lua("return vim.fn.execute('messages')"))
+        self.assertEqual(30, self.lua("return vim.api.nvim_win_get_cursor(0)[1]"))
+        self.assertEqual(0, self.lua("return vim.api.nvim_win_get_cursor(0)[2]"))
+        self.assertEqual(top, self.lua("return vim.fn.winsaveview().topline"))
+        self.assertTrue(self.lua("return vim.w.read_mode_active == true"))
+        # E385 is the expected error; keep teardown's v:errmsg check clean.
+        self.lua("vim.v.errmsg = '' return true")
