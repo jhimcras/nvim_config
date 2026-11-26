@@ -46,6 +46,10 @@ local function win_state(win)
     if not vim.wo[win].wrap then
         state.leftcol = api.nvim_win_call(win, function() return vim.fn.winsaveview().leftcol end)
     end
+    -- Window-local directory (:lcd) decides how relative paths resolve.
+    state.lcd = api.nvim_win_call(win, function()
+        return vim.fn.haslocaldir() == 1 and vim.fn.getcwd() or nil
+    end)
     if state.buftype == 'quickfix' then
         local info = vim.fn.getloclist(win, { filewinid = 0 })
         -- filewinid ~= 0 marks a location list, owned by an origin window.
@@ -282,6 +286,11 @@ local function has_neighbour(win, a, b)
 end
 
 local function apply_view(win, state)
+    if state.lcd and vim.fn.isdirectory(state.lcd) == 1 then
+        pcall(api.nvim_win_call, win, function()
+            vim.cmd('lcd ' .. vim.fn.fnameescape(state.lcd))
+        end)
+    end
     -- Without a neighbour, leftover rows would go into cmdheight.
     if has_neighbour(win, 'h', 'l') then
         pcall(api.nvim_win_set_width, win, state.width)

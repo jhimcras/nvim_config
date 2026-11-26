@@ -18,6 +18,26 @@ class Windows(TmuxCase):
         self.assertEqual(side, self.lua(
             "return vim.fn.winlayout()[2][2][2] == vim.api.nvim_get_current_win()"))
 
+    def test_reopen_keeps_window_local_directory(self):
+        self.file("target.txt", "ROOT_TARGET\n")
+        self.file("sub/editor.txt", "EDITOR\n")
+        self.file("sub/target.txt", "SUB_TARGET\n")
+        self.command("vsplit sub/editor.txt")
+        self.wait_lua("return #vim.api.nvim_tabpage_list_wins(0)", 2)
+        self.command("lcd sub")
+        before = self.lua("return vim.fn.getcwd()")
+        self.command("close")
+        self.wait_lua("return require('nvim_config.reopen').depth()", 1)
+        self.command("Reopen")
+        self.wait_lua("return #vim.api.nvim_tabpage_list_wins(0)", 2)
+        self.assertEqual(1, self.lua("return vim.fn.haslocaldir()"))
+        self.assertEqual(before, self.lua("return vim.fn.getcwd()"))
+        self.command("edit target.txt")
+        self.assertEqual("SUB_TARGET", self.lua("return vim.fn.getline(1)"))
+        self.assertTrue(self.lua("return vim.api.nvim_buf_get_name(0)").endswith("/sub/target.txt"))
+        self.command("wincmd p")
+        self.assertEqual(0, self.lua("return vim.fn.haslocaldir()"))
+
     def test_reopen_restores_full_height_window_beside_nested_split(self):
         for name in ("left.txt", "upper.txt", "lower.txt", "right.txt"):
             self.file(name, name + "\n")
