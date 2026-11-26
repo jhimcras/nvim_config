@@ -274,6 +274,40 @@ describe('reopen', function()
         assert.are.equal(1, info.size)
     end)
 
+    it('restores the horizontal scroll of a nowrap window', function()
+        local path = vim.fn.tempname() .. '_long.txt'
+        vim.fn.writefile({ string.rep('x', 500) }, path)
+        vim.cmd('edit ' .. vim.fn.fnameescape(path))
+        vim.cmd('setlocal nowrap')
+        vim.cmd('vsplit')
+        vim.cmd('normal! 100l30zl')
+        local before = vim.fn.winsaveview()
+        assert.is_true(before.leftcol > 0)
+
+        vim.cmd('close')
+        flush()
+        assert.is_true(reopen.restore())
+        local after = vim.fn.winsaveview()
+        assert.are.equal(before.leftcol, after.leftcol)
+        assert.are.equal(before.col, after.col)
+    end)
+
+    it('restores the closed window\'s own location list', function()
+        local a, b = fresh_file('a.txt'), fresh_file('b.txt')
+        vim.cmd('edit ' .. vim.fn.fnameescape(a))
+        vim.fn.setloclist(0, { { filename = a, lnum = 2, text = 'a target' } })
+        vim.cmd('vsplit ' .. vim.fn.fnameescape(b))
+        vim.fn.setloclist(0, { { filename = b, lnum = 3, text = 'b target' } })
+        local awin = vim.api.nvim_tabpage_list_wins(0)[2]
+
+        vim.cmd('close')
+        flush()
+        assert.is_true(reopen.restore())
+        assert.are.equal('b target', vim.fn.getloclist(0)[1].text)
+        assert.are.equal(3, vim.fn.getloclist(0)[1].lnum)
+        assert.are.equal('a target', vim.fn.getloclist(awin)[1].text)
+    end)
+
     it('caps the stack at ten entries', function()
         for i = 1, 14 do
             vim.cmd('vsplit ' .. vim.fn.fnameescape(fresh_file('cap' .. i .. '.txt')))

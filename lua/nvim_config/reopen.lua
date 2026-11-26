@@ -42,6 +42,10 @@ local function win_state(win)
         width   = api.nvim_win_get_width(win),
         height  = api.nvim_win_get_height(win),
     }
+    -- leftcol is 0 under 'wrap'; only nowrap windows need the view call.
+    if not vim.wo[win].wrap then
+        state.leftcol = api.nvim_win_call(win, function() return vim.fn.winsaveview().leftcol end)
+    end
     if state.buftype == 'quickfix' then
         local info = vim.fn.getloclist(win, { filewinid = 0 })
         -- filewinid ~= 0 marks a location list, owned by an origin window.
@@ -233,6 +237,11 @@ local function on_win_closed(ev)
     if not snap then return end
 
     local state = snap.states[win] or win_state(win)
+    -- The window's location list is freed with it; keep a copy for the restore.
+    if state.buftype ~= 'quickfix' then
+        local list = vim.fn.getloclist(win, { all = 1 })
+        if list.size > 0 then state.loclist = list end
+    end
     push({
         kind  = 'win',
         tab   = tab,
@@ -284,7 +293,8 @@ local function apply_view(win, state)
     local row = math.min(state.cursor[1], math.max(lines, 1))
     pcall(api.nvim_win_set_cursor, win, { row, state.cursor[2] })
     pcall(api.nvim_win_call, win, function()
-        vim.fn.winrestview { topline = state.topline, lnum = row, col = state.cursor[2] }
+        vim.fn.winrestview { topline = state.topline, lnum = row, col = state.cursor[2],
+            leftcol = state.leftcol }
     end)
 end
 
@@ -366,6 +376,11 @@ local function restore_win(entry)
     if not fill_buffer(win, state) then
         pcall(vim.cmd, 'close')
         return false
+    end
+    if state.loclist then
+        -- A split inherits the anchor's list; give the window its own back.
+        vim.fn.setloclist(win, {}, ' ', { items = state.loclist.items, title = state.loclist.title })
+        vim.fn.setloclist(win, {}, 'a', { idx = state.loclist.idx })
     end
     apply_view(win, state)
     api.nvim_set_current_win(win)
