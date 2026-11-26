@@ -29,7 +29,7 @@ function M.GetSelectWord()
     local sel = M.GetVisualSelection()
     if sel and sel[1] == sel[3] then
         local ln = vim.api.nvim_buf_get_lines(0, sel[1]-1, sel[1], false)
-        return string.sub(ln[1], sel[2], sel[4])
+        return string.sub(ln[1], sel[2], sel[4] + vim.str_utf_end(ln[1], sel[4]))
     end
 end
 

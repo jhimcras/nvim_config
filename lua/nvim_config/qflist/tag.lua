@@ -12,6 +12,14 @@ function M.update_loclist_sl(winid)
     vim.cmd 'redrawstatus!'
 end
 
+-- rg patterns may not be valid Vim regexes (e.g. (?:x)); highlight is best-effort.
+function M.add_highlight(term, word)
+    local function add(t) return pcall(vim.fn.matchadd, 'Special', [[\v]] .. (word and '<' or '') .. t .. (word and '>' or '')) end
+    if not add(term) then
+        add((term:gsub('%(%?:', '%%(')))
+    end
+end
+
 function M.restore_highlight(loclist_winid)
     local filewinid = vim.fn.getloclist(loclist_winid, { filewinid = 0 }).filewinid
     if not filewinid or filewinid == 0 then return end
@@ -20,11 +28,7 @@ function M.restore_highlight(loclist_winid)
     vim.api.nvim_win_call(loclist_winid, function()
         vim.fn.clearmatches()
         if info then
-            if info.word then
-                vim.fn.matchadd('Special', [[\v<]] .. info.term .. [[>]])
-            else
-                vim.fn.matchadd('Special', [[\v]] .. info.term)
-            end
+            M.add_highlight(info.term, info.word)
         end
     end)
 end

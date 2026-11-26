@@ -204,9 +204,9 @@ local function search_args(state, term, word)
     local args = {'--vimgrep', '--smart-case'}
     if word and word == true then
         args[#args+1] = '--word-regexp'
-        vim.fn.matchadd('Special', [[\v<]] .. term .. [[>]])
+        tag.add_highlight(term, true)
     else
-        vim.fn.matchadd('Special', [[\v]] .. term)
+        tag.add_highlight(term, false)
     end
     args[#args+1] = term
     args[#args+1] = state.prjroot

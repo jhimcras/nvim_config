@@ -124,3 +124,31 @@ class Grep(TmuxCase):
         self.assertEqual(location_items, self.lua(f"return vim.fn.getloclist({owner})"))
         self.wait_screen(location_status)
         self.assertNotIn(location_status + " →", self.screen())
+
+    def test_visual_grep_keeps_final_multibyte_character(self):
+        self.file("main.txt", "a한\na한\na글\nab\nab\n")
+        self.command("edit")
+        self.keys("g", "g", "0", "v", "l", "Space", "g")
+        self.wait_lua("return vim.bo.buftype", "quickfix")
+        self.wait_lua("return vim.w.grep_status", "done")
+        self.assertEqual([1, 2], self.lua(
+            "local l={}; for _, i in ipairs(vim.fn.getloclist(0)) do l[#l+1]=i.lnum end; table.sort(l); return l"))
+        self.assertIn("a한", self.lua("return vim.fn.getloclist(0, {title=0}).title"))
+        self.command("lclose")
+        self.command("edit")
+        self.keys("4", "g", "g", "0", "v", "l", "Space", "g")
+        self.wait_lua("return vim.w.grep_status", "done")
+        self.assertEqual([4, 5], self.lua(
+            "local l={}; for _, i in ipairs(vim.fn.getloclist(0)) do l[#l+1]=i.lnum end; table.sort(l); return l"))
+        self.assert_no_errors()
+
+    def test_noncapturing_group_pattern_searches_without_error(self):
+        self.file("main.txt", "alpha\nbeta\nalpha second\n")
+        for pat in ("(?:alpha)", "(alpha)"):
+            self.command(f"Grep {pat}")
+            self.wait_lua("return vim.bo.buftype", "quickfix")
+            self.wait_lua("return vim.w.grep_status", "done")
+            self.assertEqual([1, 3], self.lua(
+                "local l={}; for _, i in ipairs(vim.fn.getloclist(0)) do l[#l+1]=i.lnum end; table.sort(l); return l"))
+            self.command("lclose")
+        self.assert_no_errors()
