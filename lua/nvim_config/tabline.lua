@@ -206,7 +206,14 @@ local function render()
     else
         -- right indicator: " >" (2) or "[ N ] >" (4 + edges + digits)
         local right_ind_w = cur > vend_no_right and (4 + EDGE_W + #tostring(cur)) or 2
-        visible_end = tabline_vis_end(tab_offset, widths, total, avail - right_ind_w)
+        avail = avail - right_ind_w
+        visible_end = tabline_vis_end(tab_offset, widths, total, avail)
+    end
+    -- A title wider than the line is shown truncated instead of dropped.
+    local clip_w
+    if visible_end < tab_offset then
+        visible_end = tab_offset
+        clip_w = avail
     end
 
     local right_hidden = total - visible_end
@@ -222,7 +229,16 @@ local function render()
         end
     end
     for i = tab_offset, visible_end do
-        local title = titles[i]:gsub('%%', '%%%%')
+        local title = titles[i]
+        if i == tab_offset and clip_w then
+            local room = clip_w - (widths[i] - vim.fn.strdisplaywidth(title))
+            local n = 0
+            while n < vim.fn.strchars(title) and vim.fn.strdisplaywidth(vim.fn.strcharpart(title, n)) > room do
+                n = n + 1
+            end
+            title = vim.fn.strcharpart(title, n)
+        end
+        title = title:gsub('%%', '%%%%')
         s[#s+1] = string.format('%%%dT%%#TabLineEdge%d#%s%%#TabLine%d# %d %s ', i, i, EDGE_L, i, i, title)
         s[#s+1] = string.format('%%#TabLineEdge%d#%s', i, EDGE_R)
     end

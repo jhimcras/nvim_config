@@ -168,10 +168,18 @@ function M.wipeout_hidden_buffers()
     for _, win in ipairs(vim.api.nvim_list_wins()) do
         visible_buffers[vim.api.nvim_win_get_buf(win)] = true
     end
+    local kept = {}
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
         if vim.fn.buflisted(buf) == 1 and not visible_buffers[buf] then
-            vim.api.nvim_buf_delete(buf, {force = true})
+            if vim.bo[buf].modified then
+                kept[#kept+1] = M.GetBufferName(buf)
+            else
+                vim.api.nvim_buf_delete(buf, {})
+            end
         end
+    end
+    if #kept > 0 then
+        vim.notify('Kept modified hidden buffers: ' .. table.concat(kept, ', '), vim.log.levels.WARN)
     end
 end
 
