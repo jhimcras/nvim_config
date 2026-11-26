@@ -15,7 +15,7 @@ end
 
 -- Split a table row into trimmed cells, unescaping "\|". Each char keeps its
 -- source byte offset: { text, chars = { { c, b }, ... } }.
-function M.split_cells_pos(line)
+local function split_cells_pos(line)
     local chars = vim.fn.split(line, '\\zs')
     local pos = {}
     local acc = 0
@@ -63,6 +63,19 @@ function M.split_cells_pos(line)
         out[#out + 1] = { text = table.concat(txt), chars = chs }
     end
     return out
+end
+
+-- Rows are re-split on every render, but typing changes one line of a large
+-- table; results are read-only, so memoize by line text.
+local split_cache, split_cache_n = {}, 0
+function M.split_cells_pos(line)
+    local cells = split_cache[line]
+    if not cells then
+        if split_cache_n >= 20000 then split_cache, split_cache_n = {}, 0 end
+        cells = split_cells_pos(line)
+        split_cache[line], split_cache_n = cells, split_cache_n + 1
+    end
+    return cells
 end
 
 -- Plain-string variant of split_cells_pos.

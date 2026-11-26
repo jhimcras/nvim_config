@@ -719,6 +719,13 @@ function M.setup(opts)
     }, {
         group = group,
         callback = function(a)
+            if a.event == 'WinResized' or a.event == 'VimResized' then
+                -- Resized windows need not be the focused one (e.g. :vsplit).
+                for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+                    if buffer_enabled(vim.api.nvim_win_get_buf(w)) then schedule_refresh(w) end
+                end
+                return
+            end
             local buf = vim.api.nvim_get_current_buf()
             if not buffer_enabled(buf) then
                 return
@@ -735,6 +742,10 @@ function M.setup(opts)
                     and (looks_like_fence(buf, row) or (prev and looks_like_fence(buf, prev))) then
                     repaint_deco_now(win, buf, { row, prev })
                 end
+                schedule_refresh(win, true)
+            elseif a.event == 'InsertEnter' then
+                -- The cursor row is already drawn raw in Normal mode; refresh_cursor
+                -- falls back to a full render when anything else changed.
                 schedule_refresh(win, true)
             elseif a.event == 'TextChangedI' and rendered[win]
                 and rendered[win].cursor == vim.api.nvim_win_get_cursor(win)[1] then
