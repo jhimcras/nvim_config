@@ -1,4 +1,5 @@
 local ut = require('nvim_config.util.buffer')
+local env = require('nvim_config.env')
 
 local M = {}
 
@@ -26,9 +27,13 @@ function M.show()
     end
 
     local bufname = ut.GetBufferName(bufnr)
+    local protocol = ut.GetBufferProtocol(bufnr)
+    -- oil:///D/dir/ -> D:\dir\ on Windows
+    if protocol == 'oil' and env.os.win then
+        bufname = bufname:gsub('^/(%a)/', '%1:/'):gsub('/', '\\')
+    end
     add_line("Path", bufname ~= "" and bufname or "[No Name]")
 
-    local protocol = ut.GetBufferProtocol(bufnr)
     if protocol and protocol ~= '' then
         add_line("Protocol", protocol)
     end
