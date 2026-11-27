@@ -284,4 +284,69 @@ describe('lsp', function()
             assert.is_nil(markdown.cmd(nil))
         end)
     end)
+
+    describe('mdloom task sort keys', function()
+        local markdown = require('nvim_config.lsp.servers.markdown')
+        local original_exepath, original_notify = vim.fn.exepath, vim.notify
+        local buf, previous, calls, notes
+
+        before_each(function()
+            calls, notes = {}, {}
+            package.loaded.mdloom = {
+                list = function(command, args, lines) calls[#calls + 1] = { command, args, lines } end,
+            }
+            vim.fn.exepath = function() return '' end
+            vim.notify = function(msg) notes[#notes + 1] = msg end
+            markdown.setup()
+            previous = vim.api.nvim_get_current_buf()
+            buf = vim.api.nvim_create_buf(false, true)
+            vim.api.nvim_set_current_buf(buf)
+            vim.api.nvim_buf_set_lines(buf, 0, -1, false, { '- [x] a', '- [ ] b', '- [ ] c' })
+        end)
+
+        after_each(function()
+            package.loaded.mdloom = nil
+            vim.fn.exepath, vim.notify = original_exepath, original_notify
+            vim.api.nvim_set_current_buf(previous)
+            vim.api.nvim_buf_delete(buf, { force = true })
+            vim.api.nvim_del_augroup_by_name('nvim_config_mdloom_keys')
+        end)
+
+        it('maps normal-mode keys for Markdown only', function()
+            vim.bo[buf].filetype = 'text'
+            assert.are.equal('', vim.fn.maparg('<leader>ms', 'n'))
+            vim.bo[buf].filetype = 'markdown'
+            for _, key in ipairs({ '<leader>ms', '<leader>mS', '<leader>mr', '<leader>mR' }) do
+                vim.fn.maparg(key, 'n', false, true).callback()
+            end
+            assert.are.same({
+                { 'sortTasks', { order = 'asc' } },
+                { 'sortTasks', { order = 'desc' } },
+                { 'sortTasksRecursive', { order = 'asc' } },
+                { 'sortTasksRecursive', { order = 'desc' } },
+            }, calls)
+        end)
+
+        it('sends the Visual selection as one-based lines', function()
+            vim.bo[buf].filetype = 'markdown'
+            vim.api.nvim_win_set_cursor(0, { 3, 0 })
+            vim.cmd('normal! Vk')
+            vim.fn.maparg('<leader>mS', 'x', false, true).callback()
+            assert.are.same({ { 'sortTasks', { order = 'desc' }, { 2, 3 } } }, calls)
+            assert.are.equal('n', vim.api.nvim_get_mode().mode)
+        end)
+
+        it('notifies without editing when the plugin is missing', function()
+            vim.bo[buf].filetype = 'markdown'
+            package.loaded.mdloom = nil
+            local original_path = package.path
+            package.path = ''
+            local original_rtp = vim.o.runtimepath
+            vim.o.runtimepath = vim.env.VIMRUNTIME
+            vim.fn.maparg('<leader>ms', 'n', false, true).callback()
+            package.path, vim.o.runtimepath = original_path, original_rtp
+            assert.are.same({ 'mdloom: plugin is not available' }, notes)
+            assert.are.same({ '- [x] a', '- [ ] b', '- [ ] c' }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+        end)
+    end)
 end)

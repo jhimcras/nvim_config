@@ -25,7 +25,45 @@ function M.cmd(dir)
     return { exe, 'lsp' }
 end
 
+-- Sort task-list checkboxes through mdloom: the cursor item's level, or the given
+-- one-based lines. Without the plugin, notify and leave the buffer alone; mdloom
+-- itself reports a missing client or an unsupported command.
+function M.sort_tasks(command, order, lines)
+    local ok, mdloom = pcall(require, 'mdloom')
+    if not ok then
+        vim.notify('mdloom: plugin is not available', vim.log.levels.ERROR)
+        return
+    end
+    mdloom.list(command, { order = order }, lines)
+end
+
+local sort_keys = {
+    { '<leader>ms', 'sortTasks', 'asc' },
+    { '<leader>mS', 'sortTasks', 'desc' },
+    { '<leader>mr', 'sortTasksRecursive', 'asc' },
+    { '<leader>mR', 'sortTasksRecursive', 'desc' },
+}
+
+local function map_sort_keys(buf)
+    for _, key in ipairs(sort_keys) do
+        local lhs, command, order = key[1], key[2], key[3]
+        local desc = ('mdloom: %s %s'):format(command, order)
+        vim.keymap.set('n', lhs, function() M.sort_tasks(command, order) end,
+            { buffer = buf, silent = true, desc = desc })
+        vim.keymap.set('x', lhs, function()
+            local first, last = vim.fn.line('v'), vim.fn.line('.')
+            vim.api.nvim_feedkeys(vim.keycode('<Esc>'), 'nx', false)
+            M.sort_tasks(command, order, { math.min(first, last), math.max(first, last) })
+        end, { buffer = buf, silent = true, desc = desc })
+    end
+end
+
 function M.setup()
+    vim.api.nvim_create_autocmd('FileType', {
+        group = vim.api.nvim_create_augroup('nvim_config_mdloom_keys', { clear = true }),
+        pattern = 'markdown',
+        callback = function(ev) map_sort_keys(ev.buf) end,
+    })
     local dir = dev_dir()
     if dir and vim.uv.fs_stat(dir .. '/editors/nvim') then
         vim.opt.rtp:prepend(dir .. '/editors/nvim')
