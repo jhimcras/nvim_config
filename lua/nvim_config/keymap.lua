@@ -194,7 +194,9 @@ function M.setup()
 
     -- file_info
     api.nvim_create_user_command('FileInfo', function() require'nvim_config.file_info'.show() end, {})
+    api.nvim_create_user_command('CopyFilePath', function() require'nvim_config.file_info'.copy_path() end, {})
     ut.nnoremap('<C-g>', function() require'nvim_config.file_info'.show() end)
+    ut.nnoremap('<leader>y', function() require'nvim_config.file_info'.copy_path() end)
 
     -- launcher
     api.nvim_create_user_command('ProcessList', function() require'nvim_config.launcher'.ShowProcessList() end, {})
