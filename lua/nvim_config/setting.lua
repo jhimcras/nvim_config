@@ -167,7 +167,10 @@ local function DiffSetting()
         end
     end
 
-    api.nvim_create_autocmd('DiffUpdated', { callback = sync })
+    -- Deferred: closing a diff window re-runs the diff mid-close and fires
+    -- DiffUpdated while the half-removed window is still listed; touching it
+    -- from here segfaults nvim (0.12.5).
+    api.nvim_create_autocmd('DiffUpdated', { callback = function() vim.schedule(sync) end })
     api.nvim_create_autocmd('OptionSet', { pattern = 'diff', callback = sync })
 end
 
