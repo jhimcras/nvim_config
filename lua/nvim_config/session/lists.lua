@@ -480,7 +480,7 @@ function M.restore(sess_path)
                 if info.matches then pcall(vim.fn.setmatches, info.matches, qf_winid) end
                 if info.cursor then pcall(vim.api.nvim_win_set_cursor, qf_winid, { info.cursor.row, info.cursor.col }) end
             end
-        else
+        elseif info.kind == "loc" then
             local target = info.target
             vim.api.nvim_set_current_win(target)
             pcall(vim.cmd, 'lopen')

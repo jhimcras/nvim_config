@@ -656,6 +656,32 @@ describe('session list size caps', function()
         vim.api.nvim_buf_delete(bufs[1], { force = true })
     end)
 
+    it('restores a launcher whose origin matches no window without treating it as a loclist', function()
+        local fd = assert(io.open(string.format('%s/%s.launcher.lua.1001.lua', dir, name), 'w'))
+        fd:write(vim.json.encode({ kind = 'launcher', content = { 'orphan output' }, obj = 'orphan',
+                                   status = 'done', filetype = 'launcher', prjroot = vim.fn.getcwd(),
+                                   origin = { tab_nr = 99, winidx = 1 } }))
+        fd:close()
+        local file = vim.fn.tempname()
+        fd = assert(io.open(dir .. '/' .. name .. '.qf.lua', 'w'))
+        fd:write(vim.json.encode({ kind = 'qf', title = 'with orphan', items = { { filename = file, lnum = 1, text = 'q' } } }))
+        fd:close()
+        fd = assert(io.open(dir .. '/' .. name .. '.qfwins.lua', 'w'))
+        fd:write('[]')  -- no placeholders, so restore keeps the current blank window
+        fd:close()
+        local wins_before = #vim.api.nvim_list_wins()
+
+        lists.restore(dir .. '/' .. name)
+
+        assert.equals('with orphan', vim.fn.getqflist({ title = 0 }).title)
+        assert.equals(1, #launcher_bufs('orphan'))
+        for _, winid in ipairs(vim.api.nvim_list_wins()) do
+            assert.equals(0, vim.fn.getwininfo(winid)[1].loclist)
+        end
+        assert.equals(wins_before + 1, #vim.api.nvim_list_wins())  -- only the quickfix window
+        vim.api.nvim_buf_delete(launcher_bufs('orphan')[1], { force = true })
+    end)
+
     it('opens a legacy Lua quickfix file, keeping the first 20000 items', function()
         local file = vim.fn.tempname()
         local items = {}
