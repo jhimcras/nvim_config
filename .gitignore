@@ -14,3 +14,4 @@ HANDOFF.md
 .issues
 nvim.log
 /.issues/
+__pycache__/
