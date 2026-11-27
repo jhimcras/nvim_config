@@ -150,6 +150,9 @@ local function lsp_status(bufnr, winid, api)
 end
 
 
+-- Counting is O(matches) on every statusline redraw; cap it so huge match sets stay cheap.
+local SEARCH_MAXCOUNT = 9999
+
 local function search_count(bufnr, winid)
     if vim.v.hlsearch == 0 then return end
 
@@ -157,11 +160,13 @@ local function search_count(bufnr, winid)
     if #winids == 0 then return end
 
     local searchcount = vim.api.nvim_win_call(winids[1], function()
-        return {pcall(vim.fn.searchcount, { maxcount = 999999, timeout = 1000 })}
+        return {pcall(vim.fn.searchcount, { maxcount = SEARCH_MAXCOUNT, timeout = 1000 })}
     end)
     if not searchcount[1] or not searchcount[2].total or searchcount[2].total == 0 then return end
 
-    return ('  %d/%d'):format(searchcount[2].current, searchcount[2].total)
+    -- Past maxcount searchcount() reports maxcount + 1; show it as ">maxcount".
+    local function fmt(n) return n > SEARCH_MAXCOUNT and ('>' .. SEARCH_MAXCOUNT) or tostring(n) end
+    return ('  %s/%s'):format(fmt(searchcount[2].current), fmt(searchcount[2].total))
 end
 
 

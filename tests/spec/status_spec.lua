@@ -146,3 +146,38 @@ describe('statusline shrinking', function()
         assert.equals(0, search_calls)
     end)
 end)
+
+describe('statusline search count cap', function()
+    local original_searchcount, buf, args
+
+    before_each(function()
+        buf = vim.api.nvim_create_buf(false, true)
+        original_searchcount = vim.fn.searchcount
+        vim.v.hlsearch = 1
+    end)
+
+    after_each(function()
+        vim.fn.searchcount = original_searchcount
+        vim.v.hlsearch = 0
+        vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    local function render(result)
+        vim.api.nvim_win_set_buf(0, buf)
+        vim.fn.searchcount = function(opts) args = opts return result end
+        local components = require('nvim_config.status.components')
+        return components.make_statusline_text(buf, vim.api.nvim_get_current_win(), components.search_count)
+    end
+
+    it('counts at most 9999 matches and keeps the timeout', function()
+        render({ current = 1, total = 3 })
+        assert.equals(9999, args.maxcount)
+        assert.equals(1000, args.timeout)
+    end)
+
+    it('shows counts past the cap as >9999', function()
+        assert.is_truthy(render({ current = 10000, total = 10000 }):find('>9999/>9999', 1, true))
+        assert.is_truthy(render({ current = 12, total = 10000 }):find('12/>9999', 1, true))
+        assert.is_truthy(render({ current = 12, total = 9999 }):find('12/9999', 1, true))
+    end)
+end)
