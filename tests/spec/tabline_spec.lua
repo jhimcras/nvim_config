@@ -190,3 +190,36 @@ describe('tabline content cache', function()
         if not ok then error(err) end
     end)
 end)
+
+describe('tabline oil buffers', function()
+    local tmp
+
+    before_each(function()
+        vim.cmd('tabonly')
+        tmp = vim.fn.resolve(vim.fn.tempname())
+        vim.fn.mkdir(tmp .. '/otherrepo/.git', 'p')
+        vim.fn.mkdir(tmp .. '/otherrepo/sub', 'p')
+        vim.fn.mkdir(tmp .. '/cwdrepo/.git', 'p')
+        vim.cmd.cd(tmp .. '/cwdrepo')
+        vim.cmd('enew')
+    end)
+
+    after_each(function()
+        vim.cmd('silent! %bwipeout!')
+        vim.fn.delete(tmp, 'rf')
+    end)
+
+    it('uses the directory oil shows, not the cwd, for root and name', function()
+        vim.api.nvim_buf_set_name(0, 'oil://' .. tmp .. '/otherrepo/sub/')
+        local title = tabline.tabtitle(vim.fn.tabpagenr())
+        assert.are.equal('[otherrepo] sub/', title)
+    end)
+
+    it('does not show the cwd project for an oil directory outside any repo', function()
+        vim.fn.mkdir(tmp .. '/cwdrepo/inner', 'p')
+        vim.fn.mkdir(tmp .. '/plain', 'p')
+        vim.cmd.cd(tmp .. '/cwdrepo/inner')
+        vim.api.nvim_buf_set_name(0, 'oil://' .. tmp .. '/plain/')
+        assert.are.equal('plain/', tabline.tabtitle(vim.fn.tabpagenr()))
+    end)
+end)

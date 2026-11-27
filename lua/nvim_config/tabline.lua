@@ -63,6 +63,8 @@ function M.tabtitle(n)
     for _, bufnum in ipairs(buflist) do
         if not is_tabline_ignored_buf(bufnum) then
             local bufname = vim.fn.bufname(bufnum)
+            -- oil:///path/ -> /path/ so root and name follow the shown directory
+            if bufname:find('^oil://') then bufname = bufname:sub(7) end
             local pr = prjroot_of(bufname) or ''
             r[pr] = r[pr] or {}
             util_serialize.insert_unique_by(r[pr], bufname, is_equal)
