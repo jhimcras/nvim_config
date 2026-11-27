@@ -155,7 +155,7 @@ describe('launcher session highlights', function()
 
         session.SaveSession(name)
         local file = string.format('%s/%s.launcher.lua.%d.lua', dir, name, vim.api.nvim_get_current_win())
-        local saved = assert(loadfile(file))()
+        local saved = vim.json.decode(table.concat(vim.fn.readfile(file), '\n'))
         assert.are.same({ { 0, 0, 3, 'AnsiRed' }, { 1, 0, 6, 'LauncherHL_BB0000' } }, saved.highlights)
 
         vim.api.nvim_set_hl(0, 'LauncherHL_BB0000', {})
@@ -553,5 +553,123 @@ describe('session QuitPre exit guard', function()
 
         vim.fn.delete(script_path)
         vim.fn.delete(log_path)
+    end)
+end)
+
+
+describe('session list size caps', function()
+    local lists = require('nvim_config.session.lists')
+    local dir, name
+
+    before_each(function()
+        dir = make_sessions_dir()
+        name = '__test__caps'
+    end)
+
+    after_each(function()
+        vim.cmd('silent! cclose')
+        vim.fn.setqflist({}, 'f')
+        for _, path in ipairs(vim.fn.glob(dir .. '/' .. name .. '*', false, true)) do
+            vim.fn.delete(path)
+        end
+    end)
+
+    local function read_json(path)
+        return vim.json.decode(table.concat(vim.fn.readfile(path), '\n'))
+    end
+
+    local function launcher_bufs(obj)
+        return vim.tbl_filter(function(b)
+            return vim.bo[b].filetype == 'launcher' and vim.b[b].lc_object == obj
+        end, vim.api.nvim_list_bufs())
+    end
+
+    it('saves the first 20000 quickfix items as JSON and clamps selection', function()
+        local file = vim.fn.tempname()
+        local items = {}
+        for i = 1, 20005 do items[i] = { filename = file, lnum = i, text = 'item ' .. i } end
+        vim.fn.setqflist({}, ' ', { title = 'big', items = items })
+        vim.fn.setqflist({}, 'r', { idx = 20003 })
+        vim.cmd('copen')
+        lists.save(dir .. '/' .. name)
+        vim.cmd('cclose')
+
+        local saved = read_json(dir .. '/' .. name .. '.qf.lua')
+        assert.equals(20000, #saved.items)
+        assert.equals('item 20000', saved.items[20000].text)
+        assert.equals(20000, saved.selection)
+    end)
+
+    it('saves the last 10000 launcher lines with shifted highlights and matches', function()
+        local buf = vim.api.nvim_create_buf(false, true)
+        local previous = vim.api.nvim_get_current_buf()
+        vim.api.nvim_win_set_buf(0, buf)
+        vim.bo[buf].filetype = 'launcher'
+        local lines = {}
+        for i = 1, 10005 do lines[i] = 'line ' .. i end
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        local ns = vim.api.nvim_create_namespace('launcher_highlights')
+        vim.hl.range(buf, ns, 'AnsiRed', { 2, 0 }, { 2, 4 }, {})        -- dropped
+        vim.hl.range(buf, ns, 'AnsiRed', { 10004, 0 }, { 10004, 4 }, {}) -- last line
+        vim.b[buf].launcher_matches = { { lnum = 3 }, { lnum = 10005, file = 'a.c' } }
+        lists.save(dir .. '/' .. name)
+        local file = string.format('%s/%s.launcher.lua.%d.lua', dir, name, vim.api.nvim_get_current_win())
+        vim.api.nvim_win_set_buf(0, previous)
+        vim.api.nvim_buf_delete(buf, { force = true })
+
+        local saved = read_json(file)
+        assert.equals(10000, #saved.content)
+        assert.equals('line 6', saved.content[1])
+        assert.equals('line 10005', saved.content[10000])
+        assert.are.same({ { 9999, 0, 4, 'AnsiRed' } }, saved.highlights)
+        assert.are.same({ { lnum = 10000, file = 'a.c' } }, saved.matches)
+    end)
+
+    it('opens a legacy Lua launcher file too big for dofile, keeping the last 10000 lines', function()
+        local lines, highlights = {}, {}
+        for i = 1, 70000 do
+            lines[i] = ('legacy line %d'):format(i)
+            highlights[i] = { i - 1, 0, 6, 'AnsiRed' }  -- unique numbers push past the constant limit
+        end
+        local src = 'return ' .. vim.inspect({ kind = 'launcher', content = lines, highlights = highlights,
+                                              obj = 'legacy', status = 'done', filetype = 'launcher',
+                                              origin = { tab_nr = 1, winidx = 1 }, prjroot = vim.fn.getcwd() })
+        assert.is_nil((loadstring(src)))  -- the case the piecewise loader exists for
+        local path = string.format('%s/%s.launcher.lua.1000.lua', dir, name)
+        local fd = assert(io.open(path, 'w'))
+        fd:write(src)
+        fd:close()
+
+        lists.restore(dir .. '/' .. name)
+
+        local bufs = launcher_bufs('legacy')
+        assert.equals(1, #bufs)
+        local restored = vim.api.nvim_buf_get_lines(bufs[1], 0, -1, false)
+        assert.equals(10000, #restored)
+        assert.equals('legacy line 60001', restored[1])
+        assert.equals('legacy line 70000', restored[10000])
+        local restored_hl = require('nvim_config.launcher').GetHighlights(bufs[1])
+        assert.equals(10000, #restored_hl)
+        assert.are.same({ 0, 0, 6, 'AnsiRed' }, restored_hl[1])
+        assert.are.same({ 9999, 0, 6, 'AnsiRed' }, restored_hl[10000])
+        vim.cmd('enew')
+        vim.api.nvim_buf_delete(bufs[1], { force = true })
+    end)
+
+    it('opens a legacy Lua quickfix file, keeping the first 20000 items', function()
+        local file = vim.fn.tempname()
+        local items = {}
+        for i = 1, 20010 do items[i] = { filename = file, lnum = i, text = 'old ' .. i } end
+        local fd = assert(io.open(dir .. '/' .. name .. '.qf.lua', 'w'))
+        fd:write('return ' .. vim.inspect({ kind = 'qf', title = 'legacy', items = items, selection = 20005 }))
+        fd:close()
+
+        lists.restore(dir .. '/' .. name)
+
+        local qf = vim.fn.getqflist({ items = 0, idx = 0, title = 0 })
+        assert.equals('legacy', qf.title)
+        assert.equals(20000, #qf.items)
+        assert.equals('old 20000', qf.items[20000].text)
+        assert.equals(20000, qf.idx)
     end)
 end)

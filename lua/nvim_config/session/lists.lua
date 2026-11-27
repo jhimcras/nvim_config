@@ -6,14 +6,49 @@ local LIST_EXT_LOC = ".loc"
 local LIST_EXT_LAUNCHER = ".launcher.lua"
 local LIST_EXT_QF_WINS = ".qfwins.lua"
 
+-- Size caps for saved lists: quickfix/loclist keep the first items, launcher
+-- output keeps the last lines (where the result of a run is).
+local QF_MAX_ITEMS = 20000
+local LAUNCHER_MAX_LINES = 10000
+
 local function ensure_dir(path)
     if vim.fn.isdirectory(path) == 0 then
         vim.fn.mkdir(path, "p")
     end
 end
 
+-- Apply the size caps to list data, returning new tables (never mutates the
+-- live tables the data may share with buffers/processes).
+local function truncate_list(data)
+    if (data.kind == "qf" or data.kind == "loc") and data.items and #data.items > QF_MAX_ITEMS then
+        data.items = vim.list_slice(data.items, 1, QF_MAX_ITEMS)
+        if data.selection and data.selection > QF_MAX_ITEMS then data.selection = QF_MAX_ITEMS end
+        if data.cursor and data.cursor.row > QF_MAX_ITEMS then
+            data.cursor = { row = QF_MAX_ITEMS, col = data.cursor.col }
+        end
+    elseif data.kind == "launcher" and data.content and #data.content > LAUNCHER_MAX_LINES then
+        local offset = #data.content - LAUNCHER_MAX_LINES
+        data.content = vim.list_slice(data.content, offset + 1)
+        local highlights = {}
+        for _, hl in ipairs(data.highlights or {}) do  -- { row(0-based), col, end_col, group }
+            if hl[1] >= offset then
+                highlights[#highlights + 1] = { hl[1] - offset, hl[2], hl[3], hl[4] }
+            end
+        end
+        data.highlights = highlights
+        local matches = {}
+        for _, m in ipairs(data.matches or {}) do  -- m.lnum is 1-based
+            if m.lnum > offset then
+                matches[#matches + 1] = vim.tbl_extend("force", {}, m, { lnum = m.lnum - offset })
+            end
+        end
+        data.matches = matches
+    end
+    return data
+end
+
 local function write_list_file(data, path)
-    local ok, content = pcall(vim.inspect, data)
+    local ok, content = pcall(vim.json.encode, data)
     if not ok then
         return false, "Failed to serialize list"
     end
@@ -23,10 +58,64 @@ local function write_list_file(data, path)
         return false, err
     end
 
-    fd:write("return " .. content)
+    fd:write(content)
     fd:close()
 
     return true
+end
+
+-- Files from before the JSON format were `return <vim.inspect>` Lua chunks.
+-- Big ones exceed LuaJIT's 65536 constants per chunk, so evaluate the table
+-- constructor piecewise through the Lua treesitter parser.
+local function eval_legacy_chunk(src)
+    local root = vim.treesitter.get_string_parser(src, "lua"):parse()[1]:root()
+    local ret = root:named_child(0)
+    local list = ret and ret:type() == "return_statement" and ret:named_child(0)
+    local node = list and list:named_child(0)
+    if not node then error("not a `return <table>` chunk") end
+
+    local function text(n) return vim.treesitter.get_node_text(n, src) end
+    local function eval(n)
+        if n:type() ~= "table_constructor" or n:byte_length() < 65536 then
+            return assert(loadstring("return " .. text(n)))()
+        end
+        local out, i = {}, 0
+        for field in n:iter_children() do
+            if field:type() == "field" then
+                local name, value = field:field("name")[1], field:field("value")[1]
+                if not name then
+                    i = i + 1
+                    out[i] = eval(value)
+                elseif name:type() == "identifier" then
+                    out[text(name)] = eval(value)
+                else
+                    out[eval(name)] = eval(value)
+                end
+            end
+        end
+        return out
+    end
+    return eval(node)
+end
+
+local function read_list_file(path)
+    local fd = io.open(path, "r")
+    if not fd then return nil end
+    local src = fd:read("*a")
+    fd:close()
+
+    if not src:match("^%s*return") then
+        local ok, data = pcall(vim.json.decode, src, { luanil = { object = true } })
+        return ok and data or nil
+    end
+    local chunk = loadstring(src)
+    local ok, data
+    if chunk then
+        ok, data = pcall(chunk)
+    else
+        ok, data = pcall(eval_legacy_chunk, src)
+    end
+    return ok and data or nil
 end
 
 local function get_list_cursor(winid)
@@ -85,7 +174,7 @@ local function save_loclist(winid, path)
     local data = {
         kind         = "loc",
         title        = info.title,
-        items        = items_with_filename(info.items),
+        items        = info.items,
         origin       = build_origin_window(winid),
         selection    = sel,
         filter_chain = filter_chain,
@@ -93,6 +182,8 @@ local function save_loclist(winid, path)
         cursor       = cursor,
     }
 
+    truncate_list(data)
+    data.items = items_with_filename(data.items)
     return write_list_file(data, path)
 end
 
@@ -117,7 +208,7 @@ local function save_launcher(winid, path)
         filetype = vim.bo[bufnr].filetype,
     }
 
-    return write_list_file(data, path)
+    return write_list_file(truncate_list(data), path)
 end
 
 local function save_all_launchers(path, session_prefix)
@@ -186,13 +277,15 @@ local function save_quickfix(path, session_prefix)
     local data = {
         kind         = "qf",
         title        = info.title,
-        items        = items_with_filename(info.items),
+        items        = info.items,
         selection    = sel,
         filter_chain = filter_chain,
         matches      = matches,
         cursor       = cursor,
     }
 
+    truncate_list(data)
+    data.items = items_with_filename(data.items)
     return write_list_file(data, string.format("%s/%s%s", path, session_prefix, LIST_EXT_QF))
 end
 
@@ -290,8 +383,8 @@ end
 -- Blank windows that mksession left in place of quickfix/loclist windows.
 -- Sessions saved without the position file fall back to every blank window.
 local function find_qf_placeholder_windows(path)
-    local ok, positions = pcall(dofile, path)
-    if not ok or type(positions) ~= "table" then
+    local positions = read_list_file(path)
+    if type(positions) ~= "table" then
         return vim.tbl_filter(is_blank_window, vim.api.nvim_list_wins())
     end
     local tabpages = vim.api.nvim_list_tabpages()
@@ -310,10 +403,11 @@ end
 -- Load list data without opening a window.
 -- Returns { kind, [target], filter_chain, matches, cursor }, or nil on error.
 local function load_qflist_no_open(path)
-    local ok, data = pcall(dofile, path)
-    if not ok or type(data) ~= "table" or (not data.items and not data.content) then
+    local data = read_list_file(path)
+    if type(data) ~= "table" or (not data.items and not data.content) then
         return nil
     end
+    truncate_list(data)
 
     if data.kind == "qf" then
         vim.fn.setqflist({}, " ", {
